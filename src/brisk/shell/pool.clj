@@ -28,15 +28,22 @@
    ["bb" "-cp" (or classpath "") "-m" "brisk.shell.worker"]))
 
 (defn- pump!
-  "Read `stream` line by line, putting each as an event on `queue`."
+  "Read `stream` line by line, putting each message `decode` makes of a
+  line as an event on `queue`."
   [^LinkedBlockingQueue queue worker stream decode]
   (with-open [rdr (io/reader (if (= stream :stdout) (:out worker) (:err worker))
                              :encoding "UTF-8")]
-    (doseq [line (line-seq rdr)]
-      (.put queue (protocol/->event (decode line)
+    (doseq [line (line-seq rdr)
+            message (decode line)]
+      (.put queue (protocol/->event message
                                     {:worker (:id worker)
                                      :at (System/currentTimeMillis)
                                      :stream stream})))))
+
+(defn- new-nonce
+  "A fresh random token for one worker's protocol prefix."
+  []
+  (subs (str (java.util.UUID/randomUUID)) 0 8))
 
 (def ^:private reader-grace-ms
   "How long after a worker exits its output may still drain before the
@@ -51,16 +58,22 @@
   * `:queue`   the shared `LinkedBlockingQueue` (required)
   * `:command` argv vector (default `(bb-command)`)
   * `:dir`, `:env`  passed to the process
+  The worker gets a fresh nonce as its last argument and prefixes its
+  protocol lines with it (`brisk.protocol/prefix-for`), so a child process
+  of a test that writes to the inherited stdout can never forge an event.
   Returns a handle `{:id :proc :in}` for `send!`, `stop!` and `kill!`."
   [{:keys [queue command dir env]} id]
-  (let [proc (p/process (or command (bb-command))
+  (let [nonce (new-nonce)
+        prefix (protocol/prefix-for nonce)
+        proc (p/process (conj (vec (or command (bb-command))) nonce)
                         (cond-> {:in :pipe :out :pipe :err :pipe}
                           dir (assoc :dir dir)
                           env (assoc :extra-env env)))
         worker {:id id :out (:out proc) :err (:err proc)}
-        readers [(daemon-thread #(pump! queue worker :stdout protocol/decode-line))
+        readers [(daemon-thread #(pump! queue worker :stdout
+                                        (partial protocol/decode-line prefix)))
                  (daemon-thread #(pump! queue worker :stderr
-                                        (fn [line] {:kind :output :text line})))]]
+                                        (fn [line] [{:kind :output :text line}])))]]
     (daemon-thread
      (fn []
        (let [code (:exit @proc)

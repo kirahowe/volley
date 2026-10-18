@@ -13,7 +13,7 @@
   (prop/for-all [ev g/gen-event]
     (let [line (protocol/encode-event ev)]
       (and (not (re-find #"[\n\r]" line))
-           (= {:kind :event :event ev} (protocol/decode-line line))))))
+           (= [{:kind :event :event ev}] (protocol/decode-line line))))))
 
 (def ^:private gen-print-bindings
   "Values a test may bind or `set!` the print vars to."
@@ -32,7 +32,7 @@
     (let [line (with-bindings user
                  (with-bindings protocol/safe-print-bindings
                    (protocol/encode-event ev)))]
-      (= {:kind :event :event ev} (protocol/decode-line line)))))
+      (= [{:kind :event :event ev}] (protocol/decode-line line)))))
 
 (defspec values-encode-the-same-whatever-the-print-vars 200
   (prop/for-all [v g/gen-edn
@@ -50,13 +50,53 @@
 
 (defspec decode-line-is-total 500
   (prop/for-all [line g/gen-line]
-    (let [r (protocol/decode-line line)]
-      (case (:kind r)
-        :event (and (map? (:event r)) (keyword? (:event (:event r))))
-        :output (and (= line (:text r))
-                     (or (not (contains? r :protocol-error))
-                         (str/starts-with? line protocol/event-prefix)))
-        false))))
+    (every? (fn [r]
+              (case (:kind r)
+                :event (and (map? (:event r)) (keyword? (:event (:event r))))
+                :output (and (string? (:text r))
+                             (or (not (contains? r :protocol-error))
+                                 (and (= line (:text r))
+                                      (str/starts-with? line protocol/event-prefix))))
+                false))
+            (protocol/decode-line line))))
+
+(defn- read-lines
+  "`text` split as `BufferedReader/readLine` splits it (the pool's
+  `line-seq`): at `\\r\\n`, `\\r` or `\\n`, with no trailing empty line."
+  [text]
+  (let [lines (str/split text #"\r\n|\r|\n" -1)]
+    (cond-> lines (= "" (peek lines)) pop)))
+
+(def ^:private nonce "c0ffee42")
+
+(def ^:private gen-foreign
+  "What a child process that inherited the protocol pipe might write: any
+  text, with or without newlines, partial prefixes, and the prefix of a
+  worker that has no nonce (or another nonce) with a broken payload."
+  (gen/one-of [gen/string
+               gen/string-ascii
+               (gen/elements ["\n" "\r" "\r\n" "" "#brisk/ev" "#brisk/event" "#brisk/event:"
+                              "stopping db..." "#brisk/event {:oops" "#brisk/event:c0ffee"
+                              "#brisk/event:deadbeef {:event :ns/end}" "{:event :ns/end}"])
+               (gen/fmap #(str "#brisk/event " %) gen/string)]))
+
+(defspec interleaved-foreign-output-never-loses-an-event 500
+  ;; A test's child process inherits the worker's stdout and writes to it
+  ;; whenever it likes, newline or not; every event still arrives once.
+  (prop/for-all [chunks (gen/vector (gen/one-of [(gen/fmap (fn [ev] [:event ev]) g/gen-event)
+                                                 (gen/fmap (fn [s] [:foreign s]) gen-foreign)])
+                                    0 12)]
+    (let [prefix (protocol/prefix-for nonce)
+          stream (apply str (map (fn [[kind x]]
+                                   (if (= :event kind) (protocol/frame-event prefix x) x))
+                                 chunks))
+          messages (mapcat #(protocol/decode-line prefix %) (read-lines stream))
+          foreign (keep (fn [[kind x]] (when (= :foreign kind) x)) chunks)]
+      (and (= (keep (fn [[kind x]] (when (= :event kind) x)) chunks)
+              (keep :event messages))
+           (not-any? :protocol-error messages)
+           (= (str/replace (apply str foreign) #"[\r\n]" "")
+              (apply str (keep :text messages)))))))
 
 (defspec decode-command-is-total 300
   (prop/for-all [line g/gen-line]
@@ -91,22 +131,35 @@
 
 (deftest stray-output-examples
   (testing "plain text is output"
-    (is (= {:kind :output :text "hello"} (protocol/decode-line "hello"))))
+    (is (= [{:kind :output :text "hello"}] (protocol/decode-line "hello"))))
   (testing "a malformed prefixed line stays visible as output, flagged"
-    (let [r (protocol/decode-line "#brisk/event {:event")]
+    (let [[r & more] (protocol/decode-line "#brisk/event {:event")]
+      (is (nil? more))
       (is (= :output (:kind r)))
       (is (= "#brisk/event {:event" (:text r)))
       (is (string? (:protocol-error r)))))
   (testing "prefixed but not an event map"
-    (is (:protocol-error (protocol/decode-line "#brisk/event [1 2]")))
-    (is (:protocol-error (protocol/decode-line "#brisk/event {:no-event 1}"))))
-  (testing "the prefix counts only at the start of a line"
-    (doseq [line ["note: #brisk/event {:event :ns/end}" " #brisk/event {:event :ns/end}"
-                  "x#brisk/event {:event"]]
-      (is (= {:kind :output :text line} (protocol/decode-line line)))))
-  (testing "nil and empty"
-    (is (= {:kind :output :text ""} (protocol/decode-line nil)))
-    (is (= {:kind :output :text ""} (protocol/decode-line "")))))
+    (is (:protocol-error (first (protocol/decode-line "#brisk/event [1 2]"))))
+    (is (:protocol-error (first (protocol/decode-line "#brisk/event {:no-event 1}")))))
+  (testing "text before the prefix is a child's partial line, the event still counts (probe inheritio)"
+    (is (= [{:kind :output :text "stopping db..."} {:kind :event :event {:event :ns/end}}]
+           (protocol/decode-line "stopping db...#brisk/event {:event :ns/end}")))
+    (is (= [{:kind :event :event {:event :ns/end}} {:kind :output :text " tail"}]
+           (protocol/decode-line "#brisk/event {:event :ns/end} tail"))))
+  (testing "a broken payload after foreign text is not a protocol error"
+    (is (= [{:kind :output :text "x#brisk/event {:event"}]
+           (protocol/decode-line "x#brisk/event {:event"))))
+  (testing "with a nonce, the bare prefix a child prints is plain output (probe watchdog)"
+    (let [prefix (protocol/prefix-for "abc123")]
+      (is (= [{:kind :output :text "#brisk/event {:oops"}]
+             (protocol/decode-line prefix "#brisk/event {:oops")))
+      (is (= [{:kind :output :text "#brisk/event:zzz {:event :ns/end}"}]
+             (protocol/decode-line prefix "#brisk/event:zzz {:event :ns/end}")))
+      (is (= [{:kind :event :event {:event :ns/end}}]
+             (protocol/decode-line prefix (protocol/encode-event prefix {:event :ns/end}))))))
+  (testing "nil and empty lines give nothing: events are framed by newlines"
+    (is (= [] (protocol/decode-line nil)))
+    (is (= [] (protocol/decode-line "")))))
 
 (deftest ->event-flattens-messages
   (let [ctx {:worker 3 :at 99 :stream :stdout}]

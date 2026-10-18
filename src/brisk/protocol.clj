@@ -2,8 +2,9 @@
   "Encode and decode the messages between the parent and its workers.
 
   Parent to worker: one EDN map per line (`encode-command`).
-  Worker to parent: one `#brisk/event `-prefixed EDN map per line
-  (`encode-event`). Any other line is stray output.
+  Worker to parent: one prefixed EDN map per line (`frame-event`), the
+  prefix carrying a nonce the parent gave the worker (`prefix-for`). Any
+  other text is stray output.
 
   Pure: printing is bounded by structurally truncating values before they
   reach the printer. The printer itself obeys the caller's print vars, so
@@ -13,8 +14,17 @@
    [clojure.string :as str]))
 
 (def event-prefix
-  "Marks a worker stdout line as a protocol event."
+  "Marks a worker stdout line as a protocol event when the worker was
+  started without a nonce."
   "#brisk/event ")
+
+(defn prefix-for
+  "The protocol prefix of a worker started with `nonce` (a string the
+  parent made up for it), or `event-prefix` when `nonce` is nil. Children
+  a test starts inherit the protocol pipe; the nonce keeps what they print
+  from ever reading as an event, whatever it says."
+  [nonce]
+  (if nonce (str "#brisk/event:" nonce " ") event-prefix))
 
 (def safe-print-bindings
   "Print vars and the values the protocol needs, for the shell to bind
@@ -56,33 +66,74 @@
 
 (defn encode-event
   "Event map -> one protocol line (prefix included, no trailing newline).
-  The result never contains a raw newline because `pr-str` escapes them."
-  [event]
-  (str event-prefix (pr-str event)))
+  The result never contains a raw newline because `pr-str` escapes them.
+  `prefix` defaults to `event-prefix`."
+  ([event] (encode-event event-prefix event))
+  ([prefix event]
+   (str prefix (pr-str event))))
+
+(defn frame-event
+  "What the worker writes for one event: the protocol line between two
+  newlines. The leading newline ends any partial line a child process
+  wrote to the inherited pipe, so it cannot glue onto the event."
+  [prefix event]
+  (str "\n" (encode-event prefix event) "\n"))
+
+(defn- read-one
+  "Read one EDN form from the start of `text`. Returns `[value rest]`,
+  where `rest` is the unread remainder of `text`."
+  [text]
+  (let [rdr (java.io.PushbackReader. (java.io.StringReader. text))
+        v (edn/read {:eof ::eof} rdr)]
+    (when (= ::eof v) (throw (ex-info "no payload" {})))
+    [v (slurp rdr)]))
+
+(defn- output [text] {:kind :output :text text})
+
+(defn- decode*
+  "`decode-line` of `text`; `whole?` is false for the remainder of a line
+  after an event, which is not the worker's own line."
+  [prefix text whole?]
+  (let [idx (when (seq text) (str/index-of text prefix))]
+    (cond
+      (= "" text) []
+      (nil? idx) [(output text)]
+      :else
+      (let [before (subs text 0 idx)
+            [v rest-text error] (try (let [[v r] (read-one (subs text (+ idx (count prefix))))]
+                                       [v r nil])
+                                     (catch Throwable e
+                                       [nil nil (or (ex-message e) (str (class e)))]))
+            error (or error
+                      (when-not (and (map? v) (keyword? (:event v)))
+                        "payload is not a map with an :event keyword"))]
+        (cond
+          (and error whole? (zero? idx)) [(assoc (output text) :protocol-error error)]
+          error [(output text)]
+          :else (cond-> (if (= "" before) [] [(output before)])
+                  true (conj {:kind :event :event v})
+                  (not (str/blank? rest-text)) (into (decode* prefix rest-text false))))))))
 
 (defn decode-line
-  "One line of worker output -> a message.
+  "One line of worker output -> a vector of messages, in order.
 
-  * `{:kind :event :event map}` for a well-formed protocol line.
-  * `{:kind :output :text line}` for anything else.
+  * `{:kind :event :event map}` for a well-formed protocol event.
+  * `{:kind :output :text str}` for anything else.
 
-  A line that carries the prefix but whose payload is not a map with an
-  `:event` keyword is kept as output, with `:protocol-error msg` added, so
+  The prefix (`prefix`, default `event-prefix`) may appear anywhere in the
+  line: what precedes it is output (a partial line a child process wrote
+  to the inherited pipe), and so is anything after the event's map. An
+  empty line gives no message, because the worker frames each event with
+  newlines on both sides.
+
+  A line that starts with the prefix but whose payload is not a map with
+  an `:event` keyword stays output, with `:protocol-error msg` added, so
   nothing the worker printed is lost and the parent can flag the breakage.
+  When the prefix is not at the start of the line, the line is not wholly
+  the worker's and a payload that does not parse is plain output.
   Total: never throws, accepts nil."
-  [line]
-  (let [text (str line)]
-    (if-not (str/starts-with? text event-prefix)
-      {:kind :output :text text}
-      (try
-        (let [v (edn/read-string (subs text (count event-prefix)))]
-          (if (and (map? v) (keyword? (:event v)))
-            {:kind :event :event v}
-            {:kind :output :text text
-             :protocol-error "payload is not a map with an :event keyword"}))
-        (catch Throwable e
-          {:kind :output :text text
-           :protocol-error (or (ex-message e) (str (class e)))})))))
+  ([line] (decode-line event-prefix line))
+  ([prefix line] (decode* prefix (str line) true)))
 
 (defn ->event
   "Turn a decoded message into the flat event the parent's loop consumes.

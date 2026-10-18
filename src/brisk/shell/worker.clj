@@ -486,10 +486,11 @@
   (java.io.OutputStreamWriter. out "UTF-8"))
 
 (defn- make-emit
-  "Emit function writing whole protocol lines to `out`, atomically."
-  [^java.io.Writer out]
+  "Emit function writing whole protocol lines with `prefix` to `out`,
+  atomically, each framed by newlines (`brisk.protocol/frame-event`)."
+  [^java.io.Writer out prefix]
   (fn [event]
-    (let [^String line (safely #(str (protocol/encode-event event) "\n"))]
+    (let [^String line (safely #(protocol/frame-event prefix event))]
       (locking out
         (.write out line)
         (.flush out)))))
@@ -516,12 +517,13 @@
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
-  else a test prints goes to stderr."
-  [& _]
+  else a test prints goes to stderr. The one argument, when given, is the
+  nonce of the protocol prefix (`brisk.protocol/prefix-for`)."
+  [& [nonce]]
   (let [proto-out (utf8-writer System/out)
         stray (java.io.PrintStream. System/err true "UTF-8")
         ^java.io.Writer stray-writer (utf8-writer stray)
-        emit! (make-emit proto-out)
+        emit! (make-emit proto-out (protocol/prefix-for nonce))
         decide (resolve-decide)
         in (java.io.BufferedReader.
             (java.io.InputStreamReader. System/in "UTF-8"))]

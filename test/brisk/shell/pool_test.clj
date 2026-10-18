@@ -20,7 +20,8 @@
   (let [queue (pool/new-queue)
         w (pool/start-worker!
            {:queue queue
-            :command ["sh" "-c" "echo hi; echo '#brisk/event {:event :worker/ready}'; echo oops >&2; exit 4"]}
+            ;; the pool passes the worker its nonce as the last argument: $0 here
+            :command ["sh" "-c" "echo hi; echo \"#brisk/event:$0 {:event :worker/ready}\"; echo oops >&2; exit 4"]}
            9)
         evs (drain queue #(= :worker/exit (:event %)) 5000)
         by-event (group-by :event evs)]
@@ -36,7 +37,7 @@
 
 (deftest kill-uses-the-process-handle
   (let [queue (pool/new-queue)
-        w (pool/start-worker! {:queue queue :command ["sleep" "30"]} 1)]
+        w (pool/start-worker! {:queue queue :command ["sh" "-c" "sleep 30"]} 1)]
     (is (alive? w))
     (pool/kill! w)
     (let [exit (peek (drain queue #(= :worker/exit (:event %)) 5000))]

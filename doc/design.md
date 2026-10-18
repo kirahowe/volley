@@ -226,7 +226,16 @@ and metadata:
 
 ### Worker → parent events (stdout)
 
-Each event is one line: the prefix `#brisk/event ` followed by an EDN map.
+Each event is one line: a prefix followed by an EDN map. The pool starts
+each worker with a random nonce as its last argument, and the prefix is
+`#brisk/event:<nonce> ` (`brisk.protocol/prefix-for`; `#brisk/event `
+when a worker is started without one). The worker writes each event with
+a newline before and after it (`brisk.protocol/frame-event`), and the
+pool drops empty stdout lines. Child processes a test starts inherit the
+worker's stdout, so the leading newline ends a partial line a child left
+behind, and the nonce means nothing a child prints can pass for an event.
+`brisk.protocol/decode-line` also finds the prefix anywhere in a line:
+text before it, and any after the event's map, is output.
 Any other line on a worker's stdout or stderr is stray output; the parent
 attributes it to whatever test that worker is currently running. The parent
 adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
@@ -260,8 +269,10 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
 - `:var/skipped :reason` is whatever `brisk.select/decide` returned.
 - The pool turns every line into a flat event: worker events plus `:worker`
   and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
-  A line with the `#brisk/event ` prefix whose payload does not parse stays
-  an `:output` event and gains `:protocol-error msg`. It is never dropped:
+  A line that starts with the worker's prefix but whose payload does not
+  parse stays an `:output` event and gains `:protocol-error msg`; when
+  the prefix sits after other text, the line is not wholly the worker's
+  and stays plain output. It is never dropped:
   run-state counts it as a failure of its own (`:protocol-error`, and the
   namespace the worker held fails), and the engine prints a notice the
   moment it arrives. Because the lost line may have been the `:ns/end`, a
