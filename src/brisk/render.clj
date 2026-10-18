@@ -418,6 +418,7 @@
                    "  worker exited with code " (:exit-code f))
     :file-error "ns form could not be read"
     :worker-error (str "worker " (:worker f) "  a hook failed as it shut down")
+    (:fail :error) (str (qualified ns var) (when-not var "  in a :once fixture"))
     :protocol-error (str (if ns (qualified ns var) (str "worker " (:worker f)))
                          "  a message from the worker could not be read")
     (qualified ns var)))
@@ -469,6 +470,8 @@
        (when check (check-lines opts f))
        (when (#{:error :ns-error :worker-error} kind) (error-lines opts error 0))
        (when (= :protocol-error kind) (protocol-error-lines opts f))
+       (when-let [vs (seq (:not-run-vars f))]
+         [(paint opts :yellow (str "not run: " (str/join ", " (map ext vs))))])
        (when output? (output-section opts (:output f))))))))
 
 (defn protocol-notice
@@ -521,7 +524,9 @@
     (case (rs/ns-result rec)
       :passed  (str "(" (plural (count vars) "test")
                     (when (pos? skipped) (str ", " skipped " skipped")) ")")
-      :failed  (str "(" failed "/" (count vars) " failed)")
+      :failed  (if (zero? failed)
+                 "(failed in a fixture)"
+                 (str "(" failed "/" (count vars) " failed)"))
       :error   (case (:phase rec) :run "(fixture failed)" :setup "(worker setup failed)" "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
       :interrupted (str "(interrupted by fail-fast, " (count vars) " done)")

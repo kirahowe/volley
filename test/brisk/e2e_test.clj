@@ -266,3 +266,24 @@
     (let [{:keys [exit err]} (run "default" ["--plugin" "cloverage" "--cov-output" "cov" "--no-cov-html"])]
       (is (= 1 exit))
       (is (str/includes? err "--cov-output ignored: :kaocha.plugin/cloverage is not supported")))))
+
+(deftest assertions-in-fixtures-count-like-kaocha
+  (let [[exit res] (result "fixture-assertions" [])
+        {:keys [out]} (run "fixture-assertions" [])]
+    (is (= 3 exit) "one :once fixture failure, one :each failure per test")
+    (testing "kaocha.type.var: an :each fixture's assertions count for the test it wraps"
+      (is (= {:status :failed :pass 1 :fail 1 :error 0} (dissoc (get-in res [:vars 'fa.each-test/a]) :reason))))
+    (testing "a :once fixture's assertions count for the namespace, not a phantom test"
+      (is (= #{'fa.each-test/a 'fa.each-test/b 'fa.once-test/a} (set (keys (:vars res)))))
+      (is (= :failed (get-in res [:namespaces 'fa.once-test]))))
+    (is (str/starts-with? (e2e/summary-line out) "3 tests | 1 passed | 2 failed | 0 errors | 0 skipped (7 assertions"))
+    (is (str/includes? out "FAIL  fa.once-test  in a :once fixture"))))
+
+(deftest a-throwing-each-fixture-lists-the-tests-it-kept-from-running
+  (let [[exit res] (result "each-fixture-throws" [])
+        {:keys [out]} (run "each-fixture-throws" [])]
+    (is (= 1 exit))
+    (is (= {'et.a-test/a :passed 'et.a-test/b :passed} (executed res)))
+    (is (= {:status :skipped :reason :fixture-failed :pass 0 :fail 0 :error 0}
+           (get-in res [:vars 'et.a-test/c])))
+    (is (str/includes? out "not run: c, d"))))

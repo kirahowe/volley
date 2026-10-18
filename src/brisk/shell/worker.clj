@@ -233,27 +233,32 @@
             :output (some-> capture capture-text)})))
 
 (defn- count-and-emit!
-  "Count a `:pass`/`:fail`/`:error` against the open var and emit the
+  "Count a `:pass`/`:fail`/`:error` against the open var, or, outside any
+  var (in a `:once` fixture), count a pass in `outside`, and emit the
   assertion event for failures."
-  [acc emit! ns-sym m]
+  [acc outside emit! ns-sym m]
   (let [kind (:type m)
         open (:var @acc)]
-    (when open (swap! acc update kind inc))
+    (cond
+      open (swap! acc update kind inc)
+      (= :pass kind) (swap! outside inc))
     (when (#{:fail :error} kind)
       (emit! (assertion-event ns-sym open (reverse t/*testing-contexts*) m)))))
 
 (defn- make-report
   "A `clojure.test/report` replacement. clojure.test reports through a
   callback with no return channel, so the open var's counters live in `acc`,
-  an atom local to one `run-vars!` call. It runs inside the test's dynamic
-  scope, so values are printed with `safely`."
-  [acc emit! ns-sym capture?]
+  an atom local to one `run-vars!` call, and passes outside any var in
+  `outside`. A var opens before its `:each` fixtures run and closes after
+  them (`run-vars!`), so what a fixture asserts counts for the var it
+  wraps, as in Kaocha; `:begin-test-var` and `:end-test-var` are ignored.
+  It runs inside the test's dynamic scope, so values are printed with
+  `safely`."
+  [acc outside emit! ns-sym]
   (fn [m]
     (safely
      #(case (:type m)
-        :begin-test-var (start-var! acc emit! ns-sym capture? (:var m))
-        :end-test-var (end-var! acc emit! ns-sym)
-        (:pass :fail :error) (count-and-emit! acc emit! ns-sym m)
+        (:pass :fail :error) (count-and-emit! acc outside emit! ns-sym m)
         nil))))
 
 (defn- test-vars!
@@ -285,27 +290,40 @@
   `run-tests`, and the per-namespace and per-var hooks of `hs`. With
   `fail-fast?` the rest of the vars are not run once one fails, as Kaocha
   stops at the first failure. Returns `[hs error]`: error is nil, or the
-  Throwable that escaped (a failing fixture or hook, for instance)."
+  Throwable that escaped (a failing fixture or hook, for instance). The
+  vars it kept from running are sent as skipped with reason
+  `:fixture-failed`, so none of them vanishes. The third element is the
+  number of passing assertions made outside any var."
   [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
   (let [acc (atom nil)
+        outside (atom 0)
+        reached (volatile! #{})
         counts #(:ended @acc)
         run-var (fn [v test!]
                   (reset! acc nil)
-                  (let [r (hooks/run-var hs ns-sym v test! counts)]
+                  (vswap! reached conj v)
+                  (let [test! (fn []
+                                (start-var! acc emit! ns-sym capture? v)
+                                (try (test!) (finally (safely #(end-var! acc emit! ns-sym)))))
+                        r (hooks/run-var hs ns-sym v test! counts)]
                     (when (:kaocha.testable/skip r)
                       (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))
                     r))
-        stop? (fn [r] (and fail-fast? (failed? r)))]
+        stop? (fn [r] (and fail-fast? (failed? r)))
+        abandon! (fn []
+                   (doseq [v vars :when (not (contains? @reached v))]
+                     (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
     (try
-      (binding [t/report (hooks/report-fn hs (make-report acc emit! ns-sym capture?))
+      (binding [t/report (hooks/report-fn hs (make-report acc outside emit! ns-sym))
                 *out* *out*
                 *err* *err*]
         (try
-          [(first (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))) nil]
+          [(first (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))) nil @outside]
           (catch ^:sci/error Throwable e
-            (end-var! acc emit! ns-sym)
-            [hs e])))
-      (catch ^:sci/error Throwable e [hs e]))))
+            (safely #(end-var! acc emit! ns-sym))
+            (abandon!)
+            [hs e @outside])))
+      (catch ^:sci/error Throwable e (abandon!) [hs e @outside]))))
 
 (defn- error-event
   "`phase` is `:setup` for a worker setup or run-level hook that failed,
@@ -375,7 +393,8 @@
     [hs select]))
 
 (defn- run-loaded
-  "Run the vars of loaded namespace `ns`. Returns `[hs error phase]`."
+  "Run the vars of loaded namespace `ns`. Returns `[hs error phase pass]`,
+  `pass` counting the passing assertions outside any var."
   [hs emit! decide {:keys [ns capture-output? fail-fast? suite preload] :as cmd}]
   (let [hs (hooks/before-run hs suite)]
     (if-let [e (hooks/setup-error hs)]
@@ -386,10 +405,14 @@
             (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
-        (let [[hs e] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
-                                                         :fail-fast? (boolean fail-fast?)}
-                                run)]
-          [hs e :run])))))
+        (if (empty? run)
+          ;; Nothing selected: like Kaocha, which does not run a namespace
+          ;; whose tests are all skipped, run no fixtures either.
+          [hs nil :run 0]
+          (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
+                                                                :fail-fast? (boolean fail-fast?)}
+                                       run)]
+            [hs e :run pass]))))))
 
 (defn run-assignment!
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
@@ -407,15 +430,16 @@
    (let [t0 (System/nanoTime)]
      (emit! {:event :ns/start :ns ns :run-id run-id})
      (let [hs (hooks/setup hs suite)
-           [hs error phase] (if-let [e (hooks/setup-error hs)]
+           [hs error phase pass] (if-let [e (hooks/setup-error hs)]
                               [hs e :setup]
                               (let [hs (preload! hs (:preload cmd))
                                     [hs e] (load-ns hs suite ns)]
                                 (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
        (when error
          (emit! (error-event ns run-id phase error)))
-       (emit! {:event :ns/end :ns ns :run-id run-id
-               :duration-ms (duration-ms t0 (System/nanoTime))})
+       (emit! (cond-> {:event :ns/end :ns ns :run-id run-id
+                       :duration-ms (duration-ms t0 (System/nanoTime))}
+                (and pass (pos? pass)) (assoc :pass pass)))
        hs))))
 
 ;; ---------------------------------------------------------------------------

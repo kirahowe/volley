@@ -96,8 +96,10 @@
 
 (deftest fixture-failure-is-an-ns-error
   (let [events (run-events 'exec.once-error-test)]
-    (is (= [:ns/start :ns/error :ns/end] (map :event events)))
-    (is (= "once fixture failed" (get-in events [1 :error :message])))))
+    (is (= [:ns/start :var/skipped :ns/error :ns/end] (map :event events)))
+    (is (= :fixture-failed (:reason (first (filter #(= :var/skipped (:event %)) events))))
+        "the var the fixture kept from running is listed")
+    (is (= "once fixture failed" (get-in events [2 :error :message])))))
 
 (deftest once-and-each-fixtures-run-like-clojure-test
   (let [events (run-events 'exec.fixtures-test)]

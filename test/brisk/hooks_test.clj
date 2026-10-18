@@ -30,11 +30,13 @@
                      n (:kaocha.result/tests s)
                      v (:kaocha.result/tests n)]
                  v)
-          sum (fn [k] (reduce + (keep k vars)))
+          ;; like Kaocha's totals, the result leaves out what :once fixtures assert
+          outside (map rs/ns-counts (remove rs/unselected? (vals (:namespaces state))))
+          sum (fn [k ok] (+ (reduce + (keep k vars)) (reduce + (map ok outside))))
           {:keys [assertions]} (rs/summary state)]
-      (and (= (:passed assertions) (sum :kaocha.result/pass))
-           (= (:failed assertions) (sum :kaocha.result/fail))
-           (= (:errored assertions) (sum :kaocha.result/error))
+      (and (= (:passed assertions) (sum :kaocha.result/pass :pass))
+           (= (:failed assertions) (sum :kaocha.result/fail :fail))
+           (= (:errored assertions) (sum :kaocha.result/error :error))
            (= (count (mapcat (comp vals :vars) (vals (:namespaces state)))) (count vars))))))
 
 (deftest testables-have-kaochas-shape

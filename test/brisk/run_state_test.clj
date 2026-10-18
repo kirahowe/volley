@@ -48,7 +48,7 @@
            (= (:failed assertions) (failed-count events :fail))
            (= (:errored assertions) (failed-count events :error))
            (= (:passed assertions)
-              (reduce + (keep #(when (= :var/end (:event %)) (:pass %)) events)))))))
+              (reduce + (keep #(when (#{:var/end :ns/end} (:event %)) (:pass %)) events)))))))
 
 (defspec exit-code-is-zero-iff-nothing-failed runs
   (prop/for-all [r gr/run]

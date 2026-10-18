@@ -104,3 +104,11 @@
       (is (= 1 bexit))
       (is (= :crashed (get-in bres [:namespaces 'ez.exits-test])))
       (is (= :passed (get-in bres [:namespaces 'ez.survivor-test]))))))
+
+(deftest once-fixture-assertion-divergence
+  (testing "Kaocha prints a failing assertion in a :once fixture but leaves it out of the exit code; brisk counts it"
+    (let [[kexit kres] (kaocha "fixture-assertions" [])
+          [bexit bres] (brisk "fixture-assertions" [])]
+      (is (= (comparable kres) (comparable bres)) ":each fixture assertions count for the var in both")
+      (is (= 2 kexit))
+      (is (= 3 bexit)))))

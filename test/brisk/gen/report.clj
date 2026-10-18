@@ -134,6 +134,10 @@
     (gen/let [n (gen/choose 0 4)
               load-error? (gen/frequency [[1 (gen/return true)] [6 (gen/return false)]])
               vars (apply gen/tuple (map #(var-script ns %) (range n)))
+              ;; assertions of a :once fixture, outside every var
+              once-types (gen/frequency [[5 (gen/return [])] [1 (gen/vector (gen/elements [:fail :error]) 1 2)]])
+              once (apply gen/tuple (map #(assertion-event ns nil %) once-types))
+              once-pass (gen/frequency [[5 (gen/return nil)] [1 (gen/choose 1 3)]])
               err error
               duration (gen/choose 1 9000)]
       (if load-error?
@@ -141,8 +145,10 @@
          {:event :ns/error :ns ns :run-id i :error err}
          {:event :ns/end :ns ns :run-id i :duration-ms duration}]
         (concat [{:event :ns/start :ns ns :run-id i}]
+                once
                 (apply concat vars)
-                [{:event :ns/end :ns ns :run-id i :duration-ms duration}])))))
+                [(cond-> {:event :ns/end :ns ns :run-id i :duration-ms duration}
+                   once-pass (assoc :pass once-pass))])))))
 
 (defn- stamp [worker start events]
   (vec (map-indexed (fn [k e] (assoc e :worker worker :at (+ start (* 10 k))))

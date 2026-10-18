@@ -94,12 +94,13 @@
                                  (update :vars crash-running-vars))))
         (set-worker worker idle))))
 
-(defn- on-ns-end [state {:keys [worker ns at duration-ms]}]
+(defn- on-ns-end [state {:keys [worker ns at duration-ms pass]}]
   (-> state
       (update-in [:namespaces ns]
-                 #(-> ((ns-record ns) %)
-                      (update :status (fn [s] (if (#{:error :crashed} s) s :done)))
-                      (assoc :end-at at :duration-ms duration-ms)))
+                 #(cond-> (-> ((ns-record ns) %)
+                              (update :status (fn [s] (if (#{:error :crashed} s) s :done)))
+                              (assoc :end-at at :duration-ms duration-ms))
+                    pass (assoc :pass pass)))
       (set-worker worker idle)))
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
@@ -111,9 +112,15 @@
 (def ^:private assertion-keys
   [:type :message :contexts :expected :actual :file :line :error :check :at])
 
-(defn- on-assertion [state e]
-  (update-in state (var-path e)
-             #(update ((var-record e) %) :assertions conj (select-keys e assertion-keys))))
+(defn- on-assertion
+  "A failed assertion counts for its var, or, made outside any var (in a
+  `:once` fixture), for the namespace."
+  [state {:keys [ns var] :as e}]
+  (if (some? var)
+    (update-in state (var-path e)
+               #(update ((var-record e) %) :assertions conj (select-keys e assertion-keys)))
+    (update-in state [:namespaces ns]
+               #(update ((ns-record ns) %) :assertions (fnil conj []) (select-keys e assertion-keys)))))
 
 (defn- on-var-end [state {:keys [worker at pass fail error duration-ms output] :as e}]
   (-> state
@@ -240,14 +247,21 @@
        (remove #(or (nil? %) (str/blank? %)))
        (str/join "\n")))
 
+(defn ns-counts
+  "Assertions a namespace made outside its vars (in `:once` fixtures):
+  `{:pass n :fail n :error n}`."
+  [{:keys [pass assertions]}]
+  (let [n (fn [t] (count (filter #(= t (:type %)) assertions)))]
+    {:pass (or pass 0) :fail (n :fail) :error (n :error)}))
+
 (defn ns-result
   "One of :running, :passed, :failed, :error, :crashed, :interrupted."
-  [{:keys [status vars protocol-error?]}]
+  [{:keys [status vars protocol-error? assertions]}]
   (case status
     :error   :error
     :crashed :crashed
     :interrupted :interrupted
-    :done    (if (or protocol-error?
+    :done    (if (or protocol-error? (seq assertions)
                      (some (comp #{:failed :errored :crashed} var-status) (vals vars)))
                :failed
                :passed)
@@ -264,8 +278,8 @@
   macros are invisible to it. Kaocha does not report such a namespace
   (`kaocha.testable/run-testable` skips a group whose tests are all
   skipped), so it is neither listed nor counted."
-  [{:keys [status vars protocol-error? assertions]}]
-  (and (= :done status) (not protocol-error?) (empty? assertions)
+  [{:keys [status vars protocol-error? assertions pass]}]
+  (and (= :done status) (not protocol-error?) (empty? assertions) (not (pos? (or pass 0)))
        (every? #(and (= :skipped (:phase %)) (contains? filter-reasons (:reason %))) (vals vars))))
 
 (defn- all-vars [state]
@@ -282,7 +296,7 @@
          ns-freq  (frequencies (map ns-result nses))
          vars     (counted-vars state)
          var-freq (frequencies (map var-status vars))
-         counts   (map var-counts vars)
+         counts   (concat (map var-counts vars) (map ns-counts nses))
          sum      (fn [k] (reduce + (map k counts)))
          seen     (set (keys (:namespaces state)))
          pending  (count (remove seen (:planned state)))
@@ -325,8 +339,10 @@
                    " counted by the worker, but the details never arrived"
                    " (the protocol line was lost or could not be read)")}))
 
-(defn- assertion-failures [{:keys [ns vars]}]
+(defn- assertion-failures [{:keys [ns vars stray] :as rec}]
   (concat
+   (for [[idx a] (map-indexed vector (:assertions rec))]
+     (assoc a :kind (:type a) :ns ns :var nil :idx idx :output (str/join "\n" stray)))
    (for [v (vals vars)
          [idx a] (map-indexed vector (:assertions v))]
      (assoc a :kind (:type a) :ns ns :var (:var v) :idx idx
@@ -336,8 +352,11 @@
 
 (defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase]}]
   (case status
-    :error   [{:kind :ns-error :ns ns :error error :worker worker :phase phase
-               :output (str/join "\n" stray)}]
+    :error   [(cond-> {:kind :ns-error :ns ns :error error :worker worker :phase phase
+                       :output (str/join "\n" stray)}
+                (some #(= :fixture-failed (:reason %)) (vals vars))
+                (assoc :not-run-vars (vec (sort (keep #(when (= :fixture-failed (:reason %)) (:var %))
+                                                      (vals vars))))))]
     :crashed (let [v (first (filter #(= :crashed (var-status %)) (vals vars)))]
                [{:kind :crash :ns ns :var (:var v) :exit-code exit-code :worker worker
                  :message (:reason error)

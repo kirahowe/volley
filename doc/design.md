@@ -238,7 +238,8 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 {:event :var/end       :ns ns :var sym :pass int :fail int :error int
                        :duration-ms num :output str-or-nil}
 {:event :var/skipped   :ns ns :var sym :reason (:pending | :skip-meta | ...)}
-{:event :ns/end        :ns ns :run-id n :duration-ms num}
+{:event :ns/end        :ns ns :run-id n :duration-ms num
+                       :pass n}                    ; only when a :once fixture asserted
 {:event :worker/error  :phase :shutdown :error err}   ; a shutdown hook threw; one failure
 {:event :worker/warning :message str}                ; printed once per run, e.g. an unused focus-meta key
 ```
@@ -325,6 +326,14 @@ location. The exception then reaches the worker wrapped in an ExceptionInfo
 with `:sci.impl/callstack` in its data; the worker reports the wrapped
 cause (its class, message and data) with the wrapper's call stack. The JVM
 keeps its own stack trace.
+
+A test var opens (`:var/start`) before its `:each` fixtures run and
+closes (`:var/end`) after them, so an assertion in an `:each` fixture
+counts for that var, as in Kaocha. An assertion in a `:once` fixture has
+`:var nil` and counts for the namespace; the passing ones arrive as
+`:pass` in the namespace's `:ns/end`. A namespace with no var to run
+(all skipped by the filters, or pending) runs no fixtures, as Kaocha
+does not run a namespace whose tests are all skipped.
 
 `:capture-output?` means the worker binds `*out*`/`*err*` per test and
 returns the text in `:var/end`; the parent shows it only for failed tests.
@@ -728,6 +737,14 @@ difference:
   whatever the code, and the run goes on.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
   escape and exits with a stack trace. brisk reports a namespace error.
+- **An assertion in a `:once` fixture.** Kaocha prints a failing one
+  but leaves it out of its counts and the exit code, since its totals
+  add up the vars. brisk counts it for the namespace, in the summary and
+  in the exit code. (Assertions in an `:each` fixture count for the test
+  they wrap in both.)
+- **An `:each` fixture that throws.** Kaocha lets the exception end the
+  run. brisk reports a namespace error and lists the tests the fixture
+  kept from running as skipped (reason `:fixture-failed`).
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; brisk counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).

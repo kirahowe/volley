@@ -149,20 +149,27 @@
     [:testcase {:name (str (:ns g)) :classname "" :time (seconds 0)}
      (failure-element g)]))
 
+(defn- outside-testcase
+  "An assertion a `:once` fixture made, outside every test."
+  [f]
+  [:testcase {:name (str (:ns f)) :classname "" :time (seconds 0)}
+   (failure-element f)])
+
 (defn- suite-element
   [run failures {:keys [omit-system-out? add-location? timestamp cwd]} idx {:keys [id namespaces files]}]
   (let [nses (set namespaces)
         recs (keep #(get-in run [:namespaces %]) namespaces)
         counted (remove rs/unselected? recs)
         vars (sort-by (juxt (comp str :ns) (comp str :var)) (mapcat (comp vals :vars) counted))
+        outside (filter #(and (nil? (:var %)) (#{:fail :error} (:kind %)) (contains? nses (:ns %))) failures)
         others (filter (fn [f]
-                         (and (not (and (:var f) (#{:fail :error} (:kind f))))
+                         (and (not (#{:fail :error} (:kind f)))
                               (not (and (= :crash (:kind f)) (:var f)))
                               (or (contains? nses (:ns f))
                                   (contains? (set files) (:file f))
                                   (and (zero? idx) (nil? (:ns f)) (nil? (:file f))))))
                        failures)
-        counts (map rs/var-counts vars)
+        counts (concat (map rs/var-counts vars) (map rs/ns-counts counted))
         sum (fn [k] (reduce + (map k counts)))
         time-ms (reduce + (keep #(or (:duration-ms %) (when (and (:start-at %) (:end-at %))
                                                          (- (:end-at %) (:start-at %))))
@@ -173,12 +180,13 @@
                      [:errors (str (+ (sum :error) (count others)
                                       (count (filter #(= :crashed (rs/var-status %)) vars))))]
                      [:failures (str (sum :fail))]
-                     [:tests (str (+ (count vars) (count others)))]
+                     [:tests (str (+ (count vars) (count outside) (count others)))]
                      [:timestamp timestamp]
                      [:time (seconds time-ms)]
                      [:package ""]]
          [:properties {}]]
         (into (map #(testcase failures cwd add-location? %) vars))
+        (into (map outside-testcase outside))
         (into (map failure-testcase others))
         (conj (into [:system-out {}] (map #(str % "\n") output))
               [:system-err {}]))))
