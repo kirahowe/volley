@@ -290,11 +290,13 @@
         decide (resolve-decide)
         in (java.io.BufferedReader.
             (java.io.InputStreamReader. System/in "UTF-8"))]
+    ;; A test that calls System/exit takes its capture buffer with it.
+    ;; Send what it printed as output on the protocol stream, which keeps
+    ;; it ordered after the test's :var/start.
     (.addShutdownHook (Runtime/getRuntime)
                       (Thread. (fn []
-                                 (when-let [c @live-capture]
-                                   (some->> (capture-text c) (.print stray))
-                                   (.flush stray)))))
+                                 (when-let [text (some-> @live-capture capture-text)]
+                                   (emit! {:event :output :text text :stream :stdout})))))
     (System/setOut stray)
     (alter-var-root #'*out* (constantly stray-writer))
     (alter-var-root #'*err* (constantly stray-writer))

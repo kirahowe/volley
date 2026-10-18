@@ -5,7 +5,8 @@
 (def once-count (atom 0))
 
 (use-fixtures :once
-  (fn [f] (swap! once-count inc) (f)))
+  ;; Reset afterwards so a second run in the same process counts afresh.
+  (fn [f] (swap! once-count inc) (f) (reset! once-count 0)))
 
 (use-fixtures :each
   (fn [f] (binding [*each* :set] (f))))

@@ -25,14 +25,19 @@
                {:pass 0 :fail 0 :error 0})))
 
 (defn- run-tests-counts
-  "What plain `clojure.test/run-tests` reports for `ns-sym`."
+  "What plain clojure.test (`test-ns`, which runs fixtures like
+  `run-tests`) counts for `ns-sym`. It reports through its own `report`,
+  so the counts stay separate from whatever runner is running this test."
   [ns-sym]
   (require ns-sym)
-  (let [summary (binding [t/*test-out* (java.io.StringWriter.)]
-                  (t/run-tests ns-sym))]
-    (select-keys summary [:pass :fail :error])))
+  (let [counts (atom {:pass 0 :fail 0 :error 0})]
+    (binding [t/report (fn [m]
+                         (when (contains? #{:pass :fail :error} (:type m))
+                           (swap! counts update (:type m) inc)))]
+      (t/test-ns ns-sym))
+    @counts))
 
-(deftest counts-match-run-tests
+(deftest counts-match-clojure-test
   (doseq [ns-sym '[exec.pass-test exec.fail-test exec.error-test exec.fixtures-test
                    exec.contexts-test exec.skip-test exec.sync-test]]
     (testing (str ns-sym)

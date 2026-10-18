@@ -1,11 +1,16 @@
 {:paths ["src"]
  :deps {}
  :tasks
- {test {:doc "Run brisk's own test suite"
+ {test {:doc "Run brisk's own test suite with brisk (tests.edn); takes brisk's flags"
         :extra-paths ["test" "dev-resources"]
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
-        :requires ([brisk.test-bootstrap :as bootstrap])
-        :task (bootstrap/run-tests! *command-line-args*)}
+        :requires ([brisk.main :as main])
+        :task (System/exit (main/run *command-line-args*))}
+  test:bootstrap {:doc "Run brisk's own test suite with plain clojure.test"
+                  :extra-paths ["test" "dev-resources"]
+                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
+                  :requires ([brisk.test-bootstrap :as bootstrap])
+                  :task (bootstrap/run-tests! *command-line-args*)}
   test:diff {:doc "Compare brisk's Kaocha-compat core against Kaocha itself (downloads Kaocha)"
              :extra-paths ["test" "dev-resources"]
              :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}

@@ -201,7 +201,9 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   prints can corrupt a protocol line. With `:capture-output?` the worker
   points `*out*`, `*err*`, `System/out` and `System/err` at one per-test
   buffer (as `kaocha.plugin.capture-output` does), so what a test prints
-  arrives in its `:var/end`. Output that escapes capture (other threads,
+  arrives in its `:var/end`. If a test exits the process, a shutdown hook
+  sends what it had printed as an `{:event :output}` protocol line, so it
+  stays ordered after that test's `:var/start`. Output that escapes capture (other threads,
   `--no-capture-output`) is stray output, attributed to whatever the worker
   is running when the line arrives; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.
