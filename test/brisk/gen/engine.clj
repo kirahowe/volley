@@ -11,7 +11,7 @@
                   [2 (gen/return [:fail])]
                   [1 (gen/return [:error])]
                   [1 (gen/return [:load-error])]
-                  [1 (gen/return [:crash])]
+                  [1 (gen/fmap (fn [code] [:crash code]) (gen/elements [0 1 137]))]
                   [1 (gen/return [:lost])]
                   [1 (gen/return [:garbled])]]))
 
@@ -124,7 +124,7 @@
                           evs (ns-events (:ns msg) fate)]
                       (if (= :crash (first fate))
                         (-> world
-                            (enqueue worker (concat evs [{:event :worker/exit :code 1}]))
+                            (enqueue worker (concat evs [{:event :worker/exit :code (second fate)}]))
                             (assoc-in [:workers worker :exiting?] true))
                         (enqueue world worker evs)))))
     :stop (let [w (get-in world [:workers worker])]

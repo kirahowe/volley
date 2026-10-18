@@ -347,6 +347,21 @@
   ran."
   (complement #{:fail-fast}))
 
+(defn- unfinished
+  "Planned namespaces that never reached a terminal status and are not
+  accounted for as not run or interrupted, `{ns :unfinished}`. During a
+  run these are the ones waiting or running. At the end there should be
+  none; one that is left (a worker that vanished without a crash being
+  reported, say) counts toward the exit code, so it cannot pass silently.
+  It is not in `failures`, which describe what went wrong in what ran."
+  [state]
+  (into (sorted-map)
+        (comp (remove #(contains? (:not-run state) %))
+              (remove #(contains? (:interrupted state) %))
+              (filter #(= :running (ns-result (get-in state [:namespaces %] {:status :running}))))
+              (map (fn [ns] [ns :unfinished])))
+        (:planned state)))
+
 (defn- not-run-failures [state]
   (for [[ns reason] (:not-run state)
         :when (counted-not-run? reason)]
@@ -392,9 +407,12 @@
                                          (vals (get-in state [:namespaces ns :vars]))))}))))
 
 (defn not-run
-  "Planned namespaces that never ran, `{ns reason}`."
+  "Planned namespaces that never ran or never finished, `{ns reason}`.
+  Reason `:unfinished` marks a namespace that is neither finished nor
+  accounted for otherwise; during a run that is every namespace still
+  waiting or running."
   [state]
-  (:not-run state))
+  (merge (:not-run state) (unfinished state)))
 
 (defn interrupted
   "Namespaces stopped part way, `{ns reason}`: with fail-fast, the ones
@@ -407,10 +425,12 @@
   "0 when nothing failed, otherwise the number of failures capped at 255,
   like Kaocha (`kaocha.runner/run`: `(min (+ error fail) 255)`). Load
   errors, unreadable files, crashed workers, protocol lines that could not
-  be read and namespaces that could not be run each count as one;
+  be read, namespaces that could not be run and planned namespaces that
+  never finished each count as one;
   assertions whose details were lost count as many as were lost."
   [state]
-  (min 255 (reduce + (map #(:lost % 1) (failures state)))))
+  (min 255 (+ (reduce + (map #(:lost % 1) (failures state)))
+              (count (unfinished state)))))
 
 (defn result
   "Plain data about the finished run, for `--print-result` and for
@@ -428,6 +448,6 @@
                      (map (fn [[ns rec]] [ns (ns-result rec)]))
                      (:namespaces state))
    :file-errors (vec (sort (keys (:file-errors state))))
-   :not-run (into (sorted-map) (:not-run state))
+   :not-run (into (sorted-map) (not-run state))
    :interrupted (into (sorted-map) (:interrupted state))
    :exit-code (exit-code state)})

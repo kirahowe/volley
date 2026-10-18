@@ -723,6 +723,7 @@
 (def ^:private not-run-reasons
   {:fail-fast  "stopped by fail-fast"
    :no-workers "no worker process could be started"
+   :unfinished "did not finish"
    :interrupted "interrupted"})
 
 (defn- wrap-words

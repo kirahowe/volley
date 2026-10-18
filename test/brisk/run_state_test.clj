@@ -51,9 +51,11 @@
   (prop/for-all [r gr/run]
     (let [events (all-events r)
           state (gr/fold (:plan r) events)
-          bad? (some #(or (#{:assertion :ns/error} (:event %)) (:protocol-error %)) events)]
+          ended (set (keep #(when (= :ns/end (:event %)) (:ns %)) events))
+          bad? (or (some #(or (#{:assertion :ns/error} (:event %)) (:protocol-error %)) events)
+                   (some #(and (= :var/end (:event %)) (pos? (+ (:fail %) (:error %)))) events)
+                   (some (complement ended) (get-in r [:plan :namespaces])))]
       (and (= (boolean bad?) (pos? (rs/exit-code state)))
-           (= (zero? (rs/exit-code state)) (empty? (rs/failures state)))
            (<= (rs/exit-code state) 255)))))
 
 (defspec failures-are-ordered runs
@@ -76,7 +78,7 @@
           exited (set (keep (fn [[id w]] (when (:exited? w) id)) (:workers state)))]
       (every? #(not (exited (:worker %))) (rs/running state)))))
 
-(def ^:private plan {:namespaces '[a-test b-test]})
+(def ^:private plan {:namespaces '[a-test]})
 
 (defn- ev [m] (merge {:worker 0 :at 1000} m))
 
@@ -116,13 +118,13 @@
     (is (= 'x (:var f)))
     (is (= "boom" (:output f)))
     (is (= 1 (rs/exit-code state)))
-    (is (= {:total 2 :passed 0 :failed 0 :errored 1 :running 0 :interrupted 0 :pending 1}
+    (is (= {:total 1 :passed 0 :failed 0 :errored 1 :running 0 :interrupted 0 :pending 0}
            (:namespaces (rs/summary state))))
     (is (empty? (rs/running state)))))
 
 (deftest worker-exit-is-informational
   (testing "an idle worker exiting non-zero is not a failure"
-    (let [state (reduce rs/apply-event (rs/init plan)
+    (let [state (reduce rs/apply-event (rs/init {:namespaces []})
                         [(ev {:event :worker/ready})
                          (ev {:event :worker/exit :code 1})])]
       (is (empty? (rs/failures state)))
@@ -134,6 +136,32 @@
       (is (empty? (rs/failures state)))
       (is (empty? (rs/running state))))))
 
+(deftest a-namespace-with-only-errors-has-failed
+  (let [state (reduce rs/apply-event (rs/init plan)
+                      [(ev {:event :ns/start :ns 'a-test})
+                       (ev {:event :var/start :ns 'a-test :var 'x})
+                       (ev {:event :assertion :ns 'a-test :var 'x :type :error})
+                       (ev {:event :var/end :ns 'a-test :var 'x :pass 0 :error 1 :duration-ms 1})
+                       (ev {:event :ns/end :ns 'a-test :duration-ms 2})])]
+    (is (= :errored (rs/var-status (get-in state [:namespaces 'a-test :vars 'x]))))
+    (is (= :failed (rs/ns-result (get-in state [:namespaces 'a-test]))))))
+
+(deftest planned-namespaces-that-never-finish-fail-the-run
+  (testing "a worker that exits 0 holding a namespace, with no crash reported"
+    (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test b-test]})
+                        [(ev {:event :ns/start :ns 'a-test})
+                         (ev {:event :var/start :ns 'a-test :var 'x})
+                         (ev {:event :worker/exit :code 0})
+                         (ev {:event :run/not-run :namespaces '[b-test] :reason :fail-fast})])]
+      (is (= '{a-test :unfinished b-test :fail-fast} (rs/not-run state)))
+      (is (empty? (rs/failures state)))
+      (is (= 1 (rs/exit-code state)))))
+  (testing "interrupted namespaces are accounted for"
+    (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
+                        [(ev {:event :ns/start :ns 'a-test})
+                         (ev {:event :run/interrupted :namespaces '[a-test] :reason :fail-fast})])]
+      (is (zero? (rs/exit-code state))))))
+
 (deftest file-errors-and-not-run-namespaces-are-failures
   (let [state (reduce rs/apply-event (rs/init plan)
                       [(ev {:event :file/error :file "test/bad_test.clj" :error "EOF"})
@@ -143,7 +171,7 @@
     (is (= 3 (rs/exit-code state)))
     (is (= '{a-test :no-workers b-test :no-workers} (rs/not-run state))))
   (testing "fail-fast leftovers are reported but do not count"
-    (let [state (rs/apply-event (rs/init plan)
+    (let [state (rs/apply-event (rs/init {:namespaces '[b-test]})
                                 (ev {:event :run/not-run :namespaces '[b-test] :reason :fail-fast}))]
       (is (empty? (rs/failures state)))
       (is (= '{b-test :fail-fast} (rs/not-run state))))))
@@ -159,7 +187,7 @@
       (is (= 255 (rs/exit-code state))))))
 
 (deftest clean-run-exits-zero
-  (let [state (reduce rs/apply-event (rs/init plan)
+  (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
                       [(ev {:event :worker/ready})
                        (ev {:event :ns/start :ns 'a-test})
                        (ev {:event :var/start :ns 'a-test :var 'x})
@@ -167,7 +195,7 @@
                        (ev {:event :ns/end :ns 'a-test :duration-ms 9})
                        (ev {:event :worker/exit :code 0})])]
     (is (zero? (rs/exit-code state)))
-    (is (= 1 (get-in (rs/summary state) [:namespaces :pending])))))
+    (is (= 0 (get-in (rs/summary state) [:namespaces :pending])))))
 
 (deftest a-shutdown-hook-error-is-one-failure
   (let [err {:class "clojure.lang.ExceptionInfo" :message "post-run hook threw" :trace []}

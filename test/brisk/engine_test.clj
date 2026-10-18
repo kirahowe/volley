@@ -204,6 +204,15 @@
     (is (str/includes? out "brisk: a message from worker 1 (running a-test) could not be read: EOF while reading"))
     (is (str/includes? out "its protocol output could not be read and it went silent"))))
 
+(deftest a-worker-exiting-0-mid-namespace-is-a-crash
+  (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
+           :fates {'a-test [:crash 0]}
+           :opts {:workers 1 :reporter :ci :width 120 :color? false :started-at 0}
+           :spawn-fails [] :hung? false :choices []}
+        {:keys [world state]} (ge/simulate w max-steps)]
+    (is (= [:crash] (map :kind (rs/failures (:run state)))))
+    (is (= 1 (:exit world)))))
+
 (deftest timings-are-saved
   (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
            :fates {'a-test [:pass 1]}

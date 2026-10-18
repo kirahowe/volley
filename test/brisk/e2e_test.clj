@@ -106,6 +106,12 @@
     (is (str/includes? out " ✓ boom.survivor-test (1 test)"))
     (is (str/starts-with? (e2e/summary-line out) "3 tests | 2 passed | 0 failed | 1 errors"))))
 
+(deftest a-worker-that-exits-0-mid-namespace-is-a-crash
+  (let [{:keys [exit out]} (run "exit-zero" ["--workers" "1"])]
+    (is (= 1 exit) "System/exit 0 in a test must not pass the run")
+    (is (str/includes? out "CRASH  ez.exits-test/exits-cleanly  worker exited with code 0"))
+    (is (str/includes? out " ✓ ez.survivor-test (1 test)"))))
+
 (deftest synchronized-namespaces-run
   (let [{:keys [exit out]} (run "serial" ["--workers" "4"])]
     (is (= 0 exit))

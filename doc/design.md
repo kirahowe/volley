@@ -318,7 +318,10 @@ A crash is counted once, from the scheduler's synthetic `:ns/error`
 creates a failure, whatever its code. A file whose ns form cannot be read
 counts as one error, as Kaocha's `load-error-testable` does. Namespaces that
 never ran are listed in the summary; they count as failures unless the
-reason is `:fail-fast`. Interrupted namespaces (status `:interrupted`)
+reason is `:fail-fast`. A planned namespace that ends the run with no
+terminal status and is neither listed as not run nor interrupted is
+listed as `:unfinished` and adds one to the exit code: a worker that
+vanished without a crash being reported cannot make a run pass. Interrupted namespaces (status `:interrupted`)
 keep the vars that finished, lose the one that was running, are listed
 in the summary, and never count as failures.
 
@@ -677,9 +680,10 @@ difference:
   raised while loading a test namespace in a `CompilerException`; babashka
   throws the `FileNotFoundException` itself. brisk reports whatever the
   worker saw, with the cause chain.
-- **A test that calls `System/exit`.** It ends Kaocha's process. In brisk
-  it ends one worker; the namespace is reported as a CRASH and the run
-  goes on.
+- **A test that calls `System/exit`.** It ends Kaocha's process, with
+  whatever code the test chose, so `(System/exit 0)` makes Kaocha pass.
+  In brisk it ends one worker; the namespace is reported as a CRASH,
+  whatever the code, and the run goes on.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
   escape and exits with a stack trace. brisk reports a namespace error.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as

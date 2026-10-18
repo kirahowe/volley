@@ -86,3 +86,14 @@
       (is (= 1 kexit))
       (is (= 3 bexit) "missing require, fixture error, unreadable file")
       (is (= #{'shop.passing-test/one 'shop.passing-test/two} (set (keys (comparable bres))))))))
+
+(deftest exit-zero-divergence
+  (testing "System/exit 0 in a test ends Kaocha's process with 0; brisk reports a crash"
+    (let [dir (e2e/copy-project "exit-zero")
+          cp (e2e/classpath (e2e/parent-classpath) "src")
+          {kexit :exit} (e2e/sh dir ["bb" "-cp" cp "-m" "kaocha.runner/-main" "--no-randomize"])
+          [bexit bres] (brisk "exit-zero" [])]
+      (is (= 0 kexit))
+      (is (= 1 bexit))
+      (is (= :crashed (get-in bres [:namespaces 'ez.exits-test])))
+      (is (= :passed (get-in bres [:namespaces 'ez.survivor-test]))))))
