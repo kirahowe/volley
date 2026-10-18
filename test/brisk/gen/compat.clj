@@ -166,7 +166,7 @@
   count as selected: Kaocha reports them instead of filtering them out."
   [plan infos]
   (let [by-ns (into {} (map (juxt :ns identity)) infos)
-        used (select/used-meta (for [ns (:preload plan)
+        used (select/used-meta (for [ns (map :ns (:preload plan))
                                      :let [i (by-ns ns)]
                                      m (cons (:meta i) (vals (real-vars i)))]
                                  m))]

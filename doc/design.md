@@ -181,7 +181,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
           :ns-meta {...}    ; from brisk.select/plan; workers call select/decide
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
           :variants {[k ...] passes-or-:excluded}}  ; visible statically (see below)
- :preload [ns ...]          ; only then (or with --preload): require these first
+ :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
  :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
@@ -789,7 +789,11 @@ difference:
   only when both happen to land in the same worker in the right order.
   `--preload` (or `:preload? true` in tests.edn) makes each worker require
   every planned namespace before running any, as Kaocha does, at the cost
-  of loading everything once per worker.
+  of loading everything once per worker. It goes suite by suite: before
+  the first namespace of a suite loads, the worker runs that suite's
+  `:brisk/worker-setup` and load hooks (`brisk.shell.hooks/setup`). A
+  namespace that fails to load then is a warning (`--preload could not
+  load ...`, once per run); its own run reports the error.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; brisk counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).

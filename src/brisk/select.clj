@@ -382,8 +382,8 @@
   \"No such suite\" message). `select-spec` is for `decide`.
 
   When a focus-meta key is carried by no test the parser can see, every
-  spec gets `:resolve-focus-meta [k]` and the plan `:preload [ns ...]`,
-  every namespace of the run's suites: the workers load all of them before
+  spec gets `:resolve-focus-meta [k]` and the plan `:preload [{:ns sym
+  :suite id}]`, every namespace of the run's suites with its suite: the workers load all of them before
   running anything and settle the keys with `resolve-focus-meta`."
   [config ns-infos cli-suites]
   (let [suites (:tests config)
@@ -419,5 +419,6 @@
       (seq unresolved)
       (assoc :preload (into [] (comp (filter #(contains? (set pre-loaded) (:id %)))
                                      (filter #(= :kaocha.type/clojure.test (:type %)))
-                                     (mapcat :infos) (map :ns) (distinct))
+                                     (mapcat (fn [node] (map (fn [i] {:ns (:ns i) :suite (:id node)})
+                                                             (:infos node)))))
                             nodes)))))

@@ -139,7 +139,7 @@
           plan (select/plan config corpus [])
           used (select/used-meta (mapcat #(cons (:meta %) (vals (g/real-vars %))) corpus))]
       (and (= (all-ids corpus) (selected plan corpus))
-           (= (set (map :ns corpus)) (set (:preload plan)))
+           (= (set (map :ns corpus)) (set (map :ns (:preload plan))))
            (every? #(= [:absent] (:dropped (select/resolve-focus-meta (:select %) used)))
                    (mapcat :namespaces (:suites plan)))))))
 
@@ -261,7 +261,7 @@
           spec (:select (first (:namespaces (first (:suites plan)))))]
       (is (= (all-ids infos) (conj (selected plan infos) :app.a-test/three :app.a-test/four)))
       (is (= [:nobody-has-this] (:resolve-focus-meta spec)) "no visible test has it: workers settle it")
-      (is (= ['app.a-test 'app.b-test 'app.c-test] (:preload plan)))
+      (is (= ['app.a-test 'app.b-test 'app.c-test] (map :ns (:preload plan))))
       (is (= {:select (dissoc spec :resolve-focus-meta :variants) :dropped []}
              (select/resolve-focus-meta spec #{:nobody-has-this}))
           "a macro-defined test carries it after all")

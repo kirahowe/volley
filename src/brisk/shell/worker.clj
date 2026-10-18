@@ -351,17 +351,38 @@
       [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj)) nil])
     (catch Throwable e [hs e])))
 
+(defn- preload-suite!
+  "Set up `suite` (its worker setup and load hooks, as before any of its
+  namespaces loads), then require `nses`. A namespace that fails to load
+  is warned about; its own run reports the error. Returns the next hook
+  state; after a setup error nothing more is loaded."
+  [hs emit! suite nses]
+  (let [hs (hooks/setup hs suite)]
+    (when-not (hooks/setup-error hs)
+      (doseq [ns nses]
+        (try (require ns)
+             (catch Throwable e
+               (emit! {:event :worker/warning
+                       :message (str "--preload could not load " ns ": " (.getName (class e))
+                                     (when-let [m (ex-message e)] (str ": " m)))})))))
+    hs))
+
 (defn- preload!
-  "Require every namespace in `preload` once per worker, before the first
-  test runs (`--preload`, or focus-meta keys only the loaded tests can
-  settle). Load errors are left for the namespace's own run to report.
-  Returns the next state."
-  [hs preload]
+  "Require every namespace in `preload` (`[{:ns sym :suite id}]`, in plan
+  order) once per worker, before the first test runs (`--preload`, or
+  focus-meta keys only the loaded tests can settle). Each suite is set up
+  before its namespaces load, as Kaocha loads suite by suite. Returns the
+  next state."
+  [hs emit! preload]
   (if (or (empty? preload) (::preloaded? hs))
     hs
-    (do (doseq [ns preload]
-          (try (require ns) (catch Throwable _ nil)))
-        (assoc hs ::preloaded? true))))
+    (-> (reduce (fn [hs entries]
+                  (if (hooks/setup-error hs)
+                    (reduced hs)
+                    (preload-suite! hs emit! (:suite (first entries)) (map :ns entries))))
+                hs
+                (partition-by :suite preload))
+        (assoc ::preloaded? true))))
 
 (defn- loaded-metas
   "Metadata of the namespaces in `nses` that are loaded and of their test
@@ -392,7 +413,7 @@
   as Kaocha warns about it. Returns `[hs select]`."
   [hs emit! select preload]
   (if-let [[resolve used-meta warning] (when (seq (:resolve-focus-meta select)) @resolve-focus-meta)]
-    (let [{select :select dropped :dropped} (resolve select (used-meta (loaded-metas preload)))
+    (let [{select :select dropped :dropped} (resolve select (used-meta (loaded-metas (map :ns preload))))
           new (remove (::warned hs #{}) dropped)]
       (doseq [k new]
         (emit! {:event :worker/warning :message (warning k)}))
@@ -444,7 +465,7 @@
         [hs error phase pass] (cond
                                 bind-error [hs bind-error :setup]
                                 (hooks/setup-error hs) [hs (hooks/setup-error hs) :setup]
-                                :else (let [hs (preload! hs (:preload cmd))
+                                :else (let [hs (preload! hs emit! (:preload cmd))
                                             [hs e] (load-ns hs suite ns)]
                                         (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
     (when error

@@ -140,6 +140,16 @@
                 (array-map)
                 (plan-namespaces plan))))
 
+(defn- preload-list
+  "What each worker requires before its first test, `[{:ns sym :suite id}]`
+  in plan order, each namespace once: the plan's `:preload`, and with
+  `preload?` every planned namespace."
+  [plan entries preload?]
+  (->> (concat (:preload plan) (when preload? (map #(select-keys % [:ns :suite]) entries)))
+       (reduce (fn [[seen out] e] (if (seen (:ns e)) [seen out] [(conj seen (:ns e)) (conj out e)]))
+               [#{} []])
+       second))
+
 (defn init
   "Initial loop state.
 
@@ -178,8 +188,7 @@
                :shown nil
                :dirty #{}
                :nses nses
-               :preload (vec (distinct (concat (:preload plan)
-                                               (when (:preload? opts) (map :ns entries)))))
+               :preload (preload-list plan entries (:preload? opts))
                :junit-suites (mapv (fn [s] {:id (:id s)
                                             :namespaces (mapv :ns (:namespaces s))
                                             :files (mapv :file (:load-errors s))})
