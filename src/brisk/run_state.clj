@@ -318,3 +318,22 @@
   run each count as one."
   [state]
   (min 255 (count (failures state))))
+
+(defn result
+  "Plain data about the finished run, for `--print-result` and for
+  comparing against Kaocha: per-var status and counts keyed by fully
+  qualified symbol, per-namespace result, unreadable files, namespaces that
+  never ran, and the exit code."
+  [state]
+  {:vars (into (sorted-map)
+               (map (fn [v]
+                      [(symbol (str (:ns v)) (str (:var v)))
+                       (cond-> (assoc (var-counts v) :status (var-status v))
+                         (:reason v) (assoc :reason (:reason v)))]))
+               (all-vars state))
+   :namespaces (into (sorted-map)
+                     (map (fn [[ns rec]] [ns (ns-result rec)]))
+                     (:namespaces state))
+   :file-errors (vec (sort (keys (:file-errors state))))
+   :not-run (into (sorted-map) (:not-run state))
+   :exit-code (exit-code state)})

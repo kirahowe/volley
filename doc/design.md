@@ -71,6 +71,7 @@ Pure core:
 | `brisk.protocol` | Encode and decode messages between parent and worker. |
 | `brisk.run-state` | Fold events into the run's state: counts, failures, durations, exit code. |
 | `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
+| `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
 | `brisk.watch` | Watch-mode UI state machine: keypresses and file changes → commands. |
 
 Shell:
@@ -244,6 +245,39 @@ counts as one error, as Kaocha's `load-error-testable` does. Namespaces that
 never ran are listed in the summary; they count as failures unless the
 reason is `:fail-fast`.
 
+### Engine inputs and effects (`brisk.engine`)
+
+Inputs are the flat events from the queue plus `{:event :tick :at ms}`,
+which `brisk.main` feeds whenever 80ms pass (the poll timeout, or after an
+event if the queue never goes quiet). Effects:
+
+```clojure
+{:effect :spawn :worker id}
+{:effect :send :worker id :msg {:op :run ...}}
+{:effect :stop :worker id}          ; clean shutdown request
+{:effect :kill :worker id}          ; 5s after the run, for workers still alive
+{:effect :print :lines [str] :stream :out|:err}
+{:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
+{:effect :save-timings :timings {ns ms}}
+{:effect :exit :code n}             ; always last; the state is then :done
+```
+
+The loop runs in phases: `:running` (the scheduler hands out work),
+`:draining` (the scheduler is done; leftovers are folded as
+`:run/not-run`, every worker is told to stop, and the engine waits for
+their exits, killing them after 5s and giving up 5s later), then `:done`
+after the final report. The reporter decides what is shown: `:live`
+(redrawn frame, failure report and summary at the end), `:ci` (a line per
+finished namespace with its failures, then the summary), `:documentation`
+(Kaocha's documentation layout, failures and summary at the end) and
+`:result` (`--print-result`: one EDN map from `brisk.run-state/result`).
+
+`preflight` returns Kaocha's exit codes: config errors (including an
+unreadable tests.edn) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
+(-2), help/version/print-config/print-test-plan 0, and an empty plan prints
+Kaocha's "No tests were found" warning and exits 0. A run exits with
+`brisk.run-state/exit-code`.
+
 ## Behaviour notes
 
 - **Pooling vs isolation.** By default each worker takes namespaces from the
@@ -268,3 +302,22 @@ reason is `:fail-fast`.
   `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
   closest brisk reporter), `--plugin` (warn), `--print-config`,
   `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--runtime bb|jvm`.
+
+## Decisions
+
+Choices made where Kaocha gives no answer or brisk cannot match it
+exactly. Each is the conservative option.
+
+- **Overlapping suites.** When two suites select the same namespace,
+  Kaocha runs it twice. brisk runs it once, with the first suite's
+  selection, because run state is keyed by namespace.
+- **Colour.** Kaocha colours output even when piped. brisk colours only
+  when stdout is a terminal or `--color` is given explicitly, and never
+  when `NO_COLOR` is set, so CI logs stay plain unless asked.
+- **Unreadable tests.edn.** Kaocha lets the reader exception escape. brisk
+  prints the error and exits 250, the code Kaocha uses for invalid config.
+- **Namespaces that never ran.** When no worker can be started, every
+  namespace left in the queue counts as one failure, so a broken
+  environment can never exit 0. Fail-fast leftovers are listed but not
+  counted.
+- **`--runtime jvm`** is accepted and warns; workers run on babashka.

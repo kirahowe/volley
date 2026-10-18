@@ -72,6 +72,16 @@
       {:file (:file vm) :line (or (:line m) (:line vm))}
       :else {:file (:file vm) :line (:line vm)})))
 
+(defn relative-path
+  "`file` relative to directory `dir` when it lies inside it, else as is."
+  [dir file]
+  (let [prefix (str dir java.io.File/separator)]
+    (if (and (string? file) (string? dir) (.startsWith ^String file prefix))
+      (subs file (count prefix))
+      file)))
+
+(defn- rel [file] (relative-path (System/getProperty "user.dir") file))
+
 (defn assertion-event
   "Event for a failing or erroring clojure.test report map `m`, raised
   inside var `v` (nil outside any var) with `contexts` outermost first."
@@ -89,7 +99,7 @@
      :actual (if error?
                {:str (str (.getName (class actual)) ": " (ex-message actual))}
                (protocol/encode-value actual))
-     :file (:file loc)
+     :file (rel (:file loc))
      :line (:line loc)
      :error (when error? (protocol/encode-error (Throwable->map actual)))}))
 
@@ -131,7 +141,7 @@
       (System/setOut (:stream capture))
       (System/setErr (:stream capture)))
     (emit! {:event :var/start :ns ns-sym :var (:name m)
-            :file (:file m) :line (:line m)})))
+            :file (rel (:file m)) :line (:line m)})))
 
 (defn- end-var!
   "Close the open var (if any), restoring output, and emit `:var/end`."

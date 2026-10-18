@@ -668,15 +668,36 @@
    :no-workers "no worker process could be started"
    :interrupted "interrupted"})
 
+(defn- wrap-words
+  "Joins `words` with \", \" into lines of at most `width` columns, each
+  starting with `indent`. A word longer than a line gets a line of its own."
+  [words indent width]
+  (let [room (max 1 (- width (count indent)))]
+    (->> (reduce (fn [lines w]
+                   (let [cur (peek lines)
+                         candidate (if (str/blank? cur) w (str cur ", " w))]
+                     (if (or (str/blank? cur) (<= (visible-width candidate) room))
+                       (conj (pop lines) candidate)
+                       (conj (pop lines) (str cur ",") w))))
+                 [""]
+                 words)
+         (remove str/blank?)
+         (map #(str indent %)))))
+
+(def ^:private max-not-run-listed 50)
+
 (defn- not-run-lines [opts state]
-  (let [by-reason (group-by val (rs/not-run state))]
-    (when (seq by-reason)
-      (cons (paint opts :yellow "Not run:")
-            (for [[reason entries] (sort-by (comp str key) by-reason)
-                  :let [nses (sort (map (comp str key) entries))]]
-              (str "  " (get not-run-reasons reason (name reason)) ": "
-                   (str/join ", " (take 20 nses))
-                   (when (> (count nses) 20) (str " … " (- (count nses) 20) " more"))))))))
+  (let [by-reason (group-by val (rs/not-run state))
+        width (:width opts default-width)]
+    (mapcat (fn [[reason entries]]
+              (let [nses (sort (map (comp str key) entries))
+                    shown (take max-not-run-listed nses)
+                    more (- (count nses) (count shown))]
+                (concat
+                 [(paint opts :yellow (str "Not run (" (get not-run-reasons reason (name reason)) "):"))]
+                 (wrap-words (map ext shown) "  " width)
+                 (when (pos? more) [(str "  … and " more " more")]))))
+            (sort-by (comp str key) by-reason))))
 
 (defn summary
   "Final block: the counts line, namespaces that never ran, the five slowest
