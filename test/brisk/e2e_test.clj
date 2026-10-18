@@ -221,3 +221,23 @@
       (is (str/includes? out "CRASH  sp.crash-test/crashes-with-a-daemon  worker exited with code 1"))
       (is (str/includes? out " ✓ sp.daemon-test (1 test)"))
       (is (< elapsed 8000) "neither the crash nor the shutdown waited for the 20s daemons"))))
+
+(deftest filters-reach-tests-the-parser-cannot-see
+  (testing "--focus on a macro-defined var"
+    (let [[exit res] (result "generated" ["--focus" "g.gen-test/generated"])]
+      (is (= 0 exit))
+      (is (= '{g.gen-test/generated :passed} (executed res)))))
+  (testing "--focus-meta carried only by macro-defined vars"
+    (let [{:keys [exit out err]} (run "generated" ["--focus-meta" ":integration"])]
+      (is (= 0 exit))
+      (is (str/includes? (e2e/summary-line out) "| 2 passed | 0 failed"))
+      (is (not (str/includes? err "No tests found with metadata key")))
+      (is (not (str/includes? out "g.plain-test")) "a namespace with nothing selected is not listed")))
+  (testing "a focus-meta key no test carries is ignored with Kaocha's warning, once"
+    (let [{:keys [exit out err]} (run "generated" ["--focus-meta" ":nobody" "--workers" "3"])]
+      (is (= 1 exit))
+      (is (str/starts-with? (e2e/summary-line out) "6 tests | 5 passed | 1 failed"))
+      (is (= 1 (count (re-seq #"No tests found with metadata key :nobody" err))))))
+  (testing "namespaces the focus does not reach are not listed"
+    (let [{:keys [out]} (run "generated" ["--focus" "g.plain-test" "--focus" "g.gen-test"])]
+      (is (not (str/includes? out "g.only-gen-test"))))))

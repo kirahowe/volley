@@ -175,6 +175,8 @@
                :run run
                :shown nil
                :nses nses
+               :preload (vec (:preload plan))
+               :warned #{}
                :opts opts
                :durations (or durations {})
                :phase :running
@@ -193,11 +195,12 @@
 ;; ---------------------------------------------------------------------------
 ;; Scheduling decisions
 
-(defn- run-message [{:keys [nses opts]} ns-sym]
+(defn- run-message [{:keys [nses opts preload]} ns-sym]
   (let [{:keys [select run-id suite]} (get nses ns-sym)]
     (cond-> {:op :run :ns ns-sym :run-id run-id :select select
              :capture-output? (boolean (:capture-output? opts true))}
       suite (assoc :suite suite)
+      (seq preload) (assoc :preload preload)
       (:fail-fast? opts) (assoc :fail-fast? true))))
 
 (defn- decide
@@ -240,13 +243,17 @@
 
 (defn- notice
   "Lines to show as soon as `ev` arrives, whatever the reporter: a protocol
-  line that could not be read."
-  [state {:keys [protocol-error worker] :as ev}]
-  (when (and (= :output (:event ev)) protocol-error)
+  line that could not be read, or a worker's warning (each text once per
+  run, since every worker may send it)."
+  [state {:keys [protocol-error worker message] :as ev}]
+  (cond
+    (and (= :output (:event ev)) protocol-error)
     [(render/protocol-notice {:worker worker
                               :ns (sched/holding (:sched state) worker)
                               :reason protocol-error}
-                             (render-opts state false))]))
+                             (render-opts state false))]
+    (and (= :worker/warning (:event ev)) (not (contains? (:warned state) message)))
+    [(str "WARNING: " message)]))
 
 (defn- flush-notices
   "Append-only reporters print notices at once, on stderr; the live view
@@ -408,6 +415,7 @@
         crash (sched/crash-events (:sched state) ev)]
     (-> state
         (update :notices into (notice state ev))
+        (cond-> (= :worker/warning (:event ev)) (update :warned conj (:message ev)))
         (watch-protocol ev)
         (update :sched sched/handle-event ev)
         (update :run #(reduce rs/apply-event % (conj (vec crash) ev))))))

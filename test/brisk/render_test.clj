@@ -104,7 +104,9 @@
           opts {:width 300 :color? false :now 5000}
           emitted (transition-emits (:plan r) (conj (vec events) {:event :noop}) opts)
           final (gr/fold (:plan r) events)
-          done (filter #(not= :running (rs/ns-result %)) (vals (:namespaces final)))]
+          done (->> (vals (:namespaces final))
+                    (filter #(not= :running (rs/ns-result %)))
+                    (remove rs/unselected?))]
       (every? (fn [rec]
                 (= 1 (count (filter #(re-find (re-pattern (str "^ [✓✗] " (:ns rec) " ")) %) emitted))))
               done))))
@@ -327,7 +329,9 @@
                       (recur st (rs/apply-event st e) more out)
                       out)))
           final (gr/fold (:plan r) events)
-          done (filter #(not= :running (rs/ns-result %)) (vals (:namespaces final)))]
+          done (->> (vals (:namespaces final))
+                    (filter #(not= :running (rs/ns-result %)))
+                    (remove rs/unselected?))]
       (every? (fn [rec] (= 1 (count (filter #(re-find (re-pattern (str "^" (:ns rec) "( |$)")) %) lines))))
               done))))
 

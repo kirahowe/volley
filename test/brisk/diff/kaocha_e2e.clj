@@ -65,7 +65,14 @@
                           ["serial" []]
                           ["failures" []]
                           ["failures" ["--focus" "shop.errors-test"]]
-                          ["print-vars" []]]]
+                          ["print-vars" []]
+                          ["generated" []]
+                          ["generated" ["--focus" "g.gen-test/generated"]]
+                          ["generated" ["--focus-meta" ":integration"]]
+                          ["generated" ["--focus-meta" ":integration" "--focus-meta" ":slow"]]
+                          ["generated" ["--focus-meta" ":nobody"]]
+                          ["generated" ["--focus" "g.plain-test" "--focus" "g.gen-test"]]
+                          ["generated" ["--skip-meta" ":integration"]]]]
     (same-run? project args)))
 
 (deftest fail-fast-stops-after-the-failing-var-like-kaocha

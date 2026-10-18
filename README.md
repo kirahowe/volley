@@ -113,6 +113,13 @@ randomize, print-invocations, profiling and hooks, and reporters other than
 `kaocha.report/documentation`. The other reporters fall back to brisk's
 own output.
 
+brisk finds test namespaces by reading their source, so it cannot see
+tests that a macro defines. Filters still reach them, because each worker
+decides on the real vars and their metadata. A `--focus-meta` key that no
+test visible in the source carries makes every worker load every test
+namespace before running anything, which Kaocha does anyway, to find out
+whether some test carries it.
+
 `--fail-fast` stops at the first failure: other workers are killed and
 their namespaces are listed as interrupted, and no test after the failing
 one runs. Where brisk behaves differently from Kaocha on purpose (a

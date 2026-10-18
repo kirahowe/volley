@@ -253,16 +253,35 @@
                :passed)
     :running))
 
+(def ^:private filter-reasons
+  "Skip reasons that mean the filters did not select a var."
+  #{:skip :skip-meta :not-focused})
+
+(defn unselected?
+  "True for a namespace that finished without running or reporting
+  anything because the filters selected none of its vars (or it has
+  none). The plan cannot always tell beforehand, since tests defined by
+  macros are invisible to it. Kaocha does not report such a namespace
+  (`kaocha.testable/run-testable` skips a group whose tests are all
+  skipped), so it is neither listed nor counted."
+  [{:keys [status vars protocol-error? assertions]}]
+  (boolean
+   (and (= :done status) (not protocol-error?) (empty? assertions)
+        (every? #(and (= :skipped (:phase %)) (contains? filter-reasons (:reason %))) (vals vars)))))
+
 (defn- all-vars [state]
   (mapcat (comp vals :vars) (vals (:namespaces state))))
+
+(defn- counted-vars [state]
+  (mapcat (comp vals :vars) (remove unselected? (vals (:namespaces state)))))
 
 (defn summary
   "Counts for the run so far. `now` defaults to the latest event time."
   ([state] (summary state (:now state)))
   ([state now]
-   (let [nses     (vals (:namespaces state))
+   (let [nses     (remove unselected? (vals (:namespaces state)))
          ns-freq  (frequencies (map ns-result nses))
-         vars     (all-vars state)
+         vars     (counted-vars state)
          var-freq (frequencies (map var-status vars))
          counts   (map var-counts vars)
          sum      (fn [k] (reduce + (map k counts)))

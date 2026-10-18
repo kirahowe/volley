@@ -32,8 +32,11 @@
 (defspec summary-counts-are-consistent runs
   (prop/for-all [r gr/run]
     (let [events (all-events r)
-          s (rs/summary (gr/fold (:plan r) events))
-          started (set (keep (fn [e] (when (#{:var/start :var/skipped} (:event e))
+          state (gr/fold (:plan r) events)
+          s (rs/summary state)
+          hidden (set (keep (fn [[ns rec]] (when (rs/unselected? rec) ns)) (:namespaces state)))
+          started (set (keep (fn [e] (when (and (#{:var/start :var/skipped} (:event e))
+                                                (not (hidden (:ns e))))
                                        [(:ns e) (:var e)]))
                              events))
           {:keys [vars assertions]} s]

@@ -543,6 +543,7 @@
 (defn- newly-finished [prev state]
   (->> (vals (:namespaces state))
        (filter finished?)
+       (remove rs/unselected?)
        (remove #(some-> (get-in prev [:namespaces (:ns %)]) finished?))
        (sort-by (juxt #(or (:end-at %) 0) #(str (:ns %))))))
 

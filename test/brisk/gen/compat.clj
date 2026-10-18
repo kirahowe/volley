@@ -2,6 +2,7 @@
   "Generators for the Kaocha-compatibility namespaces: cli, config, discover,
   select and deps-graph."
   (:require
+   [brisk.select :as select]
    [clojure.string :as str]
    [clojure.test.check.generators :as gen]))
 
@@ -129,16 +130,47 @@
 ;; Corpus of namespace infos
 
 (def ns-info
-  "A static namespace info for a test namespace."
+  "A static namespace info for a test namespace. `:hidden` holds the vars a
+  macro defines, which exist at run time but which `brisk.discover` cannot
+  see."
   (gen/let [nm ns-sym
             nm-meta meta-map
-            vars (gen/map var-sym meta-map {:max-elements 4})]
+            vars (gen/map var-sym meta-map {:max-elements 4})
+            hidden (gen/frequency [[3 (gen/return {})]
+                                   [1 (gen/map (gen/fmap #(symbol (str "gen-" %)) var-sym)
+                                               meta-map {:max-elements 2})]])]
     {:file (str "test/" (str/replace (str nm) "." "/") ".clj")
      :ns nm
      :requires #{}
      :as-alias-only #{}
      :meta nm-meta
-     :vars vars}))
+     :vars vars
+     :hidden hidden}))
+
+(defn real-vars
+  "Every test var of `info` at run time: the static ones and the hidden."
+  [info]
+  (merge (:vars info) (:hidden info)))
+
+(defn worker-selected
+  "Ids (`:ns/var` keywords) of the vars workers would run for `plan`: each
+  planned namespace's real vars, decided with `brisk.select/decide` after
+  the spec's focus-meta keys are settled against the real metadata of
+  every namespace in the plan's `:preload`, as a worker does. Pending vars
+  count as selected: Kaocha reports them instead of filtering them out."
+  [plan infos]
+  (let [by-ns (into {} (map (juxt :ns identity)) infos)
+        used (select/used-meta (for [ns (:preload plan)
+                                     :let [i (by-ns ns)]
+                                     m (cons (:meta i) (vals (real-vars i)))]
+                                 m))]
+    (into #{}
+          (for [{:keys [namespaces]} (:suites plan)
+                {:keys [ns select]} namespaces
+                :let [spec (:select (select/resolve-focus-meta select used))]
+                [v m] (real-vars (by-ns ns))
+                :when (#{:selected :pending} (:reason (select/decide spec ns v m)))]
+            (keyword (str ns) (str v))))))
 
 (def corpus
   "A vector of infos with distinct namespaces."
@@ -149,7 +181,7 @@
   "Every suite-independent id a filter could name in `corpus`."
   [corpus]
   (concat (map #(keyword (str (:ns %))) corpus)
-          (for [{:keys [ns vars]} corpus, v (keys vars)] (keyword (str ns) (str v)))))
+          (for [i corpus, v (keys (real-vars i))] (keyword (str (:ns i)) (str v)))))
 
 (defn filter-gen
   "Generates `{:focus :skip :focus-meta :skip-meta}` naming things in `corpus`

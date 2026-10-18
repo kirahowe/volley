@@ -163,7 +163,10 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
 {:op :run :ns 'my.app-test :run-id 3
  :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
                     :suite-focused? bool}]
-          :ns-meta {...}}   ; from brisk.select/plan; workers call select/decide
+          :ns-meta {...}    ; from brisk.select/plan; workers call select/decide
+          :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
+          :variants {[k ...] passes-or-:excluded}}  ; visible statically (see below)
+ :preload [ns ...]          ; only then (or with --preload): require these first
  :capture-output? true
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
 {:op :configure                               ; right after spawn, only when hooks or setup exist
@@ -177,6 +180,33 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
 
 `:run` messages also carry `:suite`, the id of the suite the namespace was
 planned under.
+
+**Tests the parser cannot see.** `brisk.discover` sees only literal
+`deftest`, `deftest-` and `defspec` forms, but any macro call can define
+tests, so the parent's plan treats every namespace as possibly holding
+more tests than it shows, and workers decide per var with the real vars
+and metadata:
+
+- A `--focus` on `ns/var` keeps namespace `ns` in the plan even when the
+  parser shows no such var; a focus on another namespace's var does not.
+- Every namespace may hold a macro-defined test with any metadata, so a
+  `--focus-meta` keeps every namespace in the plan.
+- Kaocha ignores a focus-meta key that no loaded test carries
+  (`remove-missing-metadata-keys`). When some key is carried by no test
+  the parser can see, only the loaded tests can tell, so the plan has a
+  `:preload` list (every namespace of the suites Kaocha would load) and
+  each select spec carries `:resolve-focus-meta` and `:variants`: the
+  passes for each set of keys that might turn out unused, computed by
+  running the filters once per set (`:excluded` where the namespace has
+  nothing left to run). A worker requires every namespace in `:preload`
+  before its first test, computes the keys its loaded tests carry
+  (`brisk.select/used-meta`), picks the variant
+  (`brisk.select/resolve-focus-meta`) and warns, once per worker, about
+  each dropped key with Kaocha's message (`:worker/warning`; the parent
+  prints each text once).
+- A namespace that finishes with every var skipped by a filter (or with
+  no vars) is not listed or counted (`brisk.run-state/unselected?`), as
+  Kaocha does not report it.
 
 ### Worker → parent events (stdout)
 
@@ -200,6 +230,7 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 {:event :var/skipped   :ns ns :var sym :reason (:pending | :skip-meta | ...)}
 {:event :ns/end        :ns ns :run-id n :duration-ms num}
 {:event :worker/error  :phase :shutdown :error err}   ; a shutdown hook threw; one failure
+{:event :worker/warning :message str}                ; printed once per run, e.g. an unused focus-meta key
 ```
 
 Passing assertions are counted in `:var/end`, not sent one by one.

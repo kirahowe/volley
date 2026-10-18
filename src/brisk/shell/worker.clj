@@ -331,13 +331,57 @@
       [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj)) nil])
     (catch Throwable e [hs e])))
 
+(defn- preload!
+  "Require every namespace in `preload` once per worker, before the first
+  test runs (`--preload`, or focus-meta keys only the loaded tests can
+  settle). Load errors are left for the namespace's own run to report.
+  Returns the next state."
+  [hs preload]
+  (if (or (empty? preload) (::preloaded? hs))
+    hs
+    (do (doseq [ns preload]
+          (try (require ns) (catch Throwable _ nil)))
+        (assoc hs ::preloaded? true))))
+
+(defn- loaded-metas
+  "Metadata of the namespaces in `nses` that are loaded and of their test
+  vars, for `brisk.select/used-meta`."
+  [nses]
+  (for [ns nses
+        :let [ns-obj (find-ns ns)]
+        :when ns-obj
+        m (cons (meta ns-obj) (map meta (test-vars-of ns-obj)))]
+    m))
+
+(def ^:private resolve-focus-meta
+  "`brisk.select/resolve-focus-meta` and `used-meta`, when brisk.select is
+  on the classpath."
+  (delay (try [(requiring-resolve 'brisk.select/resolve-focus-meta)
+               (requiring-resolve 'brisk.select/used-meta)
+               (requiring-resolve 'brisk.select/missing-meta-warning)]
+              (catch Throwable _ nil))))
+
+(defn- settle-select
+  "The select spec with its unresolved focus-meta keys settled against
+  every preloaded test. Each dropped key is warned about once per worker,
+  as Kaocha warns about it. Returns `[hs select]`."
+  [hs emit! select preload]
+  (if-let [[resolve used-meta warning] (when (seq (:resolve-focus-meta select)) @resolve-focus-meta)]
+    (let [{select :select dropped :dropped} (resolve select (used-meta (loaded-metas preload)))
+          new (remove (::warned hs #{}) dropped)]
+      (doseq [k new]
+        (emit! {:event :worker/warning :message (warning k)}))
+      [(update hs ::warned (fnil into #{}) new) select])
+    [hs select]))
+
 (defn- run-loaded
   "Run the vars of loaded namespace `ns`. Returns `[hs error phase]`."
-  [hs emit! decide {:keys [ns select capture-output? fail-fast? suite]}]
+  [hs emit! decide {:keys [ns capture-output? fail-fast? suite preload] :as cmd}]
   (let [hs (hooks/before-run hs suite)]
     (if-let [e (hooks/setup-error hs)]
       [hs e :setup]
       (let [ns-obj (find-ns ns)
+            [hs select] (settle-select hs emit! (:select cmd) preload)
             {:keys [run skipped]}
             (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]
@@ -365,7 +409,8 @@
      (let [hs (hooks/setup hs suite)
            [hs error phase] (if-let [e (hooks/setup-error hs)]
                               [hs e :setup]
-                              (let [[hs e] (load-ns hs suite ns)]
+                              (let [hs (preload! hs (:preload cmd))
+                                    [hs e] (load-ns hs suite ns)]
                                 (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
        (when error
          (emit! (error-event ns run-id phase error)))

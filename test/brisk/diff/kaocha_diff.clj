@@ -136,7 +136,8 @@
 (defn- kaocha-selected
   "Run the real kaocha.plugin.filter pre-load and post-load hooks over a tree
   built from `suites` (`[{:id :focus .. :infos [..]}]`) and return the ids of
-  the vars that survive."
+  the vars that survive. The tree has every var Kaocha would load, including
+  the `:hidden` ones brisk's parser cannot see."
   [suites global cli-suites]
   (let [suite-ts (mapv (fn [{:keys [id focus skip focus-meta skip-meta]}]
                          (cond-> {:kaocha.testable/id id
@@ -158,7 +159,7 @@
                     {:kaocha.test-plan/tests
                      (mapv (fn [t {:keys [infos]}]
                              (assoc t :kaocha.test-plan/tests
-                                    (mapv (fn [{:keys [ns meta vars]}]
+                                    (mapv (fn [{:keys [ns meta] :as info}]
                                             {:kaocha.testable/type :kaocha.type/ns
                                              :kaocha.testable/id (keyword (str ns))
                                              :kaocha.testable/meta meta
@@ -167,7 +168,7 @@
                                                      {:kaocha.testable/type :kaocha.type/var
                                                       :kaocha.testable/id (keyword (str ns) (str v))
                                                       :kaocha.testable/meta m})
-                                                   vars)})
+                                                   (g/real-vars info))})
                                           infos)))
                            (:kaocha/tests config) suites)})
         result (kf/filter-post-load-hook plan)]
@@ -185,14 +186,8 @@
                                 :infos infos})
                              suites)
                 :filters global}
-        plan (select/plan config infos cli-suites)
-        by-ns (into {} (map (juxt :ns identity)) infos)]
-    (into #{}
-          (for [{:keys [namespaces]} (:suites plan)
-                {:keys [ns select]} namespaces
-                [v m] (:vars (by-ns ns))
-                :when (#{:selected :pending} (:reason (select/decide select ns v m)))]
-            (keyword (str ns) (str v))))))
+        plan (select/plan config infos cli-suites)]
+    (g/worker-selected plan infos)))
 
 (def ^:private suites-gen
   "Two suites over disjoint namespaces, each with its own filters, plus

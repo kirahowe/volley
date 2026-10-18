@@ -23,26 +23,19 @@
   ([suite global] (g/config-for suite global)))
 
 (defn- selected
-  "Ids (`:ns/var` keywords) of the vars a plan keeps, deciding each static var
-  with `select/decide` like a worker would. Pending vars count as kept: Kaocha
-  reports them instead of filtering them out."
+  "Ids (`:ns/var` keywords) of the vars a plan's workers run (see
+  `brisk.gen.compat/worker-selected`)."
   [plan infos]
-  (let [by-ns (into {} (map (juxt :ns identity)) infos)]
-    (into #{}
-          (for [{:keys [namespaces]} (:suites plan)
-                {:keys [ns select]} namespaces
-                [v m] (:vars (by-ns ns))
-                :when (#{:selected :pending} (:reason (select/decide select ns v m)))]
-            (keyword (str ns) (str v))))))
+  (g/worker-selected plan infos))
 
 (defn- run-ids [config infos & [cli-suites]]
   (selected (select/plan config infos cli-suites) infos))
 
 (defn- all-ids [infos]
-  (set (for [{:keys [ns vars]} infos, v (keys vars)] (keyword (str ns) (str v)))))
+  (set (for [{:keys [ns] :as i} infos, v (keys (g/real-vars i))] (keyword (str ns) (str v)))))
 
 (defn- var-ids-of-ns [infos ns-ids]
-  (set (for [{:keys [ns vars]} infos, v (keys vars)
+  (set (for [{:keys [ns] :as i} infos, v (keys (g/real-vars i))
              :when (contains? ns-ids (keyword (str ns)))]
          (keyword (str ns) (str v)))))
 
@@ -119,7 +112,7 @@
   (prop/for-all [corpus g/corpus
                  key g/meta-key]
     (let [ran (run-ids (cfg {:skip-meta []} {:skip-meta [key]}) corpus)
-          tagged (set (for [{:keys [ns meta vars]} corpus, [v m] vars
+          tagged (set (for [{:keys [ns meta] :as i} corpus, [v m] (g/real-vars i)
                             :when (or (get meta key) (get m key))]
                         (keyword (str ns) (str v))))]
       (empty? (set/intersection ran tagged)))))
@@ -128,12 +121,12 @@
   (prop/for-all [corpus g/corpus
                  key g/meta-key]
     (let [ran (run-ids (cfg {:skip-meta []} {:focus-meta [key]}) corpus)
-          carriers (fn [{:keys [meta vars]}] (or (get meta key) (some #(get % key) (vals vars))))
+          carriers (fn [{:keys [meta] :as i}] (or (get meta key) (some #(get % key) (vals (g/real-vars i)))))
           present? (some carriers corpus)
           expected (if present?
-                     (set (for [{:keys [ns meta vars] :as i} corpus
+                     (set (for [{:keys [ns meta] :as i} corpus
                                 :when (carriers i)
-                                [v m] vars
+                                [v m] (g/real-vars i)
                                 :when (or (get meta key) (get m key))]
                             (keyword (str ns) (str v))))
                      (all-ids corpus))]
@@ -143,9 +136,17 @@
   (prop/for-all [corpus g/corpus]
     ;; :absent is never a generated metadata key
     (let [config (cfg {:skip-meta []} {:focus-meta [:absent]})
-          plan (select/plan config corpus [])]
+          plan (select/plan config corpus [])
+          used (select/used-meta (mapcat #(cons (:meta %) (vals (g/real-vars %))) corpus))]
       (and (= (all-ids corpus) (selected plan corpus))
-           (some #(re-find #":absent" %) (:warnings plan))))))
+           (= (set (map :ns corpus)) (set (:preload plan)))
+           (every? #(= [:absent] (:dropped (select/resolve-focus-meta (:select %) used)))
+                   (mapcat :namespaces (:suites plan)))))))
+
+(defspec focus-on-an-invisible-var-selects-it 200
+  (prop/for-all [corpus g/corpus]
+    (let [hidden (for [{:keys [ns hidden]} corpus, v (keys hidden)] (keyword (str ns) (str v)))]
+      (every? #(= #{%} (run-ids (cfg {:skip-meta []} {:focus [%]}) corpus)) hidden))))
 
 (defspec namespaces-are-ordered-by-name 200
   (prop/for-all [corpus g/corpus]
@@ -256,10 +257,21 @@
 
 (deftest missing-focus-meta-test
   (testing "remove-missing-metadata-keys: a --focus-meta key no test carries is ignored with a warning"
-    (let [plan (select/plan (cfg {} {:focus-meta [:nobody-has-this]}) infos [])]
+    (let [plan (select/plan (cfg {} {:focus-meta [:nobody-has-this]}) infos [])
+          spec (:select (first (:namespaces (first (:suites plan)))))]
       (is (= (all-ids infos) (conj (selected plan infos) :app.a-test/three :app.a-test/four)))
-      (is (= ["No tests found with metadata key :nobody-has-this. Ignoring --focus-meta :nobody-has-this."]
-             (filter #(re-find #"metadata key" %) (:warnings plan))))))
+      (is (= [:nobody-has-this] (:resolve-focus-meta spec)) "no visible test has it: workers settle it")
+      (is (= ['app.a-test 'app.b-test 'app.c-test] (:preload plan)))
+      (is (= {:select (dissoc spec :resolve-focus-meta :variants) :dropped []}
+             (select/resolve-focus-meta spec #{:nobody-has-this}))
+          "a macro-defined test carries it after all")
+      (is (= [:nobody-has-this] (:dropped (select/resolve-focus-meta spec #{:slow}))))
+      (is (= "No tests found with metadata key :nobody-has-this. Ignoring --focus-meta :nobody-has-this."
+             (select/missing-meta-warning :nobody-has-this)))))
+  (testing "a key a visible test carries needs no settling"
+    (let [plan (select/plan (cfg {} {:focus-meta [:slow]}) infos [])]
+      (is (nil? (:preload plan)))
+      (is (not-any? (comp :resolve-focus-meta :select) (mapcat :namespaces (:suites plan))))))
   (testing "the key counts as present when any selected suite carries it"
     (is (= #{:x-test/b} (run-ids (cfg {} {:focus-meta [:slow]})
                                  [(info 'x-test {'a {} 'b {:slow true}})])))))
@@ -289,11 +301,15 @@
       (is (= [{:file "test/bad_test.clj" :error "EOF"}] (:load-errors (first (:suites plan)))))))
   (testing "namespaces whose tests are all filtered out are dropped"
     (is (= ['app.b-test] (ns-names (select/plan (cfg {} {:focus [:app.b-test/one]}) infos [])))))
-  (testing "a namespace without static vars is kept, since its tests can't be seen"
+  (testing "a namespace may hold tests the parser can't see"
     (let [files [(info 'macro-test {}) (info 'plain-test {'a {}})]]
       (is (= ['macro-test 'plain-test] (ns-names (select/plan (cfg) files []))))
-      (is (= ['macro-test 'plain-test] (ns-names (select/plan (cfg {} {:focus [:plain-test/a]}) files [])))
-          "even under focus: the worker decides on the real vars")
+      (is (= ['plain-test] (ns-names (select/plan (cfg {} {:focus [:plain-test/a]}) files [])))
+          "a focus on another namespace's var cannot name its tests")
+      (is (= ['macro-test] (ns-names (select/plan (cfg {} {:focus [:macro-test/generated]}) files [])))
+          "a focus on a var the parser cannot see keeps its namespace; the worker decides")
+      (is (= ['macro-test 'plain-test] (ns-names (select/plan (cfg {} {:focus-meta [:plain]}) files [])))
+          "any namespace may hold a macro-defined test with the metadata")
       (is (= ['plain-test] (ns-names (select/plan (cfg {} {:skip [:macro-test]}) files []))))))
   (testing "suites of other types are never planned"
     (let [config (update (cfg) :tests conj {:id :cljs :type :kaocha.type/cljs :test-paths ["test"]

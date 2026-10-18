@@ -51,8 +51,9 @@
           run (:run state)]
       (every? (fn [ns]
                 (let [shown? (some #(finished-line? mode ns %) lines)
-                      not-run? (some #(str/includes? % (str ns)) not-run-lines)]
-                  (and (or shown? not-run?)
+                      not-run? (some #(str/includes? % (str ns)) not-run-lines)
+                      unselected? (some-> (get-in run [:namespaces ns]) rs/unselected?)]
+                  (and (or shown? not-run? unselected?)
                        (not (and shown? (contains? (rs/not-run run) ns))))))
               (distinct (planned w))))))
 
