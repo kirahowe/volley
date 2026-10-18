@@ -9,9 +9,9 @@
   The scheduler decides when to start and stop workers; this namespace has
   no policy of its own."
   (:require
-   [babashka.classpath :as cp]
    [babashka.process :as p]
    [brisk.protocol :as protocol]
+   [brisk.shell.runtime :as runtime]
    [clojure.java.io :as io])
   (:import
    (java.util.concurrent LinkedBlockingQueue)))
@@ -19,15 +19,9 @@
 (defn bb-command
   "Command line for a babashka worker with classpath `classpath` (default:
   the parent's)."
-  ([] (bb-command (cp/get-classpath)))
+  ([] (bb-command (runtime/parent-classpath)))
   ([classpath]
    ["bb" "-cp" (or classpath "") "-m" "brisk.shell.worker"]))
-
-(defn jvm-command
-  "Command line for a JVM Clojure worker. Not wired into the CLI yet; it
-  exists so the `:runtime :jvm` mode only has to pass it as `:command`."
-  [classpath]
-  ["java" "-cp" classpath "clojure.main" "-m" "brisk.shell.worker"])
 
 (defn- pump!
   "Read `stream` line by line, putting each as an event on `queue`."

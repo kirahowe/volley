@@ -4,11 +4,12 @@
   The flag table mirrors `kaocha.runner/cli-options` plus the options added by
   Kaocha's default plugins (filter, randomize, capture-output), the harmless
   profiling/notifier flags, and brisk's own `--workers`, `--isolate` and
-  `--runtime`. Tokenising follows `clojure.tools.cli/parse-opts` as Kaocha
+  `--runtime` and `--aliases`. Tokenising follows `clojure.tools.cli/parse-opts` as Kaocha
   calls it: options and positional arguments may be interleaved, `--` ends
   option parsing, `--opt=value` works for options that take a value, and
   `--[no-]flag` toggles. Parsing never throws; problems become `:errors`."
   (:require
+   [brisk.runtime :as runtime]
    [clojure.string :as str]))
 
 (defn- parse-kw
@@ -104,7 +105,9 @@
    {:long "isolate" :toggle? true
     :doc "Run every namespace in a fresh worker process."}
    {:long "runtime" :arg "RUNTIME" :parse parse-runtime
-    :doc "Worker runtime: bb or jvm."}])
+    :doc "Worker runtime: bb or jvm (default: the runtime brisk runs on)."}
+   {:long "aliases" :arg "ALIASES" :parse runtime/parse-aliases
+    :doc "deps.edn aliases for the classpath of --runtime jvm from babashka (default: :test if defined)."}])
 
 (defn- spec-key [{:keys [long]}] (keyword long))
 

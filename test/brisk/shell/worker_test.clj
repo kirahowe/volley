@@ -87,7 +87,9 @@
 (deftest load-error
   (let [events (run-events 'exec.load-error-test)]
     (is (= [:ns/start :ns/error :ns/end] (map :event events)))
-    (is (= "java.io.FileNotFoundException" (get-in events [1 :error :class])))
+    ;; The JVM wraps the missing-namespace error in a CompilerException.
+    (is (some #{"java.io.FileNotFoundException"}
+              (map :class (take-while some? (iterate :cause (get-in events [1 :error]))))))
     (is (= 7 (:run-id (nth events 1))))))
 
 (deftest fixture-failure-is-an-ns-error

@@ -7,7 +7,6 @@
   event queue, the worker process handles, and the frame height of the
   live view, all local to `run!`."
   (:require
-   [babashka.classpath :as cp]
    [brisk.cli :as cli]
    [brisk.config :as config]
    [brisk.discover :as discover]
@@ -15,6 +14,7 @@
    [brisk.select :as select]
    [brisk.shell.fs :as bfs]
    [brisk.shell.pool :as pool]
+   [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
    [clojure.string :as str])
   (:import
@@ -41,8 +41,6 @@
                                         (:profile options) (assoc :profile (:profile options))))
         cfg (config/normalize (:config read) options env)
         cfg (cond-> cfg
-              (= :jvm (:runtime cfg))
-              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka")
               (:watch? cfg)
               (update :warnings conj "watch mode is not implemented yet; running the tests once"))]
     {:cli parsed
@@ -58,17 +56,6 @@
        (mapcat :test-paths)
        bfs/clojure-files
        (mapv #(discover/ns-info % (bfs/read-file %)))))
-
-(defn- worker-classpath
-  "The parent's classpath plus every suite's test paths, which Kaocha adds
-  to the classpath when it loads a suite (`kaocha.testable/load`). Source
-  paths are not added: Kaocha only uses them for watching."
-  [cfg]
-  (let [extra (->> (:tests cfg)
-                   (mapcat :test-paths)
-                   (map bfs/absolute))
-        parent (some-> (cp/get-classpath) (str/split (re-pattern java.io.File/pathSeparator)))]
-    (str/join java.io.File/pathSeparator (distinct (concat parent extra)))))
 
 (defn- reporter
   "`:live` needs a terminal; anything else gets the append-only CI output.
@@ -150,9 +137,9 @@
 (defn- run-tests!
   "Start the engine on `plan` and run it to completion. Returns the exit
   code."
-  [plan cfg opts]
+  [plan command opts]
   (let [ctx {:queue (pool/new-queue)
-             :command (pool/bb-command (worker-classpath cfg))
+             :command command
              :handles (volatile! {})
              :height (volatile! 0)}
         kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))
@@ -187,8 +174,11 @@
         code (run-effects! {} effects)]
     (or code
         (let [tty? (term/tty?)
-              mode (reporter config (:options cli) tty?)]
-          (run-tests! plan config
+              mode (reporter config (:options cli) tty?)
+              {:keys [command error]} (runtime/worker-command config (:aliases (:options cli)))]
+          (if error
+            (do (print-lines! {:lines [(str "brisk: " error)] :stream :err}) 250)
+            (run-tests! plan command
                       {:workers (:workers config)
                        :fail-fast? (:fail-fast? config)
                        :isolate? (:isolate? config)
@@ -197,7 +187,7 @@
                        :width (if (= :live mode) (term/width) 1000)
                        :color? (color? config (:options cli) env tty?)
                        :durations (bfs/read-timings)
-                       :started-at (System/currentTimeMillis)})))))
+                       :started-at (System/currentTimeMillis)}))))))
 
 (defn -main
   "`bb -m brisk.main [OPTIONS]... [TEST-SUITE]...`"

@@ -3,9 +3,9 @@
   `dev-resources/projects/` to a fresh temporary directory and run a
   command there as a real subprocess."
   (:require
-   [babashka.classpath :as cp]
    [babashka.fs :as fs]
    [babashka.process :as p]
+   [brisk.shell.runtime :as runtime]
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
@@ -54,7 +54,7 @@
   "This process's classpath with every entry made absolute, so a child
   started in another directory sees the same libraries."
   []
-  (->> (str/split (or (cp/get-classpath) "") (re-pattern java.io.File/pathSeparator))
+  (->> (str/split (runtime/parent-classpath) (re-pattern java.io.File/pathSeparator))
        (remove str/blank?)
        (map #(str (fs/absolutize %)))))
 
