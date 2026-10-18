@@ -128,3 +128,37 @@
   (prop/for-all [v (gen/one-of [gen/any-equatable
                                 (gen/return {:pass? true :seed 1 :num-tests 1 :shrunk {}})])]
     (nil? (protocol/encode-check v))))
+
+(def ^:private gen-frame
+  (gen/hash-map :ns (gen/elements '[my.app my.app-test brisk.shell.worker clojure.core clojure.test sci.impl.fns nil])
+                :name (gen/elements '[parse run nil])
+                :file (gen/elements ["/proj/src/my/app.clj" "clojure/core.clj" nil])
+                :line (gen/choose 0 40)
+                :sci/built-in (gen/frequency [[4 (gen/return false)] [1 (gen/return true)]])))
+
+(defspec interpreter-trace-keeps-only-user-frames 300
+  (prop/for-all [frames (gen/vector gen-frame 0 30)]
+    (let [lines (protocol/interpreter-trace frames "/proj")]
+      (and (every? #(str/starts-with? % "my.app") lines)
+           (not-any? #(str/includes? % "/proj/") lines)
+           (<= (count lines) (count frames))
+           (every? (fn [[a b]] (not= a b)) (partition 2 1 lines))))))
+
+(deftest interpreter-trace-of-a-call-three-deep
+  ;; What sci.core/stacktrace gives for (outer 1) -> middle -> (inc (innermost x)) -> (/ x 0)
+  (let [f "/proj/src/deep/core.clj"
+        frames [{:ns 'clojure.core :name '/ :file "clojure/core.clj" :line 1022 :sci/built-in true}
+                {:ns 'deep.core :name 'innermost :file f :line 4}
+                {:ns 'deep.core :name 'innermost :file f :line 3}
+                {:ns 'deep.core :file f :line 7}
+                {:ns 'clojure.core :name 'inc :file "clojure/core.clj" :line 924 :sci/built-in true}
+                {:ns 'deep.core :name 'middle :file f :line 7}
+                {:ns 'deep.core :name 'middle :file f :line 6}
+                {:ns 'deep.core :name 'outer :file f :line 10}
+                {:ns 'deep.core-test :file "/proj/test/deep/core_test.clj" :line 6}
+                {:ns 'brisk.shell.worker :name 'run-vars! :file "brisk/shell/worker.clj" :line 250}]]
+    (is (= ["deep.core/innermost (src/deep/core.clj:4)"
+            "deep.core/middle (src/deep/core.clj:7)"
+            "deep.core/outer (src/deep/core.clj:10)"
+            "deep.core-test (test/deep/core_test.clj:6)"]
+           (protocol/interpreter-trace frames "/proj")))))

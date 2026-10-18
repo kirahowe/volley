@@ -235,6 +235,19 @@ diffs and falls back to the string. Errors (`err`) are
 `{:class str :message str :data str-or-nil :trace [str ...] :cause err-or-nil}`
 with the stack trace trimmed of runner frames.
 
+On babashka the Java stack trace of an error in a test holds only
+interpreter frames, so `brisk.shell.worker/encode-throwable` takes the
+trace from `sci.core/stacktrace` instead (`brisk.protocol/interpreter-trace`:
+`my.app/parse (src/my/app.clj:12)`, built-in and runner frames dropped).
+The interpreter records that call stack only when no interpreted
+`try`/`catch` is active where the exception passes, and the worker's own
+code is interpreted too, so the worker's catches around test execution are
+written `(catch ^:sci/error Throwable e ...)`, which tells SCI to keep the
+location. The exception then reaches the worker wrapped in an ExceptionInfo
+with `:sci.impl/callstack` in its data; the worker reports the wrapped
+cause (its class, message and data) with the wrapper's call stack. The JVM
+keeps its own stack trace.
+
 `:capture-output?` means the worker binds `*out*`/`*err*` per test and
 returns the text in `:var/end`; the parent shows it only for failed tests.
 

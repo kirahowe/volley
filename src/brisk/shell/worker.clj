@@ -97,6 +97,33 @@
       {:file (:file vm) :line (or (:line m) (:line vm))}
       :else {:file (:file vm) :line (:line vm)})))
 
+(def ^:private sci-stacktrace
+  "`sci.core/stacktrace` on babashka, else nil."
+  (delay (when (bb?)
+           (try (requiring-resolve 'sci.core/stacktrace)
+                (catch Throwable _ nil)))))
+
+(defn- unwrap
+  "The error the test raised. When an exception escapes a test body,
+  babashka wraps it in an ExceptionInfo that carries the interpreter's
+  call stack (`:sci.impl/callstack`) with the original as its cause."
+  [^Throwable e]
+  (if (and (contains? (ex-data e) :sci.impl/callstack) (ex-cause e))
+    (ex-cause e)
+    e))
+
+(defn encode-throwable
+  "Wire form of a Throwable a test raised. On babashka the JVM stack trace
+  is nothing but interpreter frames, so the trace comes from the
+  interpreter's own call stack (`sci.core/stacktrace`), which names the
+  user's functions with file and line. The JVM keeps its stack trace."
+  [^Throwable e]
+  (let [enc (protocol/encode-error (Throwable->map (unwrap e)))
+        frames (when-let [st @sci-stacktrace]
+                 (try (st e) (catch Throwable _ nil)))
+        trace (protocol/interpreter-trace frames (System/getProperty "user.dir"))]
+    (cond-> enc (seq trace) (assoc :trace trace))))
+
 (defn relative-path
   "`file` relative to directory `dir` when it lies inside it, else as is."
   [dir file]
@@ -111,7 +138,8 @@
   "Event for a failing or erroring clojure.test report map `m`, raised
   inside var `v` (nil outside any var) with `contexts` outermost first."
   [ns-sym v contexts m]
-  (let [actual (:actual m)
+  (let [raw (:actual m)
+        actual (cond-> raw (throwable? raw) unwrap)
         loc (location m (meta v))
         error? (and (= :error (:type m)) (throwable? actual))
         check (when (= :fail (:type m)) (protocol/encode-check actual))]
@@ -127,7 +155,7 @@
                        (protocol/encode-value actual))
              :file (rel (:file loc))
              :line (:line loc)
-             :error (when error? (protocol/encode-error (Throwable->map actual)))}
+             :error (when error? (encode-throwable raw))}
       check (assoc :check check))))
 
 ;; ---------------------------------------------------------------------------
@@ -251,17 +279,17 @@
         (try
           (test-vars! ns-obj vars stop?)
           nil
-          (catch Throwable e
+          (catch ^:sci/error Throwable e
             (end-var! acc emit! ns-sym)
             e)))
-      (catch Throwable e e))))
+      (catch ^:sci/error Throwable e e))))
 
 (defn- error-event
   "`phase` is `:load` for a failed require and `:run` for an error that
   escaped the tests themselves (a fixture, typically)."
   [ns-sym run-id phase e]
   {:event :ns/error :ns ns-sym :run-id run-id :phase phase
-   :error (protocol/encode-error (Throwable->map e))})
+   :error (encode-throwable e)})
 
 (defn- ns-metadata
   "The loaded namespace's metadata, over the static copy the parent read

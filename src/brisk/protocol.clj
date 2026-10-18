@@ -246,6 +246,54 @@
        (take max-frames)
        (mapv frame->str)))
 
+(def ^:private runner-namespaces
+  "Namespace prefixes of interpreter frames that belong to the runner."
+  ["brisk." "clojure.test" "clojure.core" "sci." "babashka."])
+
+(defn- relative-to [dir file]
+  (let [prefix (str dir "/")]
+    (if (and (string? dir) (string? file) (str/starts-with? file prefix))
+      (subs file (count prefix))
+      file)))
+
+(defn- drop-anonymous-call-sites
+  "The interpreter records the site of a call into a built-in as a frame
+  with no fn name, just before the frame of the fn it sits in; drop it."
+  [frames]
+  (->> (partition-all 2 1 frames)
+       (remove (fn [[f g]]
+                 (and (nil? (:name f)) g (:name g)
+                      (= (:ns f) (:ns g)) (= (:file f) (:file g)))))
+       (map first)))
+
+(defn interpreter-trace
+  "Babashka's call stack for an error (`sci.core/stacktrace`: maps with
+  `:ns :name :file :line`, innermost first) as trace lines like
+  `my.app/parse (src/my/app.clj:12)`. Built-in frames and frames of the
+  runner (brisk, clojure.test, the interpreter) are dropped, as is the
+  unnamed frame of a call into a built-in, which precedes its fn's. The
+  interpreter lists each user fn twice, the call site in its body and then
+  its definition; only the first of consecutive frames of the same fn is
+  kept. Files under `dir` are made relative to it. At most `max-frames`
+  (default 50)."
+  ([frames dir] (interpreter-trace frames dir 50))
+  ([frames dir max-frames]
+   (let [user? (fn [{:keys [ns] :as f}]
+                 (and (not (:sci/built-in f))
+                      (some? ns)
+                      (not (some #(str/starts-with? (str ns) %) runner-namespaces))))
+         render (fn [{:keys [ns name file line]}]
+                  (str ns (when name (str "/" name))
+                       " (" (or (relative-to dir file) "unknown")
+                       (when (and line (pos? line)) (str ":" line)) ")"))]
+     (->> frames
+          (filter user?)
+          drop-anonymous-call-sites
+          (partition-by (juxt :ns :name))
+          (map first)
+          (take max-frames)
+          (mapv render)))))
+
 (defn encode-error
   "`Throwable->map`-style data -> `{:class :message :data :trace :cause}`.
 
