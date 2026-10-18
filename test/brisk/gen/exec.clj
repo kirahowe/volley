@@ -21,7 +21,8 @@
                gen/char
                gen/keyword
                gen/keyword-ns
-               gen/symbol
+               ;; a symbol named nil, true or false reads back as that literal
+               (gen/such-that #(not (contains? #{"nil" "true" "false"} (name %))) gen/symbol)
                gen/symbol-ns
                gen/ratio
                gen/uuid]))
