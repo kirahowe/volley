@@ -5,7 +5,7 @@
   with the same code. Needs Kaocha on the classpath; run with `bb test:diff`.
 
   Projects whose behaviour differs on purpose (worker crashes, load errors,
-  fail-fast granularity) are listed under Decisions in doc/design.md and
+  fail-fast inside a var) are listed under Decisions in doc/design.md and
   checked here for exactly that difference."
   (:require
    [brisk.diff.kaocha-result :as kr]
@@ -67,17 +67,14 @@
                           ["failures" ["--focus" "shop.errors-test"]]]]
     (same-run? project args)))
 
-(deftest fail-fast-divergence
-  (testing "Kaocha stops at the failing assertion; brisk finishes that namespace, then stops"
+(deftest fail-fast-stops-after-the-failing-var-like-kaocha
+  (testing "kaocha.testable/run-testables stops at the first failed var; so does brisk's worker"
     (let [[kexit kres] (kaocha "fail-fast" ["--no-randomize"])
           [bexit bres] (brisk "fail-fast" ["--workers" "1"])
           ran-before {'ff.a-fails-test/after-the-failure {:status :passed :pass 1 :fail 0 :error 0}
                       'ff.a-fails-test/first-failure {:status :failed :pass 0 :fail 1 :error 0}}]
       (is (= 1 kexit bexit))
-      (is (= ran-before (comparable kres)))
-      (is (= (assoc ran-before 'ff.a-fails-test/later-in-the-namespace
-                    {:status :passed :pass 1 :fail 0 :error 0})
-             (comparable bres))))))
+      (is (= ran-before (comparable kres) (comparable bres))))))
 
 (deftest load-error-divergence
   (testing "Kaocha fails the whole suite on one unloadable namespace; brisk runs the rest"

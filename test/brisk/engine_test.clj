@@ -27,7 +27,7 @@
 (defn- finished-line? [mode ns line]
   (case mode
     :documentation (re-find (re-pattern (str "^" ns "( |$)")) line)
-    (re-find (re-pattern (str "^ [✓✗] " ns " ")) line)))
+    (re-find (re-pattern (str "^ [✓✗-] " ns " ")) line)))
 
 (defspec loop-terminates-with-an-exit runs
   (prop/for-all [w ge/gen-world]
@@ -89,6 +89,21 @@
       (and (not (contains? (:namespaces run) ge/stale-ns))
            (= (:exit world) (rs/exit-code run))
            (not-any? #(str/includes? % (str ge/stale-ns)) (printed-lines world))))))
+
+(defspec fail-fast-counts-the-failures-of-one-namespace-only runs
+  (prop/for-all [w ge/gen-world]
+    (let [w (assoc-in w [:opts :fail-fast?] true)
+          {:keys [world state]} (ge/simulate w max-steps)
+          run (:run state)
+          failing (->> (rs/failures run)
+                       (remove #(#{:file-error :not-run} (:kind %)))
+                       (map :ns)
+                       set)
+          interrupted (set (keys (rs/interrupted run)))]
+      (and (<= (count failing) 1)
+           (not-any? interrupted failing)
+           (not-any? #(contains? (rs/not-run run) %) interrupted)
+           (= (:exit world) (rs/exit-code run))))))
 
 ;;; Examples
 

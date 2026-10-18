@@ -106,7 +106,7 @@
     (is (= 'x (:var f)))
     (is (= "boom" (:output f)))
     (is (= 1 (rs/exit-code state)))
-    (is (= {:total 2 :passed 0 :failed 0 :errored 1 :running 0 :pending 1}
+    (is (= {:total 2 :passed 0 :failed 0 :errored 1 :running 0 :interrupted 0 :pending 1}
            (:namespaces (rs/summary state))))
     (is (empty? (rs/running state)))))
 

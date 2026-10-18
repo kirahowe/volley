@@ -500,15 +500,17 @@
       :failed  (str "(" failed "/" (count vars) " failed)")
       :error   (if (= :run (:phase rec)) "(fixture failed)" "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
+      :interrupted (str "(interrupted by fail-fast, " (count vars) " done)")
       "")))
 
 (defn- ns-line
   "` ✓ my.app-test (12 tests) 340ms`, or `✗` with the failed count in red."
   [opts rec]
-  (let [ok?   (= :passed (rs/ns-result rec))
-        style (if ok? :green :red)
-        dur   (ns-duration rec)]
-    (str " " (paint opts style (str (if ok? "✓" "✗") " " (ext (:ns rec))))
+  (let [result (rs/ns-result rec)
+        style  (case result :passed :green :interrupted :yellow :red)
+        mark   (case result :passed "✓" :interrupted "-" "✗")
+        dur    (ns-duration rec)]
+    (str " " (paint opts style (str mark " " (ext (:ns rec))))
          " " (paint opts :gray (ns-detail rec))
          (when dur (str " " (paint opts :gray (fmt-ms dur)))))))
 
@@ -637,6 +639,7 @@
      :error   [(str "  " (paint opts :red "✗ failed to load"))]
      :crashed (when (empty? (:vars rec))
                 [(str "  " (paint opts :red "✗ worker crashed"))])
+     :interrupted [(str "  " (paint opts :yellow "- interrupted by fail-fast"))]
      nil)
    [""]))
 
@@ -716,18 +719,25 @@
 
 (def ^:private max-not-run-listed 50)
 
-(defn- not-run-lines [opts state]
-  (let [by-reason (group-by val (rs/not-run state))
+(defn- listed-lines
+  "`Title (reason):` and the namespaces of `entries` (`{ns reason}`),
+  grouped by reason."
+  [opts title entries]
+  (let [by-reason (group-by val entries)
         width (:width opts default-width)]
     (mapcat (fn [[reason entries]]
               (let [nses (sort (map (comp str key) entries))
                     shown (take max-not-run-listed nses)
                     more (- (count nses) (count shown))]
                 (concat
-                 [(paint opts :yellow (str "Not run (" (get not-run-reasons reason (name reason)) "):"))]
+                 [(paint opts :yellow (str title " (" (get not-run-reasons reason (name reason)) "):"))]
                  (wrap-words (map ext shown) "  " width)
                  (when (pos? more) [(str "  … and " more " more")]))))
             (sort-by (comp str key) by-reason))))
+
+(defn- not-run-lines [opts state]
+  (concat (listed-lines opts "Interrupted" (rs/interrupted state))
+          (listed-lines opts "Not run" (rs/not-run state))))
 
 (defn summary
   "Final block: the counts line, namespaces that never ran, the five slowest

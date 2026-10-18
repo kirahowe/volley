@@ -260,6 +260,20 @@
              ids)
      ids]))
 
+(defn interrupt
+  "`[state' [[worker-id ns] ...]]`: give up the namespaces that busy workers
+  other than `keep` (the worker whose failure stopped the run, or nil) hold.
+  Their workers become `:retiring`, to be killed; their exit is then not a
+  crash, since they no longer hold anything. Used by fail-fast."
+  [state keep]
+  (let [taken (->> (:assignments state) (remove (fn [[w _]] (= w keep))) (sort-by key) vec)]
+    [(reduce (fn [st [w _]]
+               (-> st
+                   (update :assignments dissoc w)
+                   (set-status w :retiring)))
+             state taken)
+     taken]))
+
 (defn live-workers
   "Ids of workers that have not exited, in any status."
   [state]

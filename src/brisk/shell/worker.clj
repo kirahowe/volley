@@ -177,17 +177,18 @@
             :file (rel (:file m)) :line (:line m)})))
 
 (defn- end-var!
-  "Close the open var (if any), restoring output, and emit `:var/end`."
+  "Close the open var (if any), restoring output, and emit `:var/end`. The
+  accumulator keeps the ended var's counts under `:ended`."
   [acc emit! ns-sym]
   (when-let [{:keys [var pass fail error t0 capture saved-out saved-err
-                     saved-system-out saved-system-err]} @acc]
+                     saved-system-out saved-system-err]} (when (:var @acc) @acc)]
     (when capture
       (reset! live-capture nil)
       (set! *out* saved-out)
       (set! *err* saved-err)
       (System/setOut saved-system-out)
       (System/setErr saved-system-err))
-    (reset! acc nil)
+    (reset! acc {:ended {:pass pass :fail fail :error error}})
     (emit! {:event :var/end :ns ns-sym :var (:name (meta var))
             :pass pass :fail fail :error error
             :duration-ms (duration-ms t0 (System/nanoTime))
@@ -215,18 +216,40 @@
       (:pass :fail :error) (count-and-emit! acc emit! ns-sym m)
       nil)))
 
+(defn- test-vars!
+  "What `clojure.test/test-vars` does for the vars of one namespace: the
+  `:once` fixtures around all of them, the `:each` fixtures around each
+  `test-var`. After each var `(stop? v)` is asked whether to skip the rest
+  (the `:once` fixtures still finish)."
+  [ns-obj vars stop?]
+  (let [m (meta ns-obj)
+        once (t/join-fixtures (:clojure.test/once-fixtures m))
+        each (t/join-fixtures (:clojure.test/each-fixtures m))]
+    (once (fn []
+            (reduce (fn [_ v]
+                      (each (fn [] (t/test-var v)))
+                      (when (stop? v) (reduced nil)))
+                    nil
+                    vars)))))
+
+(defn- failed-last-var? [acc]
+  (let [{:keys [fail error]} (:ended @acc)]
+    (pos? (+ (or fail 0) (or error 0)))))
+
 (defn- run-vars!
-  "Run `vars` through `clojure.test/test-vars`, so `:once` and `:each`
-  fixtures and `testing` contexts behave exactly as in `run-tests`. Returns
-  nil, or the Throwable that escaped (a failing fixture, for instance)."
-  [emit! ns-sym capture? vars]
-  (let [acc (atom nil)]
+  "Run `vars` of `ns-obj` with fixtures and `testing` contexts as in
+  `run-tests`. With `fail-fast?` the rest of the vars are not run once one
+  fails, as Kaocha stops at the first failure. Returns nil, or the
+  Throwable that escaped (a failing fixture, for instance)."
+  [emit! ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
+  (let [acc (atom nil)
+        stop? (fn [_] (and fail-fast? (failed-last-var? acc)))]
     (try
       (binding [t/report (make-report acc emit! ns-sym capture?)
                 *out* *out*
                 *err* *err*]
         (try
-          (t/test-vars vars)
+          (test-vars! ns-obj vars stop?)
           nil
           (catch Throwable e
             (end-var! acc emit! ns-sym)
@@ -252,9 +275,11 @@
   normally `brisk.select/decide`; it gets the namespace's real metadata.
 
   Emits `:ns/start`, then `:ns/error` if loading or a fixture fails, the
-  `:var/*` and `:assertion` events, and always a final `:ns/end`. Does not
+  `:var/*` and `:assertion` events, and always a final `:ns/end`. With
+  `:fail-fast?` the vars after the first failing one are not run and get no
+  events. Does not
   exit the JVM and does not throw."
-  [emit! decide {:keys [ns run-id select capture-output?]}]
+  [emit! decide {:keys [ns run-id select capture-output? fail-fast?]}]
   (let [t0 (System/nanoTime)
         with-run (fn [ev] (assoc ev :run-id run-id))]
     (emit! {:event :ns/start :ns ns :run-id run-id})
@@ -268,7 +293,9 @@
               (doseq [[v reason] skipped]
                 (emit! {:event :var/skipped :ns ns :var (:name (meta v))
                         :reason reason}))
-              (run-vars! emit! ns (boolean capture-output?) run)))]
+              (run-vars! emit! ns ns-obj {:capture? (boolean capture-output?)
+                                          :fail-fast? (boolean fail-fast?)}
+                         run)))]
       (when run-error
         (emit! (error-event ns run-id (if load-error :load :run) run-error)))
       (emit! (with-run {:event :ns/end :ns ns

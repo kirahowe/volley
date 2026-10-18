@@ -10,8 +10,10 @@
   pool adds (`{:event :output ...}` for stray output, `{:event :worker/exit
   :code n}`), the scheduler's synthetic crash events, and two the engine
   emits: `{:event :file/error :file path :error msg}` for a test file whose
-  ns form cannot be read, and `{:event :run/not-run :namespaces [ns ...]
-  :reason kw}` for planned namespaces that never ran.
+  ns form cannot be read, `{:event :run/not-run :namespaces [ns ...]
+  :reason kw}` for planned namespaces that never ran, and
+  `{:event :run/interrupted :namespaces [ns ...] :reason :fail-fast}` for
+  namespaces whose worker was killed part way.
 
   A worker crash is recorded once, from the synthetic `:ns/error` whose
   error class is `brisk.WorkerCrashed`. `:worker/exit` only marks the worker
@@ -32,7 +34,8 @@
    :workers    {}
    :namespaces {}
    :file-errors {}
-   :not-run    {}})
+   :not-run    {}
+   :interrupted {}})
 
 (defn- min* [a b] (cond (nil? a) b (nil? b) a :else (min a b)))
 (defn- max* [a b] (cond (nil? a) b (nil? b) a :else (max a b)))
@@ -139,6 +142,20 @@
 (defn- on-not-run [state {:keys [namespaces reason]}]
   (update state :not-run into (map (fn [ns] [ns reason])) namespaces))
 
+(defn- interrupt-ns
+  "A namespace whose worker was stopped mid-run: the vars that finished
+  keep their results, the one in progress is dropped."
+  [rec ns at]
+  (-> ((ns-record ns) rec)
+      (assoc :status :interrupted :end-at at)
+      (update :vars #(into {} (remove (fn [[_ v]] (= :running (:phase v :running)))) %))))
+
+(defn- on-interrupted [state {:keys [namespaces reason at]}]
+  (let [held (set namespaces)]
+    (-> (reduce (fn [st ns] (update-in st [:namespaces ns] interrupt-ns ns at)) state namespaces)
+        (update :interrupted into (map (fn [ns] [ns reason])) namespaces)
+        (update :workers update-vals #(cond-> % (held (:ns %)) (merge idle))))))
+
 (defn apply-event
   "Folds one event into `state`. Events from one worker must arrive in that
   worker's order; events from different workers may arrive in any order.
@@ -158,6 +175,7 @@
       :worker/exit   (on-worker-exit state event)
       :file/error    (on-file-error state event)
       :run/not-run   (on-not-run state event)
+      :run/interrupted (on-interrupted state event)
       state)))
 
 ;;; Derived values
@@ -189,11 +207,12 @@
        (str/join "\n")))
 
 (defn ns-result
-  "One of :running, :passed, :failed, :error, :crashed."
+  "One of :running, :passed, :failed, :error, :crashed, :interrupted."
   [{:keys [status vars]}]
   (case status
     :error   :error
     :crashed :crashed
+    :interrupted :interrupted
     :done    (if (some (comp #{:failed :errored :crashed} var-status) (vals vars))
                :failed
                :passed)
@@ -221,6 +240,7 @@
                    :failed  (n :failed)
                    :errored (+ (n :error) (n :crashed) (count (:file-errors state)))
                    :running (n :running)
+                   :interrupted (n :interrupted)
                    :pending pending}
       :vars       {:total   (reduce + (vals var-freq))
                    :passed  (v :passed)
@@ -311,6 +331,13 @@
   [state]
   (:not-run state))
 
+(defn interrupted
+  "Namespaces stopped part way, `{ns reason}`: with fail-fast, the ones
+  other workers were running when the first failure arrived. They are
+  listed, not counted as failures."
+  [state]
+  (:interrupted state))
+
 (defn exit-code
   "0 when nothing failed, otherwise the number of failures capped at 255,
   like Kaocha (`kaocha.runner/run`: `(min (+ error fail) 255)`). Load
@@ -336,4 +363,5 @@
                      (:namespaces state))
    :file-errors (vec (sort (keys (:file-errors state))))
    :not-run (into (sorted-map) (:not-run state))
+   :interrupted (into (sorted-map) (:interrupted state))
    :exit-code (exit-code state)})

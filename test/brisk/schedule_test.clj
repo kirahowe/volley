@@ -168,3 +168,20 @@
     (testing "unknown worker and unknown event"
       (is (= s (sched/handle-event s (ev :ns/end 99 :ns 'a))))
       (is (= s (sched/handle-event s {:event :output :text "x"}))))))
+
+(deftest interrupt-gives-up-other-workers-namespaces
+  (let [s0 (sched/init {:parallel '[a b c d] :serial []} {:workers 3 :fail-fast? true})
+        [s1 ids] (sched/drain-spawns s0)
+        s2 (reduce #(sched/handle-event %1 {:event :worker/ready :worker %2}) s1 ids)
+        [s3 assigned] (sched/next-assignments s2)
+        s4 (sched/handle-event s3 {:event :assertion :type :fail :worker 1 :ns 'a})
+        [s5 taken] (sched/interrupt s4 1)]
+    (is (= '[[1 a] [2 b] [3 c]] assigned))
+    (is (sched/stopped? s4))
+    (is (= '[[2 b] [3 c]] taken))
+    (is (= '{1 a} (:assignments s5)))
+    (testing "a killed worker's exit is not a crash"
+      (is (empty? (sched/crash-events s5 {:event :worker/exit :worker 2 :code 137}))))
+    (testing "the run is done once the failing worker ends its namespace"
+      (is (not (sched/done? s5)))
+      (is (sched/done? (sched/handle-event s5 {:event :ns/end :worker 1 :ns 'a}))))))

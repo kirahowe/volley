@@ -157,7 +157,8 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
  :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
                     :suite-focused? bool}]
           :ns-meta {...}}   ; from brisk.select/plan; workers call select/decide
- :capture-output? true}
+ :capture-output? true
+ :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
 {:op :shutdown}
 ```
 
@@ -253,6 +254,8 @@ worker events above, run-state folds:
 {:event :file/error :file path :error msg}            ; from the engine: unreadable ns form
 {:event :run/not-run :namespaces [ns ...]             ; from the engine, at the end
  :reason (:fail-fast | :no-workers | :interrupted)}
+{:event :run/interrupted :namespaces [ns ...]         ; from the engine, fail-fast
+ :reason :fail-fast}
 ```
 
 A crash is counted once, from the scheduler's synthetic `:ns/error`
@@ -260,7 +263,9 @@ A crash is counted once, from the scheduler's synthetic `:ns/error`
 creates a failure, whatever its code. A file whose ns form cannot be read
 counts as one error, as Kaocha's `load-error-testable` does. Namespaces that
 never ran are listed in the summary; they count as failures unless the
-reason is `:fail-fast`.
+reason is `:fail-fast`. Interrupted namespaces (status `:interrupted`)
+keep the vars that finished, lose the one that was running, are listed
+in the summary, and never count as failures.
 
 ### Engine inputs and effects (`brisk.engine`)
 
@@ -450,8 +455,16 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
     with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.brisk/timings.edn`).
-- **Fail fast.** On the first failure, stop handing out work and shut workers
-  down; report what finished.
+- **Fail fast.** On the first failure (a failed or erroring assertion, a
+  namespace error or a crash) the engine stops handing out work, kills every
+  other busy worker by handle at once (`brisk.schedule/interrupt` takes
+  their namespaces back, so their exit is not a crash), drops anything
+  else those workers still send, and records their namespaces with
+  `:run/interrupted`. The failing worker gets `:fail-fast?` in its run
+  message and runs no var after the failing one, so its namespace ends
+  right away. The summary lists "Interrupted (stopped by fail-fast)" and
+  "Not run (stopped by fail-fast)"; neither counts as a failure, and the
+  exit code is the failure's.
 - **Watch mode** (`--watch`, or `:watch? true` in tests.edn) does a full
   run, then stays running. See "Watch mode" below.
 - **CLI.** Kaocha's: `[suite-id ...]`, `--focus`, `--skip`, `--focus-meta`,
@@ -525,9 +538,12 @@ difference:
   becomes one error and none of its tests run. brisk reports that
   namespace (and an unreadable ns form, a `:once` fixture that throws)
   as one error each and runs the rest. Both exit non-zero.
-- **Fail-fast.** Kaocha stops at the first failing assertion, even inside
-  a namespace. brisk stops handing out namespaces; the ones already
-  running (with one worker, just the failing one) finish.
+- **Fail-fast inside a var.** Kaocha's `kaocha.report/fail-fast` throws
+  at the first failing assertion, so the rest of that var does not run.
+  brisk finishes the failing var (its other assertions still count), then
+  runs no further var, as Kaocha's `run-testables` does. Namespaces other
+  workers were running are killed and listed as interrupted; Kaocha, with
+  one process, has nothing to compare them to.
 - **Load error class on the JVM.** The JVM wraps a missing-namespace error
   raised while loading a test namespace in a `CompilerException`; babashka
   throws the `FileNotFoundException` itself. brisk reports whatever the

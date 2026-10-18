@@ -113,9 +113,11 @@ randomize, print-invocations and profiling, and reporters other than
 `kaocha.report/documentation`. The other reporters fall back to brisk's
 own output.
 
-Where brisk behaves differently from Kaocha on purpose (a namespace that
-fails to load, fail-fast inside a namespace, tests that call
-`System/exit`), see "Deliberate divergences" in
+`--fail-fast` stops at the first failure: other workers are killed and
+their namespaces are listed as interrupted, and no test after the failing
+one runs. Where brisk behaves differently from Kaocha on purpose (a
+namespace that fails to load, fail-fast inside a failing test, tests that
+call `System/exit`), see "Deliberate divergences" in
 [doc/design.md](doc/design.md).
 
 ## Flags of its own

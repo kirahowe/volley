@@ -11,12 +11,13 @@
 (defn- run-events
   "Run namespace `ns-sym` through the worker and return its events."
   ([ns-sym] (run-events ns-sym {}))
-  ([ns-sym {:keys [decide capture-output? select]
+  ([ns-sym {:keys [decide capture-output? select fail-fast?]
             :or {decide worker/run-everything capture-output? true}}]
    (let [events (volatile! [])]
      (worker/run-assignment! #(vswap! events conj %) decide
-                             {:ns ns-sym :run-id 7 :select select
-                              :capture-output? capture-output?})
+                             (cond-> {:ns ns-sym :run-id 7 :select select
+                                      :capture-output? capture-output?}
+                               fail-fast? (assoc :fail-fast? true)))
      @events)))
 
 (defn- counts [events]
@@ -192,3 +193,11 @@
     (is (not (worker/project-file? dir true "NO_SOURCE_PATH")))
     (testing "a bare name from a JVM stack frame is trusted"
       (is (worker/project-file? dir false "helper.clj")))))
+
+(deftest fail-fast-stops-after-the-first-failing-var
+  (let [started (fn [events] (map :var (filter #(= :var/start (:event %)) events)))]
+    (is (= '[nested-mismatch passes] (started (run-events 'exec.fail-test))))
+    (is (= '[nested-mismatch] (started (run-events 'exec.fail-test {:fail-fast? true}))))
+    (testing "the :once fixtures still run around what did run"
+      (is (= {:pass 3 :fail 0 :error 0} (counts (run-events 'exec.fixtures-test {:fail-fast? true})))))
+    (is (= :ns/end (:event (last (run-events 'exec.fail-test {:fail-fast? true})))))))

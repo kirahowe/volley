@@ -164,6 +164,8 @@
                :phase :running
                :stopping #{}
                :spawned #{}
+               :silenced #{}
+               :interrupted? false
                :drain-at nil
                :killed-at nil
                :now started-at}]
@@ -174,8 +176,9 @@
 
 (defn- run-message [{:keys [nses opts]} ns-sym]
   (let [{:keys [select run-id]} (get nses ns-sym)]
-    {:op :run :ns ns-sym :run-id run-id :select select
-     :capture-output? (boolean (:capture-output? opts true))}))
+    (cond-> {:op :run :ns ns-sym :run-id run-id :select select
+             :capture-output? (boolean (:capture-output? opts true))}
+      (:fail-fast? opts) (assoc :fail-fast? true))))
 
 (defn- decide
   "Ask the scheduler for spawns, assignments and shutdowns."
@@ -317,14 +320,38 @@
         (update :sched sched/handle-event ev)
         (update :run #(reduce rs/apply-event % (conj (vec crash) ev))))))
 
+(defn- interrupt
+  "Fail-fast, at the first failure: kill every other busy worker now
+  instead of letting its namespace run to the end, and record those
+  namespaces as interrupted. The failing worker (`worker` of the event that
+  failed) finishes its own namespace; it stops after the failing var."
+  [state {:keys [worker]}]
+  (if (or (:interrupted? state) (not (sched/stopped? (:sched state))))
+    [state []]
+    (let [[sch taken] (sched/interrupt (:sched state) worker)
+          ids (map first taken)
+          state (cond-> (-> state
+                            (assoc :sched sch :interrupted? true)
+                            (update :stopping into ids)
+                            (update :silenced into ids))
+                  (seq taken) (update :run rs/apply-event
+                                      {:event :run/interrupted :namespaces (mapv second taken)
+                                       :reason :fail-fast :at (:now state)}))]
+      [state (map (fn [id] {:effect :kill :worker id}) ids)])))
+
 (defn- advance-clock [state at]
   (cond-> state (number? at) (update :now #(if % (max % at) at))))
 
 (defn- foreign?
-  "True for an event from a worker this run never spawned: a late event of
-  an earlier (cancelled) run in watch mode."
+  "True for an event to ignore: from a worker this run never spawned (a late
+  event of an earlier, cancelled run in watch mode), or anything but the
+  exit of a worker fail-fast killed."
   [state {:keys [event worker]}]
-  (and (not= :tick event) (some? worker) (not (contains? (:spawned state) worker))))
+  (and (not= :tick event)
+       (some? worker)
+       (or (not (contains? (:spawned state) worker))
+           ;; killed by fail-fast: only its exit still matters
+           (and (contains? (:silenced state) worker) (not= :worker/exit event)))))
 
 (defn next-worker-id
   "The first worker id a later run should use, so ids stay unique across
@@ -343,13 +370,14 @@
           state (cond-> (advance-clock state at)
                   tick? (update :run rs/apply-event {:event :tick :at at})
                   (not tick?) (fold-event input))
+          [state e0] (if (and (= :running (:phase state)) (not tick?)) (interrupt state input) [state []])
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
           [state e2] (show state input)
           [state e3] (if (and (= :running (:phase state)) (sched/done? (:sched state)))
                        (begin-drain state)
                        [state []])
           [state e4] (if (= :draining (:phase state)) (drain-timers state) [state []])]
-      {:state state :effects (vec (concat e1 e2 e3 e4))})))
+      {:state state :effects (vec (concat e0 e1 e2 e3 e4))})))
 
 (defn start
   "The first step: spawn workers, or finish at once for an empty plan."
