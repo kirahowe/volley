@@ -57,7 +57,9 @@
                    (str/replace #"\u001b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]" "")
                    (str/replace #"[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\x{10000}-\x{10FFFF}]" ""))]
       (and (= kept (get-in doc [:attrs :b]))
-           (= (newlines kept) (newlines (text-of doc)))))))
+           ;; data.xml 0.0.8 (the JVM's) drops text that is only whitespace
+           (or (= (newlines kept) (newlines (text-of doc)))
+               (and (re-matches #"[ \t\r\n]*" kept) (= "" (text-of doc))))))))
 
 (deftest seconds-are-locale-independent
   (is (= "0.000000" (junit/seconds nil)))
