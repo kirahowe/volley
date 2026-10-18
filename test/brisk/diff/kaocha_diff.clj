@@ -102,7 +102,9 @@
   (let [{:keys [config error]} (config/read-config text {})]
     (assert (nil? error) error)
     (-> (config/normalize config cli-options)
-        (select-keys [:tests :plugins :fail-fast? :color? :watch? :capture-output? :filters]))))
+        (select-keys [:tests :plugins :fail-fast? :color? :watch? :capture-output? :filters])
+        ;; hooks are compared by brisk.config-test; Kaocha keeps them as raw keys
+        (update :tests (fn [ts] (mapv #(dissoc % :hooks :worker-setup) ts))))))
 
 (defn- compare-config [text cli-options]
   (= (kaocha-view (kaocha-load text cli-options) cli-options)

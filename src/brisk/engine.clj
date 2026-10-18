@@ -13,6 +13,7 @@
       {:effect :print :lines [str] :stream :out|:err}
       {:effect :redraw :frame {:emit [str] :frame [str]}}
       {:effect :save-timings :timings {ns millis}}
+      {:effect :post-summary :hooks [entry] :result kaocha-result}
       {:effect :exit :code n}
 
   `step` composes `brisk.schedule` (who runs what), `brisk.run-state` (what
@@ -23,6 +24,7 @@
   config and CLI errors, printing the config or plan, and \"no tests found\",
   each with Kaocha's exit code."
   (:require
+   [brisk.hooks :as hooks]
    [brisk.render :as render]
    [brisk.run-state :as rs]
    [brisk.schedule :as sched]
@@ -54,8 +56,10 @@
   (binding [*print-namespace-maps* false]
     (with-out-str (pprint/pprint x))))
 
-(defn- plan-namespaces [plan]
-  (into [] (comp (mapcat :namespaces)) (:suites plan)))
+(defn- plan-namespaces
+  "Every namespace entry of the plan, with its suite id as `:suite`."
+  [plan]
+  (into [] (mapcat (fn [s] (map #(assoc % :suite (:id s)) (:namespaces s)))) (:suites plan)))
 
 (defn- warning-lines [ws] (mapv #(str "WARNING: " %) ws))
 
@@ -140,6 +144,10 @@
               :durations {ns ms} :started-at ms :first-worker-id n}`
 
   `:first-worker-id` (default 1) is where this run's worker ids start.
+  `:configure` is a `{:op :configure}` message sent to each worker right
+  after it is spawned (`brisk.hooks/configure-message`). `:post-summary`
+  is `{:hooks [entry] :config normalized-config}`: the hooks to run in the
+  parent after the summary.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -175,9 +183,10 @@
 ;; Scheduling decisions
 
 (defn- run-message [{:keys [nses opts]} ns-sym]
-  (let [{:keys [select run-id]} (get nses ns-sym)]
+  (let [{:keys [select run-id suite]} (get nses ns-sym)]
     (cond-> {:op :run :ns ns-sym :run-id run-id :select select
              :capture-output? (boolean (:capture-output? opts true))}
+      suite (assoc :suite suite)
       (:fail-fast? opts) (assoc :fail-fast? true))))
 
 (defn- decide
@@ -191,7 +200,11 @@
                   (update :stopping into shut)
                   (update :spawned into spawned))]
     [state
-     (concat (map (fn [id] {:effect :spawn :worker id}) spawned)
+     (concat (mapcat (fn [id]
+                       (cons {:effect :spawn :worker id}
+                             (when-let [msg (get-in state [:opts :configure])]
+                               [{:effect :send :worker id :msg msg}])))
+                     spawned)
              (map (fn [[w ns-sym]] {:effect :send :worker w :msg (run-message state ns-sym)}) assigns)
              (map (fn [id] {:effect :stop :worker id}) shut))]))
 
@@ -289,9 +302,19 @@
                   (when (number? d) [ns (long (Math/round (double d)))]))))
         (get-in state [:run :namespaces])))
 
+(defn- post-summary
+  "The `post-summary` hooks run in the parent once the summary is out."
+  [{:keys [opts nses run]}]
+  (when-let [hs (seq (get-in opts [:post-summary :hooks]))]
+    [{:effect :post-summary :hooks (vec hs)
+      :result (hooks/kaocha-result (get-in opts [:post-summary :config])
+                                   (fn [ns] (get-in nses [ns :suite]))
+                                   run)}]))
+
 (defn- finish [state]
   [(assoc state :phase :done)
    (concat (final-output state)
+           (post-summary state)
            [{:effect :save-timings :timings (timings state)}
             {:effect :exit :code (rs/exit-code (:run state))}])])
 

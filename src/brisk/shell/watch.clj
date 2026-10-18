@@ -29,6 +29,7 @@
   (:require
    [brisk.discover :as discover]
    [brisk.engine :as engine]
+   [brisk.hooks :as hooks]
    [brisk.shell.fs :as bfs]
    [brisk.shell.pool :as pool]
    [brisk.shell.terminal :as term]
@@ -135,8 +136,10 @@
                                 (get-in sess [:ws :last :failed]))]
     (if (watch/plan-empty? plan)
       (update sess :inbox conj {:event :run/finished :empty? true :known (known-namespaces sess)})
-      (let [opts (cond-> (assoc engine-opts :started-at (now-ms) :durations (bfs/read-timings)
-                                :first-worker-id (:next-worker-id sess))
+      (let [opts (cond-> (merge engine-opts
+                                (hooks/engine-opts (:config sess))
+                                {:started-at (now-ms) :durations (bfs/read-timings)
+                                 :first-worker-id (:next-worker-id sess)})
                    (:live? env) (assoc :width (term/width)))
             {state :state effects :effects} (engine/init plan opts)
             _ (vreset! (:height ctx) 0)

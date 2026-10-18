@@ -158,3 +158,10 @@
                        (ev {:event :worker/exit :code 0})])]
     (is (zero? (rs/exit-code state)))
     (is (= 1 (get-in (rs/summary state) [:namespaces :pending])))))
+
+(deftest a-shutdown-hook-error-is-one-failure
+  (let [err {:class "clojure.lang.ExceptionInfo" :message "post-run hook threw" :trace []}
+        state (reduce rs/apply-event (rs/init {:namespaces []})
+                      [{:event :worker/error :worker 2 :phase :shutdown :error err :at 1}])]
+    (is (= [{:kind :worker-error :worker 2 :error err :phase :shutdown}] (rs/failures state)))
+    (is (= 1 (rs/exit-code state)))))

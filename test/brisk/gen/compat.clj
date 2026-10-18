@@ -179,6 +179,20 @@
 
 (def path-str (gen/elements ["test" "test/unit" "src" "integration" "test/a"]))
 
+(def hook-entry
+  "A hook as tests.edn may give it: a symbol, a list form, or junk."
+  (gen/elements ['my.hooks/setup! 'my.hooks/other '(fn [x] x) 'unqualified 42]))
+
+(def raw-hooks
+  "Hook keys of a config or suite, some unsupported, as Kaocha's hooks
+  plugin reads them."
+  (gen/map (gen/elements [:kaocha.hooks/pre-load :kaocha.hooks/pre-test :kaocha.hooks/post-test
+                          :kaocha.hooks/before :kaocha.hooks/after :kaocha.hooks/pre-load-test
+                          :kaocha.hooks/wrap-run :kaocha.hooks/post-summary :kaocha.hooks/config
+                          :kaocha.hooks/no-such-hook :brisk/worker-setup])
+           (gen/one-of [hook-entry (gen/vector hook-entry 0 3)])
+           {:max-elements 3}))
+
 (def raw-suite
   "A tests.edn suite with unqualified or Kaocha-qualified keys."
   (gen/let [qualified? gen/boolean
@@ -187,14 +201,16 @@
             ns-patterns (gen/vector (gen/elements ["-test$" "^app\\." ".*"]) 1 2)
             skip-meta (gen/vector meta-key 0 2)
             focus (gen/vector (gen/elements ['app.core-test 'app.core-test/foo :app.x]) 0 2)
-            with-keys (gen/vector (gen/elements [:paths :patterns :skip-meta :focus]) 0 4)]
+            with-keys (gen/vector (gen/elements [:paths :patterns :skip-meta :focus :hooks]) 0 5)
+            hooks raw-hooks]
     (let [ks (set with-keys)
           q (fn [unq qual] (if qualified? qual unq))]
       (cond-> {(q :id :kaocha.testable/id) id}
         (:paths ks) (assoc (q :test-paths :kaocha/test-paths) test-paths)
         (:patterns ks) (assoc (q :ns-patterns :kaocha/ns-patterns) ns-patterns)
         (:skip-meta ks) (assoc (q :skip-meta :kaocha.filter/skip-meta) skip-meta)
-        (:focus ks) (assoc (q :focus :kaocha.filter/focus) focus)))))
+        (:focus ks) (assoc (q :focus :kaocha.filter/focus) focus)
+        (:hooks ks) (merge hooks)))))
 
 (def raw-config
   "Raw tests.edn data: nil, or a map with suites and global options."
@@ -209,8 +225,9 @@
                                                  :kaocha.plugin/filter])
                                   0 2)
               reporter (gen/elements [nil ['kaocha.report/documentation] ['kaocha.report/dots]
-                                      ['my.custom/reporter]])]
-      (cond-> (dissoc extras :plugins :reporter :bindings :diff-style)
+                                      ['my.custom/reporter]])
+              hooks raw-hooks]
+      (cond-> (merge (dissoc extras :plugins :reporter :bindings :diff-style) hooks)
         (seq suites) (assoc :tests suites)
         (seq plugins) (assoc :plugins plugins)
         reporter (assoc :reporter reporter)))]))

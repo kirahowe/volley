@@ -404,14 +404,19 @@
     :ns-error (paint opts :red " ERROR ")
     :crash    (paint opts :red " CRASH ")
     :file-error (paint opts :red " ERROR ")
+    :worker-error (paint opts :red " ERROR ")
     (paint opts :red (str " " (name kind) " "))))
 
 (defn- header-text [{:keys [kind ns var] :as f}]
   (case kind
-    :ns-error (str (qualified ns nil) (if (= :run (:phase f)) "  failed in a fixture" "  failed to load"))
+    :ns-error (str (qualified ns nil) (case (:phase f)
+                                        :run "  failed in a fixture"
+                                        :setup "  not run: worker setup failed"
+                                        "  failed to load"))
     :crash    (str (if ns (qualified ns var) (str "worker " (:worker f)))
                    "  worker exited with code " (:exit-code f))
     :file-error "ns form could not be read"
+    :worker-error (str "worker " (:worker f) "  a hook failed as it shut down")
     (qualified ns var)))
 
 (defn- output-section [opts output]
@@ -453,7 +458,7 @@
        (when actual [(str "actual:   " (paint opts :red (first (split-text actual))))])
        (when pair (diff-section opts pair))
        (when check (check-lines opts f))
-       (when (#{:error :ns-error} kind) (error-lines opts error 0))
+       (when (#{:error :ns-error :worker-error} kind) (error-lines opts error 0))
        (when output? (output-section opts (:output f))))))))
 
 (defn- reported-failures
@@ -498,7 +503,7 @@
       :passed  (str "(" (plural (count vars) "test")
                     (when (pos? skipped) (str ", " skipped " skipped")) ")")
       :failed  (str "(" failed "/" (count vars) " failed)")
-      :error   (if (= :run (:phase rec)) "(fixture failed)" "(failed to load)")
+      :error   (case (:phase rec) :run "(fixture failed)" :setup "(worker setup failed)" "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
       :interrupted (str "(interrupted by fail-fast, " (count vars) " done)")
       "")))
@@ -636,7 +641,7 @@
          (when-let [d (ns-duration rec)] (paint opts :gray (str " " (fmt-ms d)))))]
    (map #(doc-var-line opts %) (sort-by (comp str :var) (vals (:vars rec))))
    (case (rs/ns-result rec)
-     :error   [(str "  " (paint opts :red "✗ failed to load"))]
+     :error   [(str "  " (paint opts :red (if (= :setup (:phase rec)) "✗ worker setup failed" "✗ failed to load")))]
      :crashed (when (empty? (:vars rec))
                 [(str "  " (paint opts :red "✗ worker crashed"))])
      :interrupted [(str "  " (paint opts :yellow "- interrupted by fail-fast"))]

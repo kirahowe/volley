@@ -109,7 +109,7 @@ uses it. `tests.edn` and the flags stay the same: suite ids, `--focus`,
 
 Kaocha options brisk does not support print a warning instead of being
 ignored silently. That includes plugins other than filter, capture-output,
-randomize, print-invocations and profiling, and reporters other than
+randomize, print-invocations, profiling and hooks, and reporters other than
 `kaocha.report/documentation`. The other reporters fall back to brisk's
 own output.
 
@@ -179,6 +179,30 @@ stay counted until their namespace passes again). On a terminal:
 Filters combine with the config's `:focus` and `:skip`; they never widen
 it. When stdin is not a terminal, keys are off and watch mode reacts to
 file changes only; stop it with Ctrl-C or a signal.
+
+## Setup in each worker
+
+Tests run in several worker processes, so setup that changes the process
+(pointing code at a temporary home directory, say) has to run in each
+one. List the fns in `tests.edn`:
+
+```clojure
+#kaocha/v1
+{:brisk/worker-setup [my.test-support/isolate!]
+ :tests [{:id :unit}]}
+```
+
+Each worker calls them with no arguments before it loads its first test
+namespace. A suite can have its own `:brisk/worker-setup` too. If one
+throws, that worker runs no tests and each namespace it was given is
+reported as an error.
+
+Kaocha's hooks plugin (`:plugins [:kaocha.plugin/hooks]` with
+`:kaocha.hooks/pre-load`, `pre-test` and the rest) also works. Most hooks
+run in every worker, and `post-summary` runs once in the parent. The
+table of what runs where and when is under "Hooks" in
+[doc/design.md](doc/design.md). `:kaocha.hooks/config` is not supported
+and prints a warning.
 
 ## Serial tests
 

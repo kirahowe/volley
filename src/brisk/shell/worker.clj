@@ -11,6 +11,7 @@
   and can never interleave with a protocol line."
   (:require
    [brisk.protocol :as protocol]
+   [brisk.shell.hooks :as hooks]
    [clojure.test :as t]))
 
 ;; ---------------------------------------------------------------------------
@@ -247,46 +248,58 @@
 (defn- test-vars!
   "What `clojure.test/test-vars` does for the vars of one namespace: the
   `:once` fixtures around all of them, the `:each` fixtures around each
-  `test-var`. After each var `(stop? v)` is asked whether to skip the rest
-  (the `:once` fixtures still finish)."
-  [ns-obj vars stop?]
+  `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
+  inside the `:each` fixtures, and returns its result; after each var
+  `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
+  still finish). Returns the results."
+  [ns-obj vars run-var stop?]
   (let [m (meta ns-obj)
         once (t/join-fixtures (:clojure.test/once-fixtures m))
-        each (t/join-fixtures (:clojure.test/each-fixtures m))]
+        each (t/join-fixtures (:clojure.test/each-fixtures m))
+        results (volatile! [])]
     (once (fn []
             (reduce (fn [_ v]
-                      (each (fn [] (t/test-var v)))
-                      (when (stop? v) (reduced nil)))
+                      (let [r (run-var v #(each (fn [] (t/test-var v))))]
+                        (vswap! results conj r)
+                        (when (stop? r) (reduced nil))))
                     nil
-                    vars)))))
+                    vars)))
+    @results))
 
-(defn- failed-last-var? [acc]
-  (let [{:keys [fail error]} (:ended @acc)]
-    (pos? (+ (or fail 0) (or error 0)))))
+(defn- failed? [{:kaocha.result/keys [fail error]}]
+  (pos? (+ (or fail 0) (or error 0))))
 
 (defn- run-vars!
   "Run `vars` of `ns-obj` with fixtures and `testing` contexts as in
-  `run-tests`. With `fail-fast?` the rest of the vars are not run once one
-  fails, as Kaocha stops at the first failure. Returns nil, or the
-  Throwable that escaped (a failing fixture, for instance)."
-  [emit! ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
+  `run-tests`, and the per-namespace and per-var hooks of `hs`. With
+  `fail-fast?` the rest of the vars are not run once one fails, as Kaocha
+  stops at the first failure. Returns `[hs error]`: error is nil, or the
+  Throwable that escaped (a failing fixture or hook, for instance)."
+  [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
   (let [acc (atom nil)
-        stop? (fn [_] (and fail-fast? (failed-last-var? acc)))]
+        counts #(:ended @acc)
+        run-var (fn [v test!]
+                  (reset! acc nil)
+                  (let [r (hooks/run-var hs ns-sym v test! counts)]
+                    (when (:kaocha.testable/skip r)
+                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))
+                    r))
+        stop? (fn [r] (and fail-fast? (failed? r)))]
     (try
-      (binding [t/report (make-report acc emit! ns-sym capture?)
+      (binding [t/report (hooks/report-fn hs (make-report acc emit! ns-sym capture?))
                 *out* *out*
                 *err* *err*]
         (try
-          (test-vars! ns-obj vars stop?)
-          nil
+          [(first (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))) nil]
           (catch ^:sci/error Throwable e
             (end-var! acc emit! ns-sym)
-            e)))
-      (catch ^:sci/error Throwable e e))))
+            [hs e])))
+      (catch ^:sci/error Throwable e [hs e]))))
 
 (defn- error-event
-  "`phase` is `:load` for a failed require and `:run` for an error that
-  escaped the tests themselves (a fixture, typically)."
+  "`phase` is `:setup` for a worker setup or run-level hook that failed,
+  `:load` for a failed require (or load hook) and `:run` for an error that
+  escaped the tests themselves (a fixture or hook, typically)."
   [ns-sym run-id phase e]
   {:event :ns/error :ns ns-sym :run-id run-id :phase phase
    :error (encode-throwable e)})
@@ -297,37 +310,57 @@
   [select ns-obj]
   (merge (:ns-meta select) (meta ns-obj)))
 
+(defn- load-ns
+  "Require `ns` between its load hooks. Returns `[hs error]`."
+  [hs suite ns]
+  (try
+    (hooks/pre-load-ns hs ns)
+    (require ns)
+    (let [ns-obj (find-ns ns)]
+      [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj)) nil])
+    (catch Throwable e [hs e])))
+
+(defn- run-loaded
+  "Run the vars of loaded namespace `ns`. Returns `[hs error phase]`."
+  [hs emit! decide {:keys [ns select capture-output? fail-fast? suite]}]
+  (let [hs (hooks/before-run hs suite)]
+    (if-let [e (hooks/setup-error hs)]
+      [hs e :setup]
+      (let [ns-obj (find-ns ns)
+            {:keys [run skipped]}
+            (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
+        (doseq [[v reason] skipped]
+          (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
+        (let [[hs e] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
+                                                         :fail-fast? (boolean fail-fast?)}
+                                run)]
+          [hs e :run])))))
+
 (defn run-assignment!
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
   `(fn [select ns-sym ns-meta var-sym var-meta] {:run? bool :reason kw})`,
   normally `brisk.select/decide`; it gets the namespace's real metadata.
+  `hs` is the worker's hook state (`brisk.shell.hooks/init`); the 3-arity
+  runs without hooks. Returns the next hook state.
 
-  Emits `:ns/start`, then `:ns/error` if loading or a fixture fails, the
-  `:var/*` and `:assertion` events, and always a final `:ns/end`. With
-  `:fail-fast?` the vars after the first failing one are not run and get no
-  events. Does not
-  exit the JVM and does not throw."
-  [emit! decide {:keys [ns run-id select capture-output? fail-fast?]}]
-  (let [t0 (System/nanoTime)
-        with-run (fn [ev] (assoc ev :run-id run-id))]
-    (emit! {:event :ns/start :ns ns :run-id run-id})
-    (let [load-error (try (require ns) nil (catch Throwable e e))
-          run-error
-          (if load-error
-            load-error
-            (let [ns-obj (find-ns ns)
-                  {:keys [run skipped]}
-                  (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
-              (doseq [[v reason] skipped]
-                (emit! {:event :var/skipped :ns ns :var (:name (meta v))
-                        :reason reason}))
-              (run-vars! emit! ns ns-obj {:capture? (boolean capture-output?)
-                                          :fail-fast? (boolean fail-fast?)}
-                         run)))]
-      (when run-error
-        (emit! (error-event ns run-id (if load-error :load :run) run-error)))
-      (emit! (with-run {:event :ns/end :ns ns
-                        :duration-ms (duration-ms t0 (System/nanoTime))})))))
+  Emits `:ns/start`, then `:ns/error` if setup, loading or a fixture
+  fails, the `:var/*` and `:assertion` events, and always a final
+  `:ns/end`. With `:fail-fast?` the vars after the first failing one are
+  not run and get no events. Does not exit the JVM and does not throw."
+  ([emit! decide cmd] (run-assignment! emit! decide (hooks/init nil) cmd))
+  ([emit! decide hs {:keys [ns run-id suite] :as cmd}]
+   (let [t0 (System/nanoTime)]
+     (emit! {:event :ns/start :ns ns :run-id run-id})
+     (let [hs (hooks/setup hs suite)
+           [hs error phase] (if-let [e (hooks/setup-error hs)]
+                              [hs e :setup]
+                              (let [[hs e] (load-ns hs suite ns)]
+                                (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
+       (when error
+         (emit! (error-event ns run-id phase error)))
+       (emit! {:event :ns/end :ns ns :run-id run-id
+               :duration-ms (duration-ms t0 (System/nanoTime))})
+       hs))))
 
 ;; ---------------------------------------------------------------------------
 ;; Process entry point
@@ -349,17 +382,25 @@
         (.write out line)
         (.flush out)))))
 
+(defn- report-hook-errors!
+  "Errors of shutdown hooks (`post-run`, a suite's `post-test`) are sent as
+  `:worker/error` events; there is no namespace to attach them to."
+  [emit! errors]
+  (doseq [e errors]
+    (emit! {:event :worker/error :phase :shutdown :error (encode-throwable e)})))
+
 (defn- handle-line!
-  "Handle one stdin line. Returns :shutdown to stop, else nil."
-  [emit! decide line]
+  "Handle one stdin line with hook state `hs`. Returns the next state, or
+  :shutdown to stop."
+  [emit! decide hs line]
   (let [{:keys [kind command error]} (protocol/decode-command line)]
     (case kind
       :command (case (:op command)
-                 :run (do (run-assignment! emit! decide command) nil)
+                 :run (run-assignment! emit! decide hs command)
+                 :configure (hooks/init command)
                  :shutdown :shutdown
-                 (binding [*out* *err*] (println "brisk worker: unknown op" (:op command))))
-      :invalid (binding [*out* *err*]
-                 (println "brisk worker: bad message:" error)))))
+                 (do (binding [*out* *err*] (println "brisk worker: unknown op" (:op command))) hs))
+      :invalid (do (binding [*out* *err*] (println "brisk worker: bad message:" error)) hs))))
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
@@ -383,13 +424,15 @@
     (alter-var-root #'*out* (constantly stray-writer))
     (alter-var-root #'*err* (constantly stray-writer))
     (emit! {:event :worker/ready})
-    (loop []
-      (when-let [line (.readLine in)]
-        (when-not (= :shutdown
-                     (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
-                       (handle-line! emit! decide line)))
-          (.flush stray-writer)
-          (recur))))
-    (.flush stray-writer)
-    (shutdown-agents)
-    (System/exit 0)))
+    (let [hs (loop [hs (hooks/init nil)]
+               (if-let [line (.readLine in)]
+                 (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
+                                 (handle-line! emit! decide hs line))]
+                   (.flush stray-writer)
+                   (if (= :shutdown next-hs) hs (recur next-hs)))
+                 hs))
+          errors (hooks/shutdown hs)]
+      (report-hook-errors! emit! errors)
+      (.flush stray-writer)
+      (shutdown-agents)
+      (System/exit (if (seq errors) 1 0)))))

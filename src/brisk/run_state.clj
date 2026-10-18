@@ -13,7 +13,9 @@
   ns form cannot be read, `{:event :run/not-run :namespaces [ns ...]
   :reason kw}` for planned namespaces that never ran, and
   `{:event :run/interrupted :namespaces [ns ...] :reason :fail-fast}` for
-  namespaces whose worker was killed part way.
+  namespaces whose worker was killed part way. Workers also send
+  `{:event :worker/error :phase :shutdown :error err}` when a shutdown hook
+  throws; it counts as one failure.
 
   A worker crash is recorded once, from the synthetic `:ns/error` whose
   error class is `brisk.WorkerCrashed`. `:worker/exit` only marks the worker
@@ -35,7 +37,8 @@
    :namespaces {}
    :file-errors {}
    :not-run    {}
-   :interrupted {}})
+   :interrupted {}
+   :worker-errors {}})
 
 (defn- min* [a b] (cond (nil? a) b (nil? b) a :else (min a b)))
 (defn- max* [a b] (cond (nil? a) b (nil? b) a :else (max a b)))
@@ -136,6 +139,9 @@
   [state {:keys [worker code]}]
   (set-worker state worker (merge idle {:exited? true :code code})))
 
+(defn- on-worker-error [state {:keys [worker error phase]}]
+  (update-in state [:worker-errors worker] (fnil conj []) {:worker worker :error error :phase phase}))
+
 (defn- on-file-error [state {:keys [file error]}]
   (assoc-in state [:file-errors file] error))
 
@@ -174,6 +180,7 @@
       :output        (on-output state event)
       :worker/exit   (on-worker-exit state event)
       :file/error    (on-file-error state event)
+      :worker/error  (on-worker-error state event)
       :run/not-run   (on-not-run state event)
       :run/interrupted (on-interrupted state event)
       state)))
@@ -276,6 +283,11 @@
                  :output (str/join "\n" (concat stray (when v [(var-output v)])))}])
     []))
 
+(defn- worker-failures [state]
+  (for [[_ errors] (sort-by key (:worker-errors state))
+        {:keys [worker error phase]} errors]
+    {:kind :worker-error :worker worker :error error :phase phase}))
+
 (defn- file-failures [state]
   (for [[file error] (:file-errors state)]
     {:kind :file-error :file file :message error}))
@@ -293,7 +305,8 @@
 
 (defn failures
   "Every failed assertion, errored assertion, namespace load error, worker
-  crash, unreadable test file (`:file-error`) and namespace that could not
+  crash, hook that failed as a worker shut down (`:worker-error`),
+  unreadable test file (`:file-error`) and namespace that could not
   be run (`:not-run`, except after fail-fast), ordered by namespace, var,
   line. Each carries :kind, :ns, and for assertions :var, :line, :message,
   :contexts, :expected, :actual, :error and the var's captured :output."
@@ -301,6 +314,7 @@
   (->> (concat (mapcat assertion-failures (vals (:namespaces state)))
                (mapcat ns-failures (vals (:namespaces state)))
                (file-failures state)
+               (worker-failures state)
                (not-run-failures state))
        (sort-by (juxt sort-key #(str (:kind %))))
        vec))

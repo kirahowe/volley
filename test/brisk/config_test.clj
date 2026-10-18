@@ -85,7 +85,8 @@
   (prop/for-all [raw g/raw-config]
     (let [c (config/normalize raw {})
           supported #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
-                      :kaocha.plugin/print-invocations :kaocha.plugin/profiling}]
+                      :kaocha.plugin/print-invocations :kaocha.plugin/profiling
+                      :kaocha.plugin/hooks}]
       (= (set (remove supported (:plugins c)))
          (set (keep #(some-> (re-find #"^unsupported plugin (\S+) ignored$" %) second read-string)
                     (:warnings c)))))))
@@ -317,3 +318,69 @@
     (is (= false (:color? c)))
     (is (= :documentation (:reporter c)))
     (is (= ["unsupported plugin :kaocha.plugin/notifier ignored"] (:warnings c)))))
+
+;; ---------------------------------------------------------------------------
+;; Hooks (kaocha.plugin.hooks) and :brisk/worker-setup
+
+(defn- hook-target [k]
+  (case k
+    :kaocha.hooks/before :pre-test
+    :kaocha.hooks/after :post-test
+    (keyword (name k))))
+
+(defn- non-empty? [v] (if (sequential? v) (seq v) (some? v)))
+
+(defspec every-hook-key-is-used-or-warned-about 300
+  (prop/for-all [raw g/raw-config]
+    (let [c (config/normalize raw {})
+          warned? (fn [k] (some #(str/includes? % (pr-str k)) (:warnings c)))
+          used? (fn [hooks k] (seq (get hooks (hook-target k))))
+          check (fn [m hooks]
+                  (every? (fn [[k v]]
+                            (or (not (non-empty? v))
+                                (if (= :brisk/worker-setup k)
+                                  (or (seq (:worker-setup m)) (warned? k))
+                                  (or (used? hooks k) (warned? k)))))
+                          (filter (fn [[k]] (or (= :brisk/worker-setup k) (= "kaocha.hooks" (namespace k))))
+                                  (if (map? raw) raw {}))))]
+      (check c (:hooks c)))))
+
+(deftest hooks-plugin-config
+  (let [raw {:plugins [:kaocha.plugin/hooks]
+             :kaocha.hooks/pre-load ['my.hooks/load!]
+             :kaocha.hooks/before 'my.hooks/before!
+             :kaocha.hooks/pre-test ['my.hooks/pre!]
+             :kaocha.hooks/post-summary ['my.hooks/summary!]
+             :kaocha.hooks/config ['my.hooks/config!]
+             :brisk/worker-setup ['my.hooks/isolate!]
+             :tests [{:id :unit
+                      :kaocha.hooks/after ['my.hooks/after!]
+                      :kaocha.hooks/pre-run ['my.hooks/nope]
+                      :brisk/worker-setup ['my.hooks/unit-setup!]}]}
+        c (config/normalize raw {})]
+    (testing "kaocha.plugin.hooks/rename-aliases: before and after are pre-test and post-test"
+      (is (= '{:pre-load [my.hooks/load!]
+               :pre-test [my.hooks/pre! my.hooks/before!]
+               :post-summary [my.hooks/summary!]}
+             (:hooks c)))
+      (is (= '{:post-test [my.hooks/after!]} (:hooks (first (:tests c))))))
+    (is (= '[my.hooks/isolate!] (:worker-setup c)))
+    (is (= '[my.hooks/unit-setup!] (:worker-setup (first (:tests c)))))
+    (testing "what cannot work is a warning, never silent"
+      (is (some #(str/includes? % ":kaocha.hooks/config is not supported") (:warnings c)))
+      (is (some #(str/includes? % "unsupported hook :kaocha.hooks/pre-run (suite :unit)") (:warnings c)))
+      (is (not-any? #(str/includes? % "unsupported plugin") (:warnings c))))
+    (is (= c (config/normalize c {})) "normalizing twice changes nothing")))
+
+(deftest hooks-need-the-plugin
+  (let [c (config/normalize {:kaocha.hooks/pre-load ['my.hooks/load!]
+                             :brisk/worker-setup ['my.hooks/isolate!]} {})]
+    (is (nil? (:hooks c)))
+    (is (= '[my.hooks/isolate!] (:worker-setup c)) ":brisk/worker-setup needs no plugin")
+    (is (some #(str/includes? % "hooks :kaocha.hooks/pre-load ignored: :kaocha.plugin/hooks is not in :plugins")
+              (:warnings c)))))
+
+(deftest bad-hook-entries-warn
+  (let [c (config/normalize {:plugins [:hooks] :kaocha.hooks/pre-load ['unqualified 'ok/fine 3]} {})]
+    (is (= '{:pre-load [ok/fine]} (:hooks c)))
+    (is (= 2 (count (filter #(str/includes? % "is not a qualified symbol or a list form") (:warnings c)))))))

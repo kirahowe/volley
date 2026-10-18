@@ -12,6 +12,7 @@
   `apply-cli-opts` (see the docstrings of the private helpers for the Kaocha
   function each one mirrors)."
   (:require
+   [brisk.hooks :as hooks]
    [brisk.runtime :as runtime]
    [clojure.edn :as edn]
    [clojure.string :as str]))
@@ -333,7 +334,7 @@
 
 (def ^:private supported-plugins
   #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
-    :kaocha.plugin/print-invocations :kaocha.plugin/profiling})
+    :kaocha.plugin/print-invocations :kaocha.plugin/profiling :kaocha.plugin/hooks})
 
 (def ^:private silent-namespaces
   #{"kaocha.plugin.profiling" "kaocha.plugin.print-invocations"
@@ -345,7 +346,9 @@
     ;; unqualified leftovers that kaocha-normalize copies through
     :capture-output? :diff-style :bindings
     ;; brisk's own shape, so a normalized config can be normalized again
-    :workers :isolate? :runtime :warnings :errors :filters :reporter})
+    :workers :isolate? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
+    ;; read by brisk.hooks
+    :brisk/worker-setup})
 
 (def ^:private known-suite-keys
   #{:kaocha.testable/id :kaocha.testable/type :kaocha.testable/desc
@@ -355,6 +358,7 @@
 
 (defn- silent-key? [k]
   (or (contains? known-keys k)
+      (hooks/hook-key? k)
       (and (qualified-keyword? k) (contains? silent-namespaces (namespace k)))))
 
 (defn- ->vec
@@ -392,8 +396,35 @@
      (when (not= :kaocha.type/clojure.test type)
        [(str "suite " (pr-str id) " has unsupported type " (pr-str type) ", skipped")])
      (for [k (sort-by str (keys suite))
-           :when (not (contains? known-suite-keys k))]
+           :when (not (or (contains? known-suite-keys k)
+                          (hooks/hook-key? k)
+                          (contains? #{:hooks :worker-setup :brisk/worker-setup} k)))]
        (str "unsupported suite option " (pr-str k) " ignored (suite " (pr-str id) ")")))))
+
+(defn- read-hook-config
+  "Hooks and worker setup of `m` (the config or a suite) in brisk's shape,
+  `{:hooks {k [entry]} :worker-setup [entry] :warnings [str]}`. Kaocha's
+  `:kaocha.hooks/*` keys count only when the hooks plugin is on; brisk's own
+  `:hooks` and `:worker-setup` (an already normalized config) are kept."
+  [m allowed where hooks-on?]
+  (let [{read :hooks ws :warnings} (hooks/read-hooks m allowed where)
+        [setup setup-ws] (hooks/read-worker-setup m where)]
+    {:hooks (merge (when (map? (:hooks m)) (:hooks m)) (when hooks-on? read))
+     :worker-setup (into (->vec (:worker-setup m)) setup)
+     :warnings (concat (when hooks-on? ws) setup-ws)}))
+
+(defn- hooks-off-warning [cfg suites hooks-on?]
+  (let [ks (sort-by str (distinct (mapcat hooks/hook-keys (cons cfg suites))))]
+    (when (and (not hooks-on?) (seq ks))
+      [(str "hooks " (str/join ", " (map pr-str ks)) " ignored: "
+            (pr-str hooks/plugin) " is not in :plugins")])))
+
+(defn- with-hook-config
+  "Add `:hooks` and `:worker-setup` to `m` when they are not empty."
+  [m {:keys [hooks worker-setup]}]
+  (cond-> m
+    (seq hooks) (assoc :hooks hooks)
+    (seq worker-setup) (assoc :worker-setup worker-setup)))
 
 (defn- reporter-name [sym]
   (when (symbol? sym) [(namespace sym) (name sym)]))
@@ -478,11 +509,18 @@
          (brisk-reporter (pick (when (seq (:reporter cli-options)) (:reporter cli-options))
                                (:reporter raw)
                                (:kaocha/reporter raw)))
+         hooks-on? (contains? (set plugins) hooks/plugin)
          suites (->vec (:kaocha/tests cfg))
-         tests (mapv suite-view suites)
+         suite-hooks (mapv #(read-hook-config % hooks/suite-keys
+                                              (str " (suite " (pr-str (:kaocha.testable/id %)) ")")
+                                              hooks-on?)
+                           suites)
+         top-hooks (read-hook-config cfg hooks/top-level-keys "" hooks-on?)
+         tests (mapv (fn [s h] (with-hook-config (suite-view s) h)) suites suite-hooks)
          runtime (runtime/resolve-runtime (pick (:runtime cli-options) (:runtime raw))
                                           (get env :bb? true))]
-     {:tests tests
+     (with-hook-config
+      {:tests tests
       :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
       :filters (config-filters cfg cli-options)
       :plugins plugins
@@ -509,5 +547,9 @@
                    :when (and (not (silent-key? k)) (not= ::error k))]
                (str "unsupported option " (pr-str k) " ignored"))
              (mapcat suite-warnings suites)
+             (hooks-off-warning cfg suites hooks-on?)
+             (:warnings top-hooks)
+             (mapcat :warnings suite-hooks)
              reporter-warnings
-             (cli-warnings cli-options))))})))
+             (cli-warnings cli-options))))}
+      top-hooks))))

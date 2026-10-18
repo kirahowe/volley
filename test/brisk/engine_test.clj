@@ -105,6 +105,22 @@
            (not-any? #(contains? (rs/not-run run) %) interrupted)
            (= (:exit world) (rs/exit-code run))))))
 
+(defspec every-worker-is-configured-before-its-first-run runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world]} (ge/simulate w max-steps)]
+      (if (get-in w [:opts :configure])
+        (= (seq (:spawned world)) (seq (:configured world)))
+        (empty? (:configured world))))))
+
+(defspec post-summary-hooks-run-once-before-the-exit runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world]} (ge/simulate w max-steps)]
+      (if (get-in w [:opts :post-summary])
+        (and (:post-summary-before-exit? world)
+             (= '[my/summary] (get-in world [:post-summary :hooks]))
+             (vector? (get-in world [:post-summary :result :kaocha.result/tests])))
+        (nil? (:post-summary world))))))
+
 ;;; Examples
 
 (def ^:private help "USAGE: brisk")

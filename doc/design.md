@@ -73,6 +73,7 @@ Pure core:
 | `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
 | `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
 | `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
+| `brisk.hooks` | Kaocha's hooks plugin and `:brisk/worker-setup` as data: reading them from tests.edn, the `:configure` message, the Kaocha-shaped testables, test plan and result hooks receive. |
 | `brisk.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
@@ -80,6 +81,7 @@ Shell:
 | Namespace | Responsibility |
 |---|---|
 | `brisk.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
+| `brisk.shell.hooks` | Resolves and calls hooks inside a worker (and `post-summary` in the parent). Portable, like the worker. |
 | `brisk.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
 | `brisk.shell.fs` | Glob test paths, read files, snapshot modification times. |
 | `brisk.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
@@ -104,7 +106,9 @@ then in code.
                      :focus        []               ; ids: ns or ns/var symbols
                      :skip         []
                      :focus-meta   []               ; keywords
-                     :skip-meta    []}]
+                     :skip-meta    []
+                     :hooks        {:pre-test [...]}  ; suite-level hooks, when present
+                     :worker-setup [...]}]             ; suite-level :brisk/worker-setup, when present
  :fail-fast?       false
  :color?           true
  :capture-output?  true
@@ -113,6 +117,8 @@ then in code.
  :workers          8                                ; brisk-only; default depends on :runtime
  :isolate?         false                            ; brisk-only: fresh process per ns
  :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
+ :hooks            {:pre-load [my.hooks/load!] ...}  ; only with :kaocha.plugin/hooks; see "Hooks"
+ :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
  :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]
  :errors           []                               ; config Kaocha would exit on; defaults used
  :plugins          [:kaocha.plugin/filter ...]
@@ -134,7 +140,8 @@ Kaocha options brisk doesn't support produce a warning, never a silent
 ignore. Plugins brisk treats as built in or harmless: `:kaocha.plugin/filter`,
 `:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (warn: ordering
 is per worker), `:kaocha.plugin/print-invocations` (no-op),
-`:kaocha.plugin/profiling` (brisk always reports slowest tests). Anything
+`:kaocha.plugin/profiling` (brisk always reports slowest tests), `:kaocha.plugin/hooks`
+(see "Hooks"). Anything
 else: warning.
 
 ### Namespace info (`brisk.discover`)
@@ -159,8 +166,17 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
           :ns-meta {...}}   ; from brisk.select/plan; workers call select/decide
  :capture-output? true
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
+{:op :configure                               ; right after spawn, only when hooks or setup exist
+ :hooks {:pre-load [entry] ...}               ; top-level hooks that run in workers
+ :worker-setup [entry]
+ :suites {:unit {:hooks {...} :worker-setup [...]}}
+ :testables {:unit suite-testable}            ; brisk.hooks/suite-testable per suite
+ :config kaocha-shaped-config}                ; brisk.hooks/kaocha-config
 {:op :shutdown}
 ```
+
+`:run` messages also carry `:suite`, the id of the suite the namespace was
+planned under.
 
 ### Worker → parent events (stdout)
 
@@ -172,8 +188,8 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 ```clojure
 {:event :worker/ready}
 {:event :ns/start      :ns ns :run-id n}
-{:event :ns/error      :ns ns :run-id n :error err   ; load or fixture failure
-                       :phase (:load | :run)}
+{:event :ns/error      :ns ns :run-id n :error err   ; setup, load or fixture failure
+                       :phase (:setup | :load | :run)}
 {:event :var/start     :ns ns :var sym :file str :line int}
 {:event :assertion     :ns ns :var sym :type (:fail | :error)
                        :message str-or-nil :contexts [str]
@@ -183,6 +199,7 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
                        :duration-ms num :output str-or-nil}
 {:event :var/skipped   :ns ns :var sym :reason (:pending | :skip-meta | ...)}
 {:event :ns/end        :ns ns :run-id n :duration-ms num}
+{:event :worker/error  :phase :shutdown :error err}   ; a shutdown hook threw; one failure
 ```
 
 Passing assertions are counted in `:var/end`, not sent one by one.
@@ -289,12 +306,14 @@ event if the queue never goes quiet). Effects:
 
 ```clojure
 {:effect :spawn :worker id}
+{:effect :send :worker id :msg {:op :configure ...}}  ; right after its spawn, when configured
 {:effect :send :worker id :msg {:op :run ...}}
 {:effect :stop :worker id}          ; clean shutdown request
 {:effect :kill :worker id}          ; 5s after the run, for workers still alive
 {:effect :print :lines [str] :stream :out|:err}
 {:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
 {:effect :save-timings :timings {ns ms}}
+{:effect :post-summary :hooks [entry] :result kaocha-result}   ; after the summary, with post-summary hooks
 {:effect :exit :code n}             ; always last; the state is then :done
 ```
 
@@ -313,6 +332,75 @@ unreadable tests.edn) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
 (-2), help/version/print-config/print-test-plan 0, and an empty plan prints
 Kaocha's "No tests were found" warning and exits 0. A run exits with
 `brisk.run-state/exit-code`.
+
+## Hooks
+
+Real suites need setup in the process that runs the tests: pointing the
+code at a temporary home directory, instrumenting specs, starting a
+system. Kaocha runs everything in one process. brisk's tests run in
+several worker processes, so setup has to happen in each of them.
+
+**`:brisk/worker-setup`** (top level or on a suite) is a vector of
+qualified symbols naming fns of no arguments. Each worker calls the
+top-level ones once, before it loads its first namespace, and a suite's
+ones before its first namespace of that suite. It needs no plugin. This
+is the recommended way to isolate a process, as relay's
+`relay.test-support/isolate!` does.
+
+**Kaocha's hooks plugin** (`:plugins [:kaocha.plugin/hooks]`) is
+supported with these semantics (`brisk.hooks/semantics`). A hook is a
+qualified symbol, resolved with `requiring-resolve` in the process that
+runs it, or a list form, evaluated there. Its arguments are Kaocha's;
+`brisk.hooks` builds testables, the test plan and the result in Kaocha's
+shape (`:kaocha.testable/type`, `:kaocha.testable/id`, `:kaocha.ns/name`,
+`:kaocha.var/var`, `:kaocha.result/pass` and so on). The test plan a
+worker passes holds only the namespaces that worker has loaded so far.
+
+| Hook | Runs in | When |
+|---|---|---|
+| `pre-load` | each worker | once, before its first namespace is required (after `:brisk/worker-setup`) |
+| `post-load` | each worker | after every namespace it loads, with the plan so far |
+| `pre-run` | each worker | once, before the tests of its first namespace |
+| `post-run` | each worker | once, when it is shut down cleanly |
+| `wrap-run` | each worker | wraps the run of each namespace (Kaocha also wraps suites and vars) |
+| `pre-test` / `post-test` (top level) | each worker | around each namespace and each var; with the suite testable once per worker, before its first namespace of the suite and at shutdown |
+| `pre-test` / `post-test` on a suite (and `before`/`after`) | each worker | with the suite testable, once per worker as above |
+| `pre-load-test` / `post-load-test` | each worker | around each namespace's require; with the suite testable once per worker |
+| `pre-report` | each worker | on every clojure.test report event, before brisk counts it |
+| `post-summary` | the parent | once, after the summary is printed |
+| `config` | nowhere | warned about: brisk plans in the parent before any hook could change the config |
+
+Return values are threaded from hook to hook as in Kaocha. brisk uses the
+result of `pre-report` (the event it counts), of a var's `pre-test` (a
+testable with `:kaocha.testable/skip` skips the var, reported with reason
+`:pre-test-hook`) and of `wrap-run`; it ignores the others, because the
+plan was made in the parent before any worker started. `post-summary`
+cannot change the exit code.
+
+Two consequences of running per worker deserve attention. A hook that
+starts something with a fixed resource (a port, a file) runs once per
+worker, so N workers start N of them. `pre-run` runs before a worker has
+loaded more than its first namespace, so spec or malli instrumentation
+done there misses what later namespaces define; `post-load` runs after
+each load and covers them.
+
+Hooks a suite cannot have in Kaocha (`pre-load` on a suite, say), unknown
+hook keys, entries that are neither qualified symbols nor lists, and hook
+keys without the plugin are warnings.
+
+**Failures.** If `:brisk/worker-setup`, `pre-load`, `pre-run` or a suite's
+setup hooks throw (or a hook does not resolve), the worker runs no tests:
+every namespace it is given is reported as an `:ns/error` with phase
+`:setup` ("not run: worker setup failed"), so a process that could not be
+isolated never runs a test. A load hook that throws is that namespace's
+load error, a namespace or var hook that throws is a namespace error
+(phase `:run`), and the error names the hook. A `pre-report` hook that
+throws is printed to the worker's stderr and the event is counted as it
+was. A shutdown hook that throws is sent as `:worker/error` and counts as
+one failure.
+In `--isolate` mode every namespace has its own worker, so every
+once-per-worker hook runs once per namespace. A worker killed by
+fail-fast or a watch cancel runs no shutdown hooks.
 
 ## Watch mode
 

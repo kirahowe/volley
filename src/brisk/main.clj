@@ -11,8 +11,10 @@
    [brisk.config :as config]
    [brisk.discover :as discover]
    [brisk.engine :as engine]
+   [brisk.hooks :as hooks]
    [brisk.select :as select]
    [brisk.shell.fs :as bfs]
+   [brisk.shell.hooks :as shell-hooks]
    [brisk.shell.pool :as pool]
    [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
@@ -83,6 +85,23 @@
       (binding [*out* *err*] (print text) (flush))
       (do (print text) (flush)))))
 
+(defn- add-test-paths!
+  "On babashka, put the suites' test paths on this process's classpath so
+  that parent-side hooks in test namespaces resolve (Kaocha adds them the
+  same way). The JVM classpath is fixed; there they must already be on it."
+  [paths]
+  (when-let [add (try (requiring-resolve 'babashka.classpath/add-classpath)
+                      (catch Exception _ nil))]
+    (doseq [p paths] (add p))))
+
+(defn- post-summary!
+  "Run the parent's `post-summary` hooks; a failure is printed, not fatal."
+  [{:keys [hooks result]}]
+  (when-let [e (shell-hooks/post-summary! hooks result)]
+    (print-lines! {:lines [(str "WARNING: post-summary hook failed: " (ex-message e))
+                           (str "  " (some-> (ex-cause e) ex-message))]
+                   :stream :err})))
+
 (defn- run-effects!
   "Carry out `effects`. `ctx` holds the queue, the worker command and two
   volatiles: worker handles and the live frame height. Returns the exit
@@ -98,6 +117,7 @@
        :print (print-lines! e)
        :redraw (vreset! height (term/redraw! @height frame))
        :save-timings (bfs/write-timings! timings)
+       :post-summary (post-summary! e)
        :exit nil)
      (when (= :exit effect) (reduced code)))
    nil
@@ -205,15 +225,18 @@
         (let [tty? (term/tty?)
               mode (reporter config (:options cli) tty?)
               {:keys [command error]} (runtime/worker-command config (:aliases (:options cli)))
-              opts {:workers (:workers config)
-                    :fail-fast? (:fail-fast? config)
-                    :isolate? (:isolate? config)
-                    :capture-output? (:capture-output? config)
-                    :reporter mode
-                    :width (if (= :live mode) (term/width) 1000)
-                    :color? (color? config (:options cli) env tty?)
-                    :durations (bfs/read-timings)
-                    :started-at (System/currentTimeMillis)}]
+              opts (merge
+                    {:workers (:workers config)
+                     :fail-fast? (:fail-fast? config)
+                     :isolate? (:isolate? config)
+                     :capture-output? (:capture-output? config)
+                     :reporter mode
+                     :width (if (= :live mode) (term/width) 1000)
+                     :color? (color? config (:options cli) env tty?)
+                     :durations (bfs/read-timings)
+                     :started-at (System/currentTimeMillis)}
+                    (hooks/engine-opts config))
+              _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))]
           (cond
             error (do (print-lines! {:lines [(str "brisk: " error)] :stream :err}) 250)
             (:watch? config) (watch-tests! command config loaded opts #(reload-config args env)
