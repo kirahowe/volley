@@ -54,8 +54,8 @@
     (is (= 1 (count parent)))
     (is (= [[:post-summary 4]] (map rest (get by-pid (first parent))))
         "post-summary once, in the parent, with Kaocha's result shape")
-    (is (str/starts-with? (e2e/summary-line out) "5 tests | 4 passed | 0 failed | 0 errors | 1 skipped")
-        "pre-report turned the defused failure into a pass; pre-test skipped a var")))
+    (is (str/starts-with? (e2e/summary-line out) "4 tests | 4 passed | 0 failed | 0 errors | 0 skipped")
+        "pre-report turned the defused failure into a pass; pre-test skipped a var, which, as in Kaocha, is not counted")))
 
 (deftest kaocha-hooks-and-worker-setup-on-bb-workers
   (let [dir (e2e/copy-project "hooks")

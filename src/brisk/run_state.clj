@@ -282,11 +282,25 @@
   (and (= :done status) (not protocol-error?) (empty? assertions) (not (pos? (or pass 0)))
        (every? #(and (= :skipped (:phase %)) (contains? filter-reasons (:reason %))) (vals vars))))
 
+(defn in-run?
+  "True for a var that is part of the run: it ran, is running, crashed,
+  or is pending. A var the filters, a `pre-test` hook or a failed fixture
+  kept from running is not, as Kaocha's `kaocha.testable/run-testable`
+  gives a skipped testable no count; only pending vars count as skipped."
+  [v]
+  (or (not= :skipped (var-status v)) (= :pending (:reason v))))
+
+(defn run-vars
+  "The vars of namespace record `rec` that are part of the run
+  (`in-run?`)."
+  [rec]
+  (filter in-run? (vals (:vars rec))))
+
 (defn- all-vars [state]
   (mapcat (comp vals :vars) (vals (:namespaces state))))
 
 (defn- counted-vars [state]
-  (mapcat (comp vals :vars) (remove unselected? (vals (:namespaces state)))))
+  (mapcat run-vars (remove unselected? (vals (:namespaces state)))))
 
 (defn summary
   "Counts for the run so far. `now` defaults to the latest event time."
@@ -488,8 +502,10 @@
 (defn result
   "Plain data about the finished run, for `--print-result` and for
   comparing against Kaocha: per-var status and counts keyed by fully
-  qualified symbol, per-namespace result, unreadable files, namespaces that
-  never ran, and the exit code."
+  qualified symbol, per-namespace result, the totals Kaocha's summary
+  line shows (`:tests`, and `:pending`, which is what brisk's summary
+  calls skipped), unreadable files, namespaces that never ran, and the
+  exit code."
   [state]
   {:vars (into (sorted-map)
                (map (fn [v]
@@ -500,6 +516,8 @@
    :namespaces (into (sorted-map)
                      (map (fn [[ns rec]] [ns (ns-result rec)]))
                      (:namespaces state))
+   :totals (let [{:keys [vars]} (summary state)]
+             {:tests (:total vars) :pending (:skipped vars)})
    :file-errors (vec (sort (keys (:file-errors state))))
    :not-run (into (sorted-map) (not-run state))
    :interrupted (into (sorted-map) (:interrupted state))

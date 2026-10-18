@@ -22,7 +22,9 @@
   `failures` count assertions. Failures that belong to no var (a namespace
   that failed to load, a crash, an unreadable file, a namespace that never
   ran) get a testcase of their own, as Kaocha reports a failed namespace
-  as a testcase. Skipped vars carry `<skipped/>`, which Kaocha leaves out.
+  as a testcase. Pending vars carry `<skipped/>`, which Kaocha leaves out.
+  Vars the filters skipped are not part of the run and get no testcase;
+  Kaocha lists them as empty testcases but leaves them out of `tests`.
 
   Pure: the caller passes the timestamp and working directory."
   (:require
@@ -163,7 +165,7 @@
   (let [nses (set namespaces)
         recs (keep #(get-in run [:namespaces %]) namespaces)
         counted (remove rs/unselected? recs)
-        vars (sort-by (juxt (comp str :ns) (comp str :var)) (mapcat (comp vals :vars) counted))
+        vars (sort-by (juxt (comp str :ns) (comp str :var)) (mapcat rs/run-vars counted))
         outside (filter #(and (nil? (:var %)) (#{:fail :error} (:kind %)) (contains? nses (:ns %))) failures)
         others (filter (fn [f]
                          (and (not (#{:fail :error} (:kind f)))

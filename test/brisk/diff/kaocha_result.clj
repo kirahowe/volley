@@ -6,6 +6,7 @@
   `--plugin brisk.diff.kaocha-result/plugin`."
   (:require
    [kaocha.plugin :as plugin]
+   [kaocha.result :as result]
    [kaocha.testable :as testable]))
 
 (def marker
@@ -45,6 +46,8 @@
   Kaocha never reached (after fail-fast) have status `:not-run`."
   [result]
   {:vars (into (sorted-map) (mapcat #(var-entries % false)) (:kaocha.result/tests result))
+   :totals (let [t (result/totals (:kaocha.result/tests result))]
+             {:tests (::result/count t) :pending (::result/pending t)})
    :load-errors (into []
                       (comp (filter ::testable/load-error)
                             (map ::testable/id))

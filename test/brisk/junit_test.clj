@@ -39,7 +39,7 @@
       (and (= (:total vars) (count var-cases))
            (= (str (count cases)) (get-in suite [:attrs :tests]))
            (= (str (:failed assertions)) (get-in suite [:attrs :failures]))
-           (= (count (filter #(= :skipped (rs/var-status %)) (mapcat (comp vals :vars) (remove rs/unselected? (vals (:namespaces state))))))
+           (= (count (filter #(= :skipped (rs/var-status %)) (mapcat rs/run-vars (remove rs/unselected? (vals (:namespaces state))))))
               (count (mapcat #(children % :skipped) var-cases)))
            (= (count (filter #(#{:fail} (:kind %)) (rs/failures state)))
               (count (mapcat #(children % :failure) cases)))))))

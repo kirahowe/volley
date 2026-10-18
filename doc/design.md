@@ -267,6 +267,12 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   one terminal event. `:ns/error` covers load errors and a `:once` or `:each`
   fixture that throws.
 - `:var/skipped :reason` is whatever `brisk.select/decide` returned.
+  Only `:pending` vars are part of the run (`brisk.run-state/in-run?`):
+  they count as tests and as "skipped" in the summary, `<skipped/>` in
+  the junit-xml report. A var skipped for any other reason (a filter, a
+  `pre-test` hook, a failed fixture) is left out of every count and of
+  the report, as Kaocha's `kaocha.testable/run-testable` gives a skipped
+  testable no count. `--print-result` still lists it with its reason.
 - The pool turns every line into a flat event: worker events plus `:worker`
   and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
   A line that starts with the worker's prefix but whose payload does not

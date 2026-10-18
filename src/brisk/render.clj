@@ -612,7 +612,7 @@
   (or duration-ms (when (and start-at end-at) (- end-at start-at))))
 
 (defn- ns-detail [rec]
-  (let [vars    (vals (:vars rec))
+  (let [vars    (rs/run-vars rec)
         failed  (count (filter (comp #{:failed :errored :crashed} rs/var-status) vars))
         skipped (count (filter (comp #{:skipped} rs/var-status) vars))]
     (case (rs/ns-result rec)
@@ -768,7 +768,7 @@
   (concat
    [(str (paint opts :bold (ext (:ns rec)))
          (when-let [d (ns-duration rec)] (paint opts :gray (str " " (fmt-ms d)))))]
-   (map #(doc-var-line opts %) (sort-by (comp str :var) (vals (:vars rec))))
+   (map #(doc-var-line opts %) (sort-by (comp str :var) (rs/run-vars rec)))
    (case (rs/ns-result rec)
      :error   [(str "  " (paint opts :red (if (= :setup (:phase rec)) "✗ worker setup failed" "✗ failed to load")))]
      :crashed (when (empty? (:vars rec))

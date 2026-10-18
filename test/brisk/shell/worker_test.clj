@@ -159,14 +159,14 @@
    :ns-meta {}})
 
 (deftest worker-uses-select-decide-with-real-ns-metadata
-  (testing "kaocha.testable/run-testable: pending vars are skipped, skip-meta too"
+  (testing "kaocha.testable/run-testable: pending vars are skipped, skip-meta too, and only pending ones count"
     (let [events (run-events 'exec.pending-test {:decide select/decide
                                                  :select (skip-spec {:skip-meta [:slow]})})
           state (reduce rs/apply-event (rs/init {})
                         (map #(assoc % :worker 0 :at 0) events))]
       (is (= '{not-written-yet :pending marked-slow :skip-meta}
              (into {} (keep (fn [e] (when (= :var/skipped (:event e)) [(:var e) (:reason e)]))) events)))
-      (is (= {:total 3 :passed 1 :failed 0 :errored 0 :skipped 2 :running 0}
+      (is (= {:total 2 :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
              (:vars (rs/summary state))))))
   (testing "^:kaocha/pending on the ns form is read from the loaded namespace"
     (let [events (run-events 'exec.ns-pending-test {:decide select/decide :select (skip-spec {})})]

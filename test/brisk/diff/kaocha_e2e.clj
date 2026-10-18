@@ -41,12 +41,19 @@
                   (= :pending (:reason r)) [v :pending])))
         vars))
 
+(def ^:private ns-pending-projects
+  "Projects with `^:kaocha/pending` on an ns form, which Kaocha counts as
+  one pending test and brisk as one per var (doc/design.md, divergences)."
+  #{"pending"})
+
 (defn- same-run? [project args]
   (let [[kexit kres] (kaocha project args)
         [bexit bres] (brisk project args)]
     (testing (str project " " args)
       (is (seq (comparable kres)) "Kaocha ran something")
       (is (= (comparable kres) (comparable bres)))
+      (when-not (contains? ns-pending-projects project)
+        (is (= (:totals kres) (:totals bres)) "test and pending counts of the summary line"))
       (is (= kexit bexit) "exit code"))))
 
 (deftest same-tests-same-results

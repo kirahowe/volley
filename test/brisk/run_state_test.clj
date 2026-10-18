@@ -35,7 +35,10 @@
           state (gr/fold (:plan r) events)
           s (rs/summary state)
           hidden (set (keep (fn [[ns rec]] (when (rs/unselected? rec) ns)) (:namespaces state)))
-          started (set (keep (fn [e] (when (and (#{:var/start :var/skipped} (:event e))
+          ;; filtered vars are not part of the run; pending ones are
+          started (set (keep (fn [e] (when (and (or (= :var/start (:event e))
+                                                    (and (= :var/skipped (:event e))
+                                                         (= :pending (:reason e))))
                                                 (not (hidden (:ns e))))
                                        [(:ns e) (:var e)]))
                              events))
