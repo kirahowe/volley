@@ -14,6 +14,8 @@
    [brisk.shell.hooks :as hooks]
    [clojure.test :as t]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; Pure helpers
 
@@ -487,7 +489,7 @@
   "Emit function writing whole protocol lines to `out`, atomically."
   [^java.io.Writer out]
   (fn [event]
-    (let [line (safely #(str (protocol/encode-event event) "\n"))]
+    (let [^String line (safely #(str (protocol/encode-event event) "\n"))]
       (locking out
         (.write out line)
         (.flush out)))))
@@ -518,7 +520,7 @@
   [& _]
   (let [proto-out (utf8-writer System/out)
         stray (java.io.PrintStream. System/err true "UTF-8")
-        stray-writer (utf8-writer stray)
+        ^java.io.Writer stray-writer (utf8-writer stray)
         emit! (make-emit proto-out)
         decide (resolve-decide)
         in (java.io.BufferedReader.

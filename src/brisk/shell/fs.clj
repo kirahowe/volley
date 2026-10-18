@@ -7,6 +7,8 @@
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
+(set! *warn-on-reflection* true)
+
 (def timings-file
   "Where per-namespace durations are kept between runs."
   ".brisk/timings.edn")
@@ -112,5 +114,5 @@
                       (record! f (.toMillis (.lastModifiedTime ^java.nio.file.attribute.BasicFileAttributes attrs)))
                       :continue)}))
     (doseq [f files :when (fs/regular-file? f)]
-      (record! f (.toMillis (fs/last-modified-time f))))
+      (record! f (.toMillis ^java.nio.file.attribute.FileTime (fs/last-modified-time f))))
     @found))

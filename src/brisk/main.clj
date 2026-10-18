@@ -24,6 +24,8 @@
   (:import
    (java.util.concurrent LinkedBlockingQueue TimeUnit)))
 
+(set! *warn-on-reflection* true)
+
 (def version "brisk 0.1.0-alpha")
 
 (def ^:private tick-ms 80)

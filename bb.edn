@@ -6,9 +6,23 @@
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
         :requires ([brisk.main :as main])
         :task (System/exit (main/run *command-line-args*))}
-  test:jvm {:doc "Run brisk's own test suite with the parent on the JVM (clojure -M:test); takes brisk's flags"
-            :task (System/exit (:exit (apply shell {:continue true} "clojure" "-M:test" "-m" "brisk.main"
-                                             *command-line-args*)))}
+  test:jvm {:doc "Run brisk's own test suite with the parent on the JVM (clojure -M:test); takes brisk's flags. Fails on reflection warnings in src."
+            :requires ([babashka.fs :as fs] [babashka.process :as p] [clojure.string :as str])
+            :task (let [proc (apply p/process {:out :string :err :string}
+                                    "clojure" "-M:test" "-m" "brisk.main" *command-line-args*)
+                        {:keys [exit out err]} (deref proc)
+                        ;; parent and JVM workers print them while compiling brisk's source
+                        reflective (->> (re-seq (re-pattern "Reflection warning, (brisk/[^:]+\\.clj)[^\\n]*") (str out err))
+                                        (filter (fn [m] (fs/exists? (str "src/" (second m)))))
+                                        (map first)
+                                        distinct)]
+                    (print out) (flush)
+                    (binding [*out* *err*] (print err) (flush))
+                    (when (seq reflective)
+                      (binding [*out* *err*]
+                        (println "Reflection warnings in brisk's source:")
+                        (run! println reflective)))
+                    (System/exit (if (seq reflective) 1 exit)))}
   test:bootstrap {:doc "Run brisk's own test suite with plain clojure.test"
                   :extra-paths ["test" "dev-resources"]
                   :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}

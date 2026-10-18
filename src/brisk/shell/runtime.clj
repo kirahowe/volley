@@ -12,6 +12,8 @@
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
+(set! *warn-on-reflection* true)
+
 (def ^:private sep java.io.File/pathSeparator)
 
 (defn bb?

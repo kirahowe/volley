@@ -237,7 +237,8 @@ any of its test vars) runs after the parallel batch, alone.
 
 - `bb test`: brisk's own suite, run by brisk (`tests.edn`).
 - `bb test:jvm`: the same suite with brisk itself running on the JVM
-  (`clojure -M:test -m brisk.main`).
+  (`clojure -M:test -m brisk.main`). It also fails when brisk's source
+  causes a reflection warning.
 - `bb test:bootstrap`: the same suite with plain `clojure.test`.
 - `bb test:diff`: compares brisk with Kaocha 1.91.1392 itself (downloads
   Kaocha).

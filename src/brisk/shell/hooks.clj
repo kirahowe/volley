@@ -22,6 +22,8 @@
   (:require
    [brisk.hooks :as hooks]))
 
+(set! *warn-on-reflection* true)
+
 (defn- resolve-hook [entry]
   (cond
     (qualified-symbol? entry)

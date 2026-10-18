@@ -7,6 +7,8 @@
    [babashka.process :as p]
    [clojure.string :as str]))
 
+(set! *warn-on-reflection* true)
+
 ;;; Pure helpers
 
 (def hide-cursor "\u001b[?25l")

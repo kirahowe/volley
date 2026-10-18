@@ -41,6 +41,8 @@
   (:import
    (java.util.concurrent LinkedBlockingQueue TimeUnit)))
 
+(set! *warn-on-reflection* true)
+
 (def ^:private tick-ms 80)
 
 (def ^:private cancel-wait-ms
@@ -213,7 +215,7 @@
                              (when keys? (read-keys!))
                              (when tick? [{:event :tick :at at}]))
               sess (drive env sess inputs)]
-          (recur sess (if tick? at last-tick) (if poll? at last-poll) (if width? at last-width)))))))
+          (recur sess (if tick? at last-tick) (if poll? at last-poll) (long (if width? at last-width))))))))
 
 (defn watch!
   "Run watch mode until the user quits. Returns the exit code."

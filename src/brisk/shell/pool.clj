@@ -18,6 +18,8 @@
   (:import
    (java.util.concurrent LinkedBlockingQueue)))
 
+(set! *warn-on-reflection* true)
+
 (defn bb-command
   "Command line for a babashka worker with classpath `classpath` (default:
   the parent's)."
@@ -66,7 +68,7 @@
          ;; A process the test started in the background may hold the
          ;; worker's pipes open long after the worker is gone, so the
          ;; readers get a short grace period, not an unbounded join.
-         (run! #(.join ^Thread % (max 1 (- deadline (System/currentTimeMillis)))) readers)
+         (run! #(.join ^Thread % (long (max 1 (- deadline (System/currentTimeMillis))))) readers)
          (.put ^LinkedBlockingQueue queue
                {:event :worker/exit :worker id :code code
                 :at (System/currentTimeMillis)}))))

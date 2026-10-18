@@ -5,6 +5,8 @@
   (:import
    (java.lang.management ManagementFactory)))
 
+(set! *warn-on-reflection* true)
+
 (defn input-arguments
   "This JVM's launch options (`-Xmx...`, `-D...`, `--add-opens ...`)."
   []

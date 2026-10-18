@@ -9,6 +9,9 @@ architecture and the data contracts between namespaces.
 - `bb test` runs brisk's own test suite with brisk itself (`tests.edn`).
 - `bb test:bootstrap` runs the same suite with plain clojure.test, for when
   brisk is too broken to run itself.
+- `bb test:jvm` runs the same suite with the parent on the JVM and fails
+  on reflection warnings in `src` (every shell namespace sets
+  `*warn-on-reflection*`).
 - `bb test:diff` compares brisk with Kaocha (downloads Kaocha).
 - `bb lint` runs clj-kondo over `src` and `test`. It must report no errors
   or warnings.
