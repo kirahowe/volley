@@ -24,3 +24,10 @@ gh repo create kirahowe/volley --public --source . --remote origin --push
 git push origin v0.1.0-alpha.1
 gh release create v0.1.0-alpha.1 --title "volley 0.1.0-alpha.1" --notes-file <CHANGELOG section>
 ```
+
+## Log
+
+- 2026-10-18: Kira created the public repo and set `origin`. Pushed `main`
+  (through `eb8f843`) and the `v0.1.0-alpha.1` tag, and created a GitHub
+  prerelease with the CHANGELOG entry as notes:
+  https://github.com/kirahowe/volley/releases/tag/v0.1.0-alpha.1

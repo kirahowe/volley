@@ -1,6 +1,6 @@
 {:id 3
  :title "Publish the GitHub repo and push the v0.1.0-alpha.1 tag"
- :status :ready
+ :status :review
  :type :chore
  :priority :p1
  :created "2026-10-18"

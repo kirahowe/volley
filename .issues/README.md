@@ -21,9 +21,14 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [3](3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md) | Publish the GitHub repo and push the v0.1.0-alpha.1 tag | chore | P1 |
 | [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+
+### Review
+
+| ID | Title | Type | Priority |
+| --- | --- | --- | --- |
+| [3](3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md) | Publish the GitHub repo and push the v0.1.0-alpha.1 tag | chore | P1 |
 
 ## Done
 
