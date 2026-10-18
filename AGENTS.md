@@ -21,7 +21,7 @@ architecture and the data contracts between namespaces.
   shared mutable objects without updating `doc/design.md`.
 - **Property tests first.** Every pure namespace gets test.check properties
   (`clojure.test.check.clojure-test/defspec`) for its invariants, with
-  generators in `test/brisk/gen.clj` shared across tests. Use example-based
+  generators in `test/brisk/gen/<area>.clj` so tests can share them. Use example-based
   `deftest`s for specific Kaocha-compatibility cases and for shell code.
 - **Style.** Follow the Clojure Style Guide (https://guide.clojure.style).
   Idiomatic Clojure: small functions over data, threading macros where they
