@@ -1,9 +1,9 @@
 # brisk
 
-A test runner for `clojure.test` on babashka. It runs test namespaces in
-parallel worker processes, shows each namespace as it finishes, and reads
-Kaocha's `tests.edn` and command-line flags, so a Kaocha suite runs
-unchanged.
+A test runner for `clojure.test` on babashka and the JVM. It runs test
+namespaces in parallel worker processes, shows each namespace as it
+finishes, and reads Kaocha's `tests.edn` and command-line flags, so a
+Kaocha suite runs unchanged.
 
 brisk is alpha software. Watch mode is not implemented yet.
 
@@ -28,6 +28,64 @@ Workers start with the parent's classpath, so your `bb.edn` `:paths` and
 `:deps` apply to the tests. Like Kaocha, brisk also adds each suite's
 `:test-paths` to the classpath. It does not add `:source-paths`; those
 must be on the classpath through `bb.edn`, as with Kaocha.
+
+## Moving from Kaocha on the JVM
+
+Most Kaocha projects run it with `clojure -M:test`. Change the alias to run
+`brisk.main` instead of `kaocha.runner`, and add brisk to the dependencies:
+
+```clojure
+{:aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {io.github.kirahowe/brisk {:git/url "https://github.com/kirahowe/brisk"
+                                                :git/sha "<commit sha>"}}
+         :main-opts ["-m" "brisk.main"]}}}
+```
+
+`clojure -M:test` then runs brisk with the same `tests.edn` and flags
+(`--focus`, `--fail-fast`, `--print-result` and the rest). The parent runs
+on the JVM, so the workers are JVM processes too:
+
+- **Classpath.** Each worker gets the parent's classpath (`java.class.path`)
+  plus the suite's `:test-paths`, so the alias's `:extra-paths` and
+  `:extra-deps` apply.
+- **JVM options.** Each worker starts with the options the parent was
+  started with, from the alias's `:jvm-opts` or `-J` flags: heap size, `-D`
+  properties, `--add-opens`, `--enable-native-access`, GC and `-XX` flags,
+  agents. Some are dropped because a second JVM would fight the parent for
+  the same port or file: debugger agents (`-agentlib:jdwp`, `-Xdebug`), JMX
+  remote ports, socket REPL properties (`-Dclojure.server.*`), JFR and
+  `-Xlog`, `-XX:ErrorFile` and `-XX:HeapDumpPath`. Every worker also gets
+  `-XX:TieredStopAtLevel=1`, which makes short runs faster; a forwarded
+  setting for the same option comes later and wins. With `-Xmx2g` and four
+  workers the tests can use up to four times that heap.
+- **Worker count.** The default is the CPU count, at most 4 (on babashka,
+  at most 8). brisk's JVM mode adds about half a second to a run (the parent
+  and a worker both start a JVM), and every worker loads your source again,
+  so extra workers pay off only on suites that run for many seconds. `--workers N` overrides it.
+- **Pooling.** All workers start together at the beginning, load
+  `clojure.test` before they report ready, and then stay alive across
+  namespaces. `--isolate` starts a JVM per namespace and prints a warning
+  because it is slow.
+
+On the JVM brisk needs `borkdude/edamame`, `babashka/fs` and
+`babashka/process`; its `deps.edn` lists them and Clojure resolves them.
+
+### JVM workers from a babashka parent
+
+`bb -m brisk.main --runtime jvm` keeps the parent on babashka and runs the
+tests on the JVM. brisk runs `clojure -Spath` for the aliases in
+`--aliases` (for example `--aliases :test:dev`; the default is `:test` when
+your `deps.edn` defines it, else none) and starts workers with `java -cp`
+and the result. The `:jvm-opts` of those aliases go to the workers.
+
+The classpath is cached in `.brisk/classpath-<hash>.txt`, keyed on a hash of
+`deps.edn` and the aliases. It is recomputed when either changes or a jar on
+it is gone. A change to a `:local/root` dependency's own `deps.edn`, or to
+`~/.clojure/deps.edn`, is not noticed; delete `.brisk/classpath-*.txt`
+after one.
+
+`--runtime bb` from a JVM parent starts babashka workers.
 
 ## Moving from Kaocha on babashka
 
@@ -62,9 +120,13 @@ fails to load, fail-fast inside a namespace, tests that call
 
 ## Flags of its own
 
-- `--workers N`: number of worker processes (default: CPU count, at most 8).
+- `--workers N`: number of worker processes (default: CPU count, at most 8
+  on babashka and at most 4 on the JVM).
 - `--isolate`: start a fresh worker for every namespace.
-- `--runtime bb|jvm`: only `bb` works so far.
+- `--runtime bb|jvm`: the worker runtime. Default: the runtime brisk itself
+  runs on.
+- `--aliases :a:b`: deps.edn aliases for the classpath of JVM workers
+  started from babashka.
 
 ## Output
 
@@ -90,6 +152,8 @@ any of its test vars) runs after the parallel batch, alone.
 ## Developing brisk
 
 - `bb test`: brisk's own suite, run by brisk (`tests.edn`).
+- `bb test:jvm`: the same suite with brisk itself running on the JVM
+  (`clojure -M:test -m brisk.main`).
 - `bb test:bootstrap`: the same suite with plain `clojure.test`.
 - `bb test:diff`: compares brisk with Kaocha 1.91.1392 itself (downloads
   Kaocha).
