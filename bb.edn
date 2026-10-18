@@ -1,0 +1,10 @@
+{:paths ["src"]
+ :deps {}
+ :tasks
+ {test {:doc "Run brisk's own test suite"
+        :extra-paths ["test" "dev-resources"]
+        :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
+        :requires ([brisk.test-bootstrap :as bootstrap])
+        :task (bootstrap/run-tests! *command-line-args*)}
+  lint {:doc "Lint src and test with clj-kondo"
+        :task (shell "clj-kondo --lint src test")}}}
