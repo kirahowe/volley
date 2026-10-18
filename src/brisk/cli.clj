@@ -250,7 +250,8 @@
       (let [[state' rest'] (long-option state token more)]
         (recur state' rest'))
 
-      (and (str/starts-with? token "-") (> (count token) 1))
+      ;; tools.cli's #"^-." : a dash before a line break is an argument
+      (re-find #"^-." token)
       (let [[state' rest'] (short-option state (subs token 1) more)]
         (recur state' rest'))
 

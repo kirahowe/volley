@@ -149,6 +149,9 @@
   (testing "a lone dash is a suite, `--` ends options"
     (is (= [:-] (:suites (cli/parse-args ["-"]))))
     (is (= [:--focus :a] (:suites (cli/parse-args ["--" "--focus" "a"])))))
+  (testing "a dash followed by a line break is an argument, as in tools.cli"
+    (is (= [(keyword "-\n")] (:suites (cli/parse-args ["-\n"]))))
+    (is (empty? (:errors (cli/parse-args ["-\n"])))))
   (testing "flags ignore =value, as tools.cli does"
     (is (true? (:color (:options (cli/parse-args ["--color=1"])))))))
 
