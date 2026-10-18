@@ -1,0 +1,11 @@
+{:id 11
+ :title "Run a namespace found under two test paths twice, as Kaocha does"
+ :status :inbox
+ :type :bug
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md"}

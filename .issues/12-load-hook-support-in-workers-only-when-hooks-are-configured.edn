@@ -1,0 +1,11 @@
+{:id 12
+ :title "Load hook support in workers only when hooks are configured"
+ :status :inbox
+ :type :chore
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{"volley#2"}
+ :details "12-load-hook-support-in-workers-only-when-hooks-are-configured.md"}

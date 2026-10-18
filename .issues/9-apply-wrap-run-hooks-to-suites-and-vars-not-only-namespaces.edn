@@ -1,0 +1,11 @@
+{:id 9
+ :title "Apply wrap-run hooks to suites and vars, not only namespaces"
+ :status :inbox
+ :type :feature
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md"}

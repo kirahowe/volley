@@ -1,0 +1,11 @@
+{:id 3
+ :title "Publish the GitHub repo and push the v0.1.0-alpha.1 tag"
+ :status :ready
+ :type :chore
+ :priority :p1
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md"}

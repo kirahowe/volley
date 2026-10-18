@@ -1,0 +1,11 @@
+{:id 2
+ :title "Make small JVM suites at least as fast as Kaocha"
+ :status :ready
+ :type :feature
+ :priority :p2
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md"}
