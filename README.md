@@ -84,9 +84,21 @@ Add brisk to `bb.edn` as a git dependency, and a task to run it:
 
 Run `bb test`, or `bb -m brisk.main` directly.
 
+If your project has no `tests.edn`, brisk uses Kaocha's defaults: one
+suite with `test/` as its test path, running the namespaces whose names
+end in `-test`. It prints Kaocha's "Did not load a configuration file"
+warning on every run until you create the file. A `tests.edn` holding
+`#kaocha/v1 {}` gives the same defaults without the warning.
+
+If the `test` task above replaces one you wrote yourself, check which
+namespaces it ran. brisk runs only namespaces whose names end in `-test`
+unless the suite sets `:ns-patterns`, so a namespace such as
+`my.app.checks` stops running when you switch.
+
 For a `bin/brisk` binstub like Kaocha's `bin/kaocha`, copy
-[`bin/brisk`](bin/brisk) into your project. It runs
-`bb -m brisk.main "$@"` with your `bb.edn`.
+[`bin/brisk`](bin/brisk) into your project and make it executable with
+`chmod +x bin/brisk`. It runs `bb -m brisk.main "$@"` with your
+`bb.edn`.
 
 Workers start with the parent's classpath, so your `bb.edn` `:paths` and
 `:deps` apply to the tests. Like Kaocha, brisk adds each suite's
@@ -95,17 +107,23 @@ on the classpath through `bb.edn`.
 
 ### JVM
 
-Add an alias to `deps.edn`:
+Change the `:test` alias in `deps.edn` that runs Kaocha: swap
+`lambdaisland/kaocha` for brisk in `:extra-deps` and `kaocha.runner` for
+`brisk.main` in `:main-opts`. Keep the alias's other `:extra-paths`,
+`:extra-deps` and `:jvm-opts`; the tests need them as before.
 
 ```clojure
 {:aliases
- {:test {:extra-paths ["test"]
+ {:test {:extra-paths ["test" "test-resources"]
          :extra-deps {io.github.kirahowe/brisk {:git/url "https://github.com/kirahowe/brisk"
-                                                :git/sha "<commit sha>"}}
+                                                :git/sha "<commit sha>"}
+                      org.clojure/test.check {:mvn/version "1.1.1"}}
+         :jvm-opts ["-Xmx2g"]
          :main-opts ["-m" "brisk.main"]}}}
 ```
 
-Run `clojure -M:test`. On the JVM brisk depends on `borkdude/edamame`,
+Run `clojure -M:test`. A `bin/kaocha` binstub that runs
+`clojure -M:test "$@"` keeps working unchanged. On the JVM brisk depends on `borkdude/edamame`,
 `babashka/fs` and `babashka/process`; Clojure resolves them from brisk's
 `deps.edn`.
 
@@ -130,10 +148,12 @@ uses it. A `bin/kaocha` binstub becomes `bin/brisk` (see above).
 
 ### On the JVM
 
-Change the alias from `kaocha.runner` to `brisk.main` and swap the
-dependency, as in the install example. A `bin/kaocha` binstub that runs
-`clojure -M:test "$@"` keeps working unchanged. The parent runs on the JVM,
-so the workers are JVM processes too:
+Change the alias from `kaocha.runner` to `brisk.main` and replace
+`lambdaisland/kaocha` with brisk, as in the install example. brisk does
+not need Kaocha, so drop the dependency unless something else uses it.
+A `bin/kaocha` binstub that runs `clojure -M:test "$@"` keeps working
+unchanged. The parent runs on the JVM, so the workers are JVM processes
+too:
 
 - Each worker gets the parent's classpath plus the suite's `:test-paths`.
 - Each worker starts with the JVM options the parent was started with (heap
@@ -143,9 +163,13 @@ so the workers are JVM processes too:
   Workers also get `-XX:TieredStopAtLevel=1`. With `-Xmx2g` and four
   workers, the tests can use up to four times that heap.
 - The default worker count is the CPU count, at most 4.
-- Starting a second JVM adds about half a second to a run. On a suite that
-  takes a few seconds, Kaocha's single process can be faster. See
-  [doc/benchmarks.md](doc/benchmarks.md).
+- Each worker is a JVM that starts and loads your code again, so a suite
+  that takes Kaocha under about 10 seconds may be no faster under brisk,
+  or a little slower. In one adoption test, a 70-test suite took 9.3s
+  with brisk against 6.3 and 9.8s with Kaocha. Large suites gain the
+  most: a 244-test suite (1440 assertions, the same results under both)
+  took 40s with brisk against 215s with Kaocha. The machine was busy
+  during both measurements. See [doc/benchmarks.md](doc/benchmarks.md).
 
 To keep the parent on babashka and run tests on the JVM, use
 `bb -m brisk.main --runtime jvm`. brisk runs `clojure -Spath` for the
@@ -163,8 +187,15 @@ from a JVM parent starts babashka workers.
   `:focus-meta`, `:skip-meta`, `:kaocha/bindings` and `:kaocha/fail-fast?`.
 - Flags: suite ids, `--focus`, `--skip`, `--focus-meta`, `--skip-meta`,
   `--fail-fast`, `--config-file`, `--[no-]color`, `--[no-]capture-output`,
-  `--reporter`, `--print-config`, `--print-test-plan`, `--print-result`,
-  `--watch`, `--plugin`, `--profile`.
+  `--reporter`, `--watch`, `--plugin`, `--profile`.
+- `--print-config`, `--print-test-plan` and `--print-result` print
+  Kaocha's shapes (`:kaocha/tests`, `:kaocha.test-plan/tests`,
+  `:kaocha.result/tests`), but not the same maps: brisk's own settings sit
+  under `:brisk/*` keys, the test plan lists only the tests the parser
+  can see and holds no namespace or var objects, the result has counts
+  but no events, and `--print-result` prints one line. The
+  [divergences](doc/design.md#deliberate-divergences-from-kaocha) list
+  the details.
 - Test metadata: `^:kaocha/pending` and `:kaocha.testable/skip`, plus the
   metadata your `--focus-meta` and `--skip-meta` filters use.
 - The hooks plugin (`:kaocha.plugin/hooks`). Most hooks run in every worker;
@@ -174,16 +205,22 @@ from a JVM parent starts babashka workers.
   `--junit-xml-file FILE` or `:kaocha.plugin.junit-xml/target-file`. You do
   not need the kaocha-junit-xml library.
 - Exit codes: the number of failures capped at 255, 250 for invalid config,
-  255 for CLI errors and 254 for an unknown suite.
+  252 for a config that fails Kaocha's spec, 248 for a plugin that cannot
+  be loaded, 255 for CLI errors and 254 for an unknown suite or a reporter
+  that does not resolve.
+- A test var that makes no assertion fails with Kaocha's "Test ran without
+  assertions" message.
 
 ### What differs
 
 Kaocha options brisk does not support print a warning instead of being
-ignored silently. Plugins other than filter, capture-output, randomize,
-print-invocations, profiling, hooks and junit-xml get a warning, and
-reporters other than `kaocha.report/documentation` fall back to brisk's own
-output. Flags of a plugin brisk accepts but does not run, such as
-cloverage's `--cov-output`, are accepted with a warning.
+ignored silently. Kaocha's other plugins (notifier, gc-profiling,
+cloverage and the like) are accepted with their options, and one warning
+line names the ones brisk does not run. A plugin that cannot be loaded at
+all stops the run with exit 248, as in Kaocha. Kaocha's reporters map to
+brisk's output without a warning (`documentation` to its documentation
+layout), and a reporter of your own, such as `--reporter my.app/report`,
+runs in the workers and gets every `clojure.test` event.
 
 The list of deliberate behaviour differences is in the
 [divergences section of doc/design.md](doc/design.md#deliberate-divergences-from-kaocha).
@@ -191,6 +228,27 @@ In short: a namespace that fails to load is one error rather than failing
 the whole suite, a test that calls `System/exit` crashes one worker rather
 than the run, fail-fast finishes the failing test before stopping, and a
 namespace is loaded in the worker that runs it unless you pass `--preload`.
+
+## Before you switch
+
+- Test namespaces run at the same time in separate processes. Tests that
+  use a fixed port, write the same file or share a database schema can
+  collide. Mark such a namespace `^:synchronized` or `^:brisk/serial`
+  (it then runs alone, after the others), or run everything in one
+  worker with `--workers 1`.
+- Hooks and `:brisk/worker-setup` run in every worker, so setup that
+  starts a server on a fixed port starts one per worker.
+- brisk does not randomize the order of tests. It runs the namespaces
+  that were slowest last time first. `--randomize` and `--seed` are
+  accepted with a warning.
+- When two suites select the same namespace, it runs once, with the
+  first suite's selection. Kaocha runs it twice.
+- A namespace is loaded only in the worker that runs it. A test namespace
+  that relies on another one being loaded first (an `assert-expr`
+  method, a spec) needs `--preload`.
+- The other differences, such as a load error failing one namespace
+  rather than the whole suite, are in the
+  [divergences section of doc/design.md](doc/design.md#deliberate-divergences-from-kaocha).
 
 ## Watch mode
 
@@ -204,8 +262,9 @@ change to `tests.edn` reloads the config and reruns everything. brisk does
 not watch `deps.edn`; restart it after changing dependencies. If a run is
 still going when files change, brisk cancels it and starts a new one.
 
-Each run ends with a status line such as
-`PASS  Waiting for file changes...  press h to show help, q to quit`.
+Each run ends with the counts line of the summary, without the slowest
+tests or the rerun command (`f` reruns the failures), and a status line
+such as `PASS  Waiting for file changes...  press h to show help, q to quit`.
 When something fails, the line says `FAIL  2 failures`; failures from
 earlier runs stay counted until their namespace passes again. On a
 terminal:
@@ -272,8 +331,20 @@ seconds gets a `still running` line in that mode. Both end with a summary,
 the slowest tests and a `--focus` command to rerun the failures. That
 command starts the way you ran brisk: `bb test` inside a babashka task,
 `bin/brisk` through the binstub, `clojure -M:test` on the JVM. Set
-`BRISK_COMMAND` to choose it yourself. `--reporter documentation` prints one
-line per test var, grouped by namespace.
+`BRISK_COMMAND` to choose it yourself. It keeps `--config-file` when you
+used one. `--reporter documentation` prints one line per test var,
+grouped by namespace.
+
+Output that a test or a namespace prints outside capture (while loading,
+say) appears as it happens, in full. When several workers load the same
+namespace and print the same line while loading it, the line appears
+once.
+
+The summary counts the tests that ran and the pending ones, which it
+calls skipped. Tests that `--focus`, `--skip` or the metadata filters
+leave out are not counted, as in Kaocha: `--focus my.app-test/one`
+reports `1 test`. When the filters leave nothing to run, brisk prints
+Kaocha's "All N tests were skipped" warning.
 
 brisk saves namespace durations in `.brisk/timings.edn`, and the next run
 starts the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
@@ -296,14 +367,14 @@ starts the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
 - `clojure.test` only. No ClojureScript and no coverage.
 - brisk finds test namespaces by reading their source. It cannot see tests
   that a macro defines, though filters still reach them at run time.
-- `--randomize` and `--seed` are accepted and ignored. brisk runs the
+- `--randomize` and `--seed` are accepted with a warning. brisk runs the
   slowest namespaces first rather than shuffling.
 - Hooks run once per worker, so a hook that starts something with a fixed
   port starts N of them.
 - Overlapping suites that select the same namespace run it once, with the
   first suite's selection. Kaocha runs it twice.
-- Short JVM suites are slower than under Kaocha. See
-  [doc/benchmarks.md](doc/benchmarks.md).
+- JVM suites that take Kaocha under about 10 seconds may be no faster,
+  or a little slower. See [doc/benchmarks.md](doc/benchmarks.md).
 
 The full list, with reasons, is in [doc/design.md](doc/design.md).
 
@@ -311,9 +382,10 @@ The full list, with reasons, is in [doc/design.md](doc/design.md).
 
 brisk ran a 507-test babashka suite in 27.5s with 8 workers, against 153.8s
 for that project's own runner. On a 26-test babashka suite it took 0.43 to
-0.50s against 0.50 to 0.65s. On the JVM it is slower than Kaocha by about
-half a second on small suites and faster on suites with long namespaces.
-The runs were on a loaded 16-core Mac. Numbers, conditions and caveats are
+0.50s against 0.50 to 0.65s. On the JVM it ran a 244-test suite in 40s
+against Kaocha's 215s; on suites that take Kaocha a few seconds it is no
+faster, or slower by about half a second. The runs were on a loaded
+16-core Mac. Numbers, conditions and caveats are
 in [doc/benchmarks.md](doc/benchmarks.md).
 
 ## Contributing

@@ -42,12 +42,31 @@ pass/fail per var as Kaocha.
 
 Empty cells were not measured.
 
+### Adoption test, 2026-10-18
+
+Copies of two of the projects above switched from Kaocha to brisk the way
+the README describes, one run each.
+The machine was loaded: the load average was 7 to 20 during these runs,
+higher than for the table above.
+
+| Project (tests) | Kaocha | brisk |
+|---|---|---|
+| hosted-clay (70) | 6.3, 9.8 | 9.3 |
+| reader (244, 1440 assertions) | 215 | 40 |
+
+Both runners reported the same tests and assertions with no failures on
+both projects. The reader numbers are lower than in the table above for
+both runners; the two sets were taken on different days under different
+load, so compare within a row, not across tables.
+
 ## What the numbers say
 
 - On small suites brisk gains little. On a short JVM suite it is slower
   than Kaocha by about half a second, because the parent and a worker each
   start a JVM. local-coder is the example: 2.2 to 2.8s with Kaocha, 2.7s
-  with brisk.
+  with brisk. A suite that takes Kaocha under about 10 seconds may be no
+  faster: hosted-clay took 9.3s with brisk in the adoption test against
+  6.3 and 9.8s with Kaocha.
 - Gains come from overlapping namespaces that take a long time. In secrets
   the one 62-second test sets the floor; in reader, embedded Postgres setup
   in several namespaces overlaps.
