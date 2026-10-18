@@ -486,6 +486,17 @@
   [& xs]
   (first (filter some? xs)))
 
+(defn- brisk-value-errors
+  "brisk's own tests.edn keys with values it cannot use. Like the values
+  Kaocha rejects, they stop the run (exit 250) rather than being guessed
+  at."
+  [raw]
+  (cond-> []
+    (and (contains? raw :workers) (not (pos-int? (:workers raw))))
+    (conj (str ":workers must be a positive integer, got " (pr-str (:workers raw))))
+    (and (contains? raw :runtime) (not (contains? #{:bb :jvm} (:runtime raw))))
+    (conj (str ":runtime must be :bb or :jvm, got " (pr-str (:runtime raw))))))
+
 (defn- junit-xml
   "`kaocha.plugin.junit-xml`'s settings: the target file from
   `--junit-xml-file` or `:kaocha.plugin.junit-xml/target-file`, and the two
@@ -545,12 +556,15 @@
          top-hooks (read-hook-config cfg hooks/top-level-keys "" hooks-on?)
          tests (mapv (fn [s h] (with-hook-config (suite-view s) h)) suites suite-hooks)
          junit (junit-xml cfg raw cli-options plugins)
-         runtime (runtime/resolve-runtime (pick (:runtime cli-options) (:runtime raw))
+         value-errors (brisk-value-errors raw)
+         runtime (runtime/resolve-runtime (pick (:runtime cli-options)
+                                                (when (contains? #{:bb :jvm} (:runtime raw)) (:runtime raw)))
                                           (get env :bb? true))]
      (with-hook-config
       (cond->
        {:tests tests
-       :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
+       :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e])
+                                      value-errors)))
        :filters (config-filters cfg cli-options)
        :plugins plugins
        :fail-fast? (boolean (pick (:fail-fast cli-options) (:kaocha/fail-fast? cfg) false))
@@ -560,7 +574,9 @@
                                        true))
        :reporter reporter
        :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
-       :workers (pick (:workers cli-options) (:workers raw) (runtime/default-workers runtime (:cpus env)))
+       :workers (pick (:workers cli-options)
+                      (when (pos-int? (:workers raw)) (:workers raw))
+                      (runtime/default-workers runtime (:cpus env)))
        :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
        :preload? (boolean (pick (:preload cli-options) (:preload? raw) false))
        :runtime runtime

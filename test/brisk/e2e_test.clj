@@ -151,6 +151,11 @@
     (let [{:keys [exit err]} (run nil [] {"tests.edn" "#kaocha/v1 {:tests [{:test-paths \"test\"}]}"})]
       (is (= 250 exit))
       (is (str/includes? err ":kaocha/test-paths"))))
+  (testing "brisk's own keys with unusable values exit 250 with a message"
+    (let [{:keys [exit err]} (run "default" [] {"tests.edn" "#kaocha/v1 {:workers \"4\" :runtime :jvmx}"})]
+      (is (= 250 exit))
+      (is (str/includes? err ":workers must be a positive integer"))
+      (is (str/includes? err ":runtime must be :bb or :jvm"))))
   (testing "an unreadable tests.edn exits 250"
     (is (= 250 (:exit (run nil [] {"tests.edn" "{:tests ["})))))
   (testing "kaocha.runner/run: an unknown flag prints usage and exits -1"

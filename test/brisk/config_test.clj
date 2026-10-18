@@ -388,3 +388,15 @@
   (let [c (config/normalize {:plugins [:hooks] :kaocha.hooks/pre-load ['unqualified 'ok/fine 3]} {})]
     (is (= '{:pre-load [ok/fine]} (:hooks c)))
     (is (= 2 (count (filter #(str/includes? % "is not a qualified symbol or a list form") (:warnings c)))))))
+
+(deftest brisk-keys-are-validated
+  (testing "a value brisk cannot use is a config error, not a crash or a guess"
+    (is (= [":workers must be a positive integer, got \"4\""]
+           (:errors (config/normalize {:workers "4"} {}))))
+    (is (= [":workers must be a positive integer, got 0"]
+           (:errors (config/normalize {:workers 0} {}))))
+    (is (= [":runtime must be :bb or :jvm, got :jvmx"]
+           (:errors (config/normalize {:runtime :jvmx} {}))))
+    (is (= :bb (:runtime (config/normalize {:runtime :jvmx} {} {:bb? true}))) "defaults are kept"))
+  (testing "good values pass"
+    (is (= [] (:errors (config/normalize {:workers 3 :runtime :jvm} {}))))))
