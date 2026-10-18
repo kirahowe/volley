@@ -407,7 +407,7 @@
 
 (defn- header-text [{:keys [kind ns var] :as f}]
   (case kind
-    :ns-error (str (qualified ns nil) "  failed to load")
+    :ns-error (str (qualified ns nil) (if (= :run (:phase f)) "  failed in a fixture" "  failed to load"))
     :crash    (str (if ns (qualified ns var) (str "worker " (:worker f)))
                    "  worker exited with code " (:exit-code f))
     :file-error "ns form could not be read"
@@ -482,7 +482,7 @@
       :passed  (str "(" (plural (count vars) "test")
                     (when (pos? skipped) (str ", " skipped " skipped")) ")")
       :failed  (str "(" failed "/" (count vars) " failed)")
-      :error   "(failed to load)"
+      :error   (if (= :run (:phase rec)) "(fixture failed)" "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
       "")))
 

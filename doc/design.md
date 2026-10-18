@@ -167,7 +167,8 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 ```clojure
 {:event :worker/ready}
 {:event :ns/start      :ns ns :run-id n}
-{:event :ns/error      :ns ns :run-id n :error err}  ; load or :once fixture failure
+{:event :ns/error      :ns ns :run-id n :error err   ; load or fixture failure
+                       :phase (:load | :run)}
 {:event :var/start     :ns ns :var sym :file str :line int}
 {:event :assertion     :ns ns :var sym :type (:fail | :error)
                        :message str-or-nil :contexts [str]
@@ -321,3 +322,28 @@ exactly. Each is the conservative option.
   environment can never exit 0. Fail-fast leftovers are listed but not
   counted.
 - **`--runtime jvm`** is accepted and warns; workers run on babashka.
+
+### Deliberate divergences from Kaocha
+
+`bb test:diff` (`brisk.diff.kaocha-e2e`) runs Kaocha 1.91.1392 under
+babashka and brisk on the fixture projects in `dev-resources/projects` and
+requires the same executed vars, outcomes, assertion counts and exit
+codes. These cases differ on purpose, and the differential tests pin the
+difference:
+
+- **A namespace that fails to load.** Kaocha's `kaocha.testable/load`
+  rethrows a namespace's load error to the suite, so the whole suite
+  becomes one error and none of its tests run. brisk reports that
+  namespace (and an unreadable ns form, a `:once` fixture that throws)
+  as one error each and runs the rest. Both exit non-zero.
+- **Fail-fast.** Kaocha stops at the first failing assertion, even inside
+  a namespace. brisk stops handing out namespaces; the ones already
+  running (with one worker, just the failing one) finish.
+- **A test that calls `System/exit`.** It ends Kaocha's process. In brisk
+  it ends one worker; the namespace is reported as a CRASH and the run
+  goes on.
+- **A `:once` fixture that throws.** On babashka Kaocha lets the exception
+  escape and exits with a stack trace. brisk reports a namespace error.
+- **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
+  one pending test; brisk counts each of its vars as skipped (reason
+  `:pending`). The same vars run (none).

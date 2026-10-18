@@ -76,13 +76,13 @@
   [vars]
   (update-vals vars #(cond-> % (= :running (:phase % :running)) (assoc :phase :crashed))))
 
-(defn- on-ns-error [state {:keys [worker ns at error]}]
+(defn- on-ns-error [state {:keys [worker ns at error phase]}]
   (let [crash? (crash-error? error)]
     (-> state
         (update-in [:namespaces ns]
                    #(cond-> (merge ((ns-record ns) %)
                                    {:status (if crash? :crashed :error) :error error
-                                    :worker worker :end-at at})
+                                    :phase phase :worker worker :end-at at})
                       crash? (-> (assoc :exit-code (:exit-code error))
                                  (update :vars crash-running-vars))))
         (set-worker worker idle))))
@@ -246,9 +246,9 @@
            :file (or (:file a) (:file v))
            :output (var-output v))))
 
-(defn- ns-failures [{:keys [ns status error exit-code stray vars worker]}]
+(defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase]}]
   (case status
-    :error   [{:kind :ns-error :ns ns :error error :worker worker
+    :error   [{:kind :ns-error :ns ns :error error :worker worker :phase phase
                :output (str/join "\n" stray)}]
     :crashed (let [v (first (filter #(= :crashed (var-status %)) (vals vars)))]
                [{:kind :crash :ns ns :var (:var v) :exit-code exit-code :worker worker

@@ -58,12 +58,12 @@
        (mapv #(discover/ns-info % (bfs/read-file %)))))
 
 (defn- worker-classpath
-  "The parent's classpath plus every suite's test and source paths, which
-  Kaocha adds to the classpath when it loads a suite."
+  "The parent's classpath plus every suite's test paths, which Kaocha adds
+  to the classpath when it loads a suite (`kaocha.testable/load`). Source
+  paths are not added: Kaocha only uses them for watching."
   [cfg]
   (let [extra (->> (:tests cfg)
-                   (mapcat (juxt :test-paths :source-paths))
-                   (apply concat)
+                   (mapcat :test-paths)
                    (map bfs/absolute))
         parent (some-> (cp/get-classpath) (str/split (re-pattern java.io.File/pathSeparator)))]
     (str/join java.io.File/pathSeparator (distinct (concat parent extra)))))

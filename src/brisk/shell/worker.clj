@@ -126,6 +126,11 @@
   (.flush ^java.io.PrintStream stream)
   (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
 
+(def ^:private live-capture
+  "The capture buffer of the test running right now, so that a test that
+  exits the process does not take its output with it (see `-main`)."
+  (atom nil))
+
 (defn- start-var!
   "Open the accumulator for var `v`, redirecting output when capturing."
   [acc emit! ns-sym capture? v]
@@ -136,6 +141,7 @@
                  :saved-out *out* :saved-err *err*
                  :saved-system-out System/out :saved-system-err System/err})
     (when capture
+      (reset! live-capture capture)
       (set! *out* (:writer capture))
       (set! *err* (:writer capture))
       (System/setOut (:stream capture))
@@ -149,6 +155,7 @@
   (when-let [{:keys [var pass fail error t0 capture saved-out saved-err
                      saved-system-out saved-system-err]} @acc]
     (when capture
+      (reset! live-capture nil)
       (set! *out* saved-out)
       (set! *err* saved-err)
       (System/setOut saved-system-out)
@@ -199,8 +206,11 @@
             e)))
       (catch Throwable e e))))
 
-(defn- error-event [ns-sym run-id e]
-  {:event :ns/error :ns ns-sym :run-id run-id
+(defn- error-event
+  "`phase` is `:load` for a failed require and `:run` for an error that
+  escaped the tests themselves (a fixture, typically)."
+  [ns-sym run-id phase e]
+  {:event :ns/error :ns ns-sym :run-id run-id :phase phase
    :error (protocol/encode-error (Throwable->map e))})
 
 (defn- ns-metadata
@@ -232,7 +242,8 @@
                 (emit! {:event :var/skipped :ns ns :var (:name (meta v))
                         :reason reason}))
               (run-vars! emit! ns (boolean capture-output?) run)))]
-      (when run-error (emit! (error-event ns run-id run-error)))
+      (when run-error
+        (emit! (error-event ns run-id (if load-error :load :run) run-error)))
       (emit! (with-run {:event :ns/end :ns ns
                         :duration-ms (duration-ms t0 (System/nanoTime))})))))
 
@@ -279,6 +290,11 @@
         decide (resolve-decide)
         in (java.io.BufferedReader.
             (java.io.InputStreamReader. System/in "UTF-8"))]
+    (.addShutdownHook (Runtime/getRuntime)
+                      (Thread. (fn []
+                                 (when-let [c @live-capture]
+                                   (some->> (capture-text c) (.print stray))
+                                   (.flush stray)))))
     (System/setOut stray)
     (alter-var-root #'*out* (constantly stray-writer))
     (alter-var-root #'*err* (constantly stray-writer))
