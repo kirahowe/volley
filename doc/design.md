@@ -128,7 +128,8 @@ then in code.
  :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
  :junit-xml        {:target-file "junit.xml"        ; only with :kaocha.plugin/junit-xml and a file
                    :omit-system-out? false :add-location? false}
- :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]
+ :warnings         ["brisk does not run these plugins and ignores their options: :kaocha.plugin/notifier"]
+ :unknown-plugins  [:my.team/plugin]                ; neither built in nor known; the shell checks they load
  :errors           []                               ; config Kaocha would exit on; defaults used
  :plugins          [:kaocha.plugin/filter ...]
  :filters          {:focus [] :skip [] :focus-meta [] :skip-meta []}} ; global (CLI) filters
@@ -146,19 +147,35 @@ reference is Kaocha's own source in
 (`kaocha/config.clj`, `kaocha/default_config.edn`, `kaocha/plugin/filter.clj`).
 
 Kaocha options brisk doesn't support produce a warning, never a silent
-ignore. Plugins brisk treats as built in or harmless: `:kaocha.plugin/filter`,
-`:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (accepted without a
-warning; brisk never shuffles, it orders by previous timings), `:kaocha.plugin/print-invocations` (no-op),
-`:kaocha.plugin/profiling` (brisk always reports slowest tests), `:kaocha.plugin/hooks`
-(see "Hooks"), `:kaocha.plugin/junit-xml` (`brisk.junit`; the parent writes
-the report from the run state after the summary). Anything
-else: warning.
+ignore. Plugins fall in three groups (`brisk.config`):
 
-Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`)
+- Built in or stood in for, silently: `:kaocha.plugin/filter`,
+  `:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (one of
+  Kaocha's defaults; brisk never shuffles, it orders by previous timings),
+  `:kaocha.plugin/print-invocations` (brisk prints its own rerun command),
+  `:kaocha.plugin/profiling` (brisk always lists the slowest tests),
+  `:kaocha.plugin/hooks` (see "Hooks"), `:kaocha.plugin/junit-xml`
+  (`brisk.junit`; the parent writes the report from the run state after
+  the summary).
+- Kaocha's other plugins and common add-ons (notifier, gc-profiling,
+  debug, orchestra, preloads, version-filter, the alpha ones, cloverage):
+  accepted, with their options and config keys, under one warning line
+  that names every such plugin listed.
+- Anything else goes to `:unknown-plugins`. Kaocha exits 248 when a
+  plugin's namespaces cannot be loaded (`kaocha.plugin/register`); the
+  shell checks the classpath and the suites' paths for a source file of
+  each candidate namespace (`brisk.config/plugin-candidates`) and exits
+  248 with Kaocha's message (`brisk.config/plugin-load-error`) when there
+  is none. A plugin with a namespace that exists joins the warning line.
+
+Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`,
+`--profiling`, `--notifications`, `--gc-profiling` and their siblings)
 are parsed by `brisk.cli` like any other, but, as in Kaocha, they are an
 unknown option (exit 255) unless their plugin is in `:plugins` or given
-with `--plugin` (`brisk.cli/plugin-flag-errors`). Flags of a listed plugin
-brisk does not run are accepted with a warning.
+with `--plugin` (`brisk.cli/plugin-flag-errors`). `--help` lists them
+under a heading of their own. `--randomize` and `--seed` belong to a
+default plugin and are always accepted, with one warning that brisk does
+not randomize.
 
 ### Namespace info (`brisk.discover`)
 
@@ -733,9 +750,8 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
 - **CLI.** Kaocha's: `[suite-id ...]`, `--focus`, `--skip`, `--focus-meta`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (see "Reporters" below), `--plugin`, `--profile`, `--diff-style`,
-  `--print-config`, `--print-test-plan`, `--print-result`, `--[no-]profiling`
-  and the junit-xml flags. `--[no-]randomize` and `--seed` are accepted and
-  ignored. brisk's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
+  `--print-config`, `--print-test-plan`, `--print-result`, and the plugin
+  flags above. `--[no-]randomize` and `--seed` are accepted with a warning. brisk's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
   `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions

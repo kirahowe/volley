@@ -81,18 +81,29 @@
                    (some #{:kaocha/skip} (:skip-meta s))))
             (:tests (config/normalize raw {})))))
 
-(defspec unsupported-plugins-always-warn 200
+(def ^:private plugins-warning
+  #"^brisk does not run these plugins and ignores their options: (.+)$")
+
+(defspec unsupported-plugins-always-warn-in-one-line 200
   (prop/for-all [raw g/raw-config]
     (let [c (config/normalize raw {})
           supported #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
                       :kaocha.plugin/print-invocations :kaocha.plugin/profiling
-                      :kaocha.plugin/hooks}]
-      (= (set (remove supported (:plugins c)))
-         (set (keep #(some-> (re-find #"^unsupported plugin (\S+) ignored$" %) second read-string)
-                    (:warnings c)))))))
+                      :kaocha.plugin/hooks :kaocha.plugin/junit-xml}
+          lines (keep #(second (re-find plugins-warning %)) (:warnings c))]
+      (and (<= (count lines) 1)
+           (= (set (remove supported (:plugins c)))
+              (set (map read-string (some-> (first lines) (str/split #", ")))))))))
 
-;; ---------------------------------------------------------------------------
-;; Defaults (kaocha/default_config.edn, kaocha.config/normalize)
+(deftest plugins-that-cannot-load-fail-like-kaocha
+  ;; kaocha.plugin/register, try-load-third-party-lib
+  (let [none (constantly false)]
+    (is (= "Couldn't load plugin :kaocha.plugin/foo. Failed to load namespace kaocha.plugin.foo. This could be caused by a misspelling or a missing dependency."
+           (config/plugin-load-error :kaocha.plugin/foo none)))
+    (is (= "Couldn't load plugin :my.team/thing. Failed to load namespaces my.team.thing and my.team. This could be caused by a misspelling or a missing dependency."
+           (config/plugin-load-error :my.team/thing none)))
+    (is (nil? (config/plugin-load-error :my.team/thing #{'my.team})) "a namespace that loads may define it")
+    (is (= [:my.team/thing] (:unknown-plugins (config/normalize {:plugins [:my.team/thing :notifier :hooks]} {}))))))
 
 (deftest missing-file-is-kaocha-defaults-test
   (let [c (config/normalize nil {})]
@@ -189,10 +200,14 @@
 (deftest warnings-test
   (testing "plugins brisk treats as built in or harmless do not warn"
     (is (= [] (:warnings (config/normalize {:plugins [:profiling :print-invocations]} {})))))
-  (testing "other plugins warn, by name"
-    (is (= ["unsupported plugin :kaocha.plugin/notifier ignored"
-            "unsupported plugin :my.plugin/thing ignored"]
-           (:warnings (config/normalize {:plugins [:notifier :my.plugin/thing]} {})))))
+  (testing "other plugins warn, by name, in one line, and their config keys are quiet"
+    (is (= ["brisk does not run these plugins and ignores their options: :kaocha.plugin/notifier, :my.plugin/thing"]
+           (:warnings (config/normalize {:plugins [:notifier :my.plugin/thing]
+                                         :kaocha.plugin.notifier/command "say"} {})))))
+  (testing "--randomize and --seed: one warning"
+    (is (= ["--randomize and --seed are ignored: brisk does not randomize test order"]
+           (:warnings (config/normalize nil {:randomize true :seed 3}))))
+    (is (= [] (:warnings (config/normalize nil {:randomize false})))))
   (testing "unsupported options warn rather than vanish"
     (let [w (:warnings (config/normalize {:kaocha/nonsense 1 :kaocha.hooks/pre-load 'x/y} {}))]
       (is (some #(str/includes? % ":kaocha/nonsense") w))
@@ -326,7 +341,7 @@
     (is (= true (:fail-fast? c-ci)))
     (is (= false (:color? c)))
     (is (= :documentation (:reporter c)))
-    (is (= ["unsupported plugin :kaocha.plugin/notifier ignored"] (:warnings c)))))
+    (is (= ["brisk does not run these plugins and ignores their options: :kaocha.plugin/notifier"] (:warnings c)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Hooks (kaocha.plugin.hooks) and :brisk/worker-setup

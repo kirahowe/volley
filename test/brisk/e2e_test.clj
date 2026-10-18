@@ -288,10 +288,23 @@
     (let [{:keys [exit out]} (run "default" ["--junit-xml-file" "j.xml"])]
       (is (= 255 exit))
       (is (str/includes? out "Unknown option: \"--junit-xml-file\""))))
-  (testing "flags of a listed plugin brisk does not run are accepted with a warning"
-    (let [{:keys [exit err]} (run "default" ["--plugin" "cloverage" "--cov-output" "cov" "--no-cov-html"])]
+  (testing "flags of a listed plugin brisk does not run are accepted, under one warning"
+    (let [{:keys [exit err]} (run "default" ["--plugin" "cloverage" "--plugin" "notifier" "--cov-output" "cov"
+                                             "--no-cov-html" "--no-notifications"])]
       (is (= 1 exit))
-      (is (str/includes? err "--cov-output ignored: :kaocha.plugin/cloverage is not supported")))))
+      (is (= 1 (count (re-seq #"brisk does not run these plugins" err))))
+      (is (str/includes? err ":kaocha.plugin/cloverage, :kaocha.plugin/notifier"))))
+  (testing "kaocha.plugin/register: a plugin no namespace defines exits 248"
+    (let [{:keys [exit err]} (run "default" ["--plugin" "my.team/thing"])]
+      (is (= 248 exit))
+      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. Failed to load namespaces my.team.thing and my.team.")))))
+
+(deftest help-groups-plugin-options
+  (let [{:keys [out]} (run "default" ["--help"])
+        plugins (str/index-of out "Options of Kaocha plugins")
+        own (str/index-of out "brisk's own options:")]
+    (is (< (str/index-of out "--focus-meta") plugins (str/index-of out "--junit-xml-file") own
+           (str/index-of out "--workers")))))
 
 (deftest assertions-in-fixtures-count-like-kaocha
   (let [[exit res] (result "fixture-assertions" [])

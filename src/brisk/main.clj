@@ -19,6 +19,7 @@
    [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
    [brisk.shell.watch :as watch-loop]
+   [clojure.java.io :as io]
    [clojure.pprint :as pprint]
    [clojure.string :as str])
   (:import
@@ -34,6 +35,22 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Inputs
+
+(defn- loadable?
+  "True when namespace `ns-sym` has a source file on this process's
+  classpath or under one of `dirs`."
+  [dirs ns-sym]
+  (let [base (-> (str ns-sym) (str/replace "-" "_") (str/replace "." "/"))
+        files (map #(str base %) [".clj" ".cljc" ".bb"])]
+    (boolean (or (some io/resource files)
+                 (some (fn [d] (some #(bfs/exists? (str d "/" %)) files)) dirs)))))
+
+(defn- plugin-error
+  "Kaocha's error for the first plugin in `:unknown-plugins` that cannot be
+  loaded at all, or nil."
+  [cfg]
+  (let [dirs (mapcat (juxt :test-paths :source-paths) (:tests cfg))]
+    (some #(config/plugin-load-error % (partial loadable? (flatten dirs))) (:unknown-plugins cfg))))
 
 (defn- load-config
   "Parse args and read tests.edn. Returns the pieces `engine/preflight`
@@ -52,6 +69,7 @@
     {:cli parsed
      :config (update cfg :warnings into (:warnings read))
      :read-error (:error read)
+     :plugin-error (plugin-error cfg)
      :config-missing? missing?
      :config-file file}))
 

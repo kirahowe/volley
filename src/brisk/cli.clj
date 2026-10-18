@@ -88,21 +88,22 @@
     :doc "Accepted for Kaocha and ignored, like --randomize."}
    ;; kaocha.plugin/capture-output
    {:long "capture-output" :toggle? true :doc "Capture output during tests."}
-   ;; kaocha.plugin/profiling and friends: accepted so existing invocations
-   ;; keep working; brisk always reports slow tests.
-   {:long "profiling" :toggle? true
-    :doc "Show slowest tests of each type with timing information."}
-   {:long "profiling-count" :arg "NUM" :parse parse-int
-    :doc "Show this many slow tests of each kind in profile results."}
-   {:long "notifications" :toggle? true
-    :doc "Enable/disable the notifier plugin (ignored by brisk)."}
-   {:long "notification-timeout" :arg "TIMEOUT"
-    :doc "Timeout for desktop notifications (ignored by brisk)."}
-   {:long "gc-profiling" :toggle? true :doc "Approximate memory per test (ignored by brisk)."}
-   {:long "gc-profiling-individual" :toggle? true
-    :doc "Details of individual tests for gc-profiling (ignored by brisk)."}
    ;; Flags of other plugins, valid only when the plugin is listed
    ;; (`plugin-flag-errors`), as Kaocha only knows them then.
+   ;; kaocha.plugin/profiling: brisk always lists the slowest tests.
+   {:long "profiling" :toggle? true :plugin :kaocha.plugin/profiling
+    :doc "Show slowest tests of each type with timing information (kaocha.plugin/profiling; ignored)."}
+   {:long "profiling-count" :arg "NUM" :parse parse-int :plugin :kaocha.plugin/profiling
+    :doc "Show this many slow tests of each kind in profile results (ignored)."}
+   ;; kaocha.plugin/notifier and gc-profiling, which brisk does not run
+   {:long "notifications" :toggle? true :plugin :kaocha.plugin/notifier
+    :doc "Enable/disable the notifier plugin (ignored by brisk)."}
+   {:long "notification-timeout" :arg "TIMEOUT" :plugin :kaocha.plugin/notifier
+    :doc "Timeout for desktop notifications (ignored by brisk)."}
+   {:long "gc-profiling" :toggle? true :plugin :kaocha.plugin/gc-profiling
+    :doc "Approximate memory per test (ignored by brisk)."}
+   {:long "gc-profiling-individual" :toggle? true :plugin :kaocha.plugin/gc-profiling
+    :doc "Details of individual tests for gc-profiling (ignored by brisk)."}
    ;; kaocha.plugin/junit-xml, which brisk implements:
    {:long "junit-xml-file" :arg "FILENAME" :plugin :kaocha.plugin/junit-xml
     :doc "Save the test results to an Ant JUnit XML file (kaocha.plugin/junit-xml)."}
@@ -137,15 +138,15 @@
    {:long "cov-exclude-call" :arg "NAME" :multi? true :plugin :kaocha.plugin/cloverage
     :doc "Ignored by brisk (cloverage)."}
    ;; brisk's own
-   {:long "workers" :arg "N" :parse parse-pos-int
+   {:long "workers" :brisk? true :arg "N" :parse parse-pos-int
     :doc "Number of parallel worker processes."}
-   {:long "preload" :toggle? true
+   {:long "preload" :toggle? true :brisk? true
     :doc "Load every test namespace in each worker before running any, as Kaocha does."}
-   {:long "isolate" :toggle? true
+   {:long "isolate" :toggle? true :brisk? true
     :doc "Run every namespace in a fresh worker process."}
-   {:long "runtime" :arg "RUNTIME" :parse parse-runtime
+   {:long "runtime" :arg "RUNTIME" :brisk? true :parse parse-runtime
     :doc "Worker runtime: bb or jvm (default: the runtime brisk runs on)."}
-   {:long "aliases" :arg "ALIASES" :parse runtime/parse-aliases
+   {:long "aliases" :arg "ALIASES" :brisk? true :parse runtime/parse-aliases
     :doc "deps.edn aliases for the classpath of --runtime jvm from babashka (default: :test if defined)."}])
 
 (defn- spec-key [{:keys [long]}] (keyword long))
@@ -274,15 +275,6 @@
                :when (and spec (not (contains? on (:plugin spec))))]
            (str "Unknown option: \"--" (:long spec) "\" (it needs " (:plugin spec) " in :plugins)")))))
 
-(defn plugin-flag-warnings
-  "Warnings for flags of listed plugins that brisk accepts but does not
-  act on (`supported` is the set of plugins brisk implements)."
-  [options supported]
-  (vec (for [[k _] (sort-by (comp str key) options)
-             :let [spec (get plugin-flags k)]
-             :when (and spec (not (contains? supported (:plugin spec))))]
-         (str "--" (:long spec) " ignored: " (:plugin spec) " is not supported"))))
-
 (defn- format-row [{:keys [short long arg toggle? default doc]}]
   [(str (if short (str short ", ") "    ")
         "--" (if toggle? (str "[no-]" long) long)
@@ -290,18 +282,28 @@
    (some-> default str)
    doc])
 
+(def ^:private help-sections
+  "The groups `--help` lists options in, in order."
+  [[nil (fn [spec] (not (or (:plugin spec) (:brisk? spec))))]
+   ["Options of Kaocha plugins (only when the plugin is in :plugins or given with --plugin):"
+    :plugin]
+   ["brisk's own options:" :brisk?]])
+
 (defn help-text
-  "Usage text for `--help`, in the shape of Kaocha's own. `invocation` is
-  how brisk was run (`brisk.runtime/invocation`)."
+  "Usage text for `--help`, in the shape of Kaocha's own, with plugin
+  options and brisk's own under headings. `invocation` is how brisk was
+  run (`brisk.runtime/invocation`)."
   [invocation]
-  (let [rows (map format-row option-specs)
-        w1 (apply max (map (comp count first) rows))
-        w2 (apply max (map (comp count #(or % "") second) rows))
-        pad (fn [s w] (str s (apply str (repeat (- w (count (or s ""))) \space))))]
+  (let [all (map format-row option-specs)
+        w1 (apply max (map (comp count first) all))
+        w2 (apply max (map (comp count #(or % "") second) all))
+        pad (fn [s w] (str s (apply str (repeat (- w (count (or s ""))) \space))))
+        row (fn [[flag default doc]] (str "  " (pad flag w1) "  " (pad default w2) "  " doc))]
     (str "USAGE:\n\n"
          invocation " [OPTIONS]... [TEST-SUITE]...\n\n"
-         (->> rows
-              (map (fn [[flag default doc]]
-                     (str "  " (pad flag w1) "  " (pad default w2) "  " doc)))
-              (str/join "\n"))
+         (->> help-sections
+              (map (fn [[heading pred]]
+                     (str (when heading (str heading "\n"))
+                          (str/join "\n" (map (comp row format-row) (filter pred option-specs))))))
+              (str/join "\n\n"))
          "\n\nOptions may be repeated multiple times for a logical OR effect.")))

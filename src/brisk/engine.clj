@@ -42,6 +42,7 @@
   {:cli-error 255          ; kaocha.runner/run returns -1
    :unknown-suite 254      ; kaocha.runner/run returns -2
    :config-error 250       ; kaocha.config/replace-by-default
+   :plugin-error 248       ; kaocha.plugin/register: a plugin that cannot load
    :no-tests 0})           ; kaocha.api/run warns and exits 0
 
 (def ^:private drain-timeout-ms
@@ -76,7 +77,7 @@
 (defn preflight
   "Decide what happens before any worker starts. Takes
   `{:cli parsed-args :config normalized :read-error str-or-nil
-    :config-missing? bool :config-file path :plan plan-or-nil
+    :plugin-error str-or-nil :config-missing? bool :config-file path :plan plan-or-nil
     :help str :version str}`
   (the plan may be absent when it is not needed yet).
 
@@ -86,7 +87,7 @@
   looks at the flags), then CLI errors, help, version, print-config,
   print-test-plan, unknown suites, and finally the `kaocha.api/run` check
   for an empty plan."
-  [{:keys [cli config read-error config-missing? config-file plan help version]}]
+  [{:keys [cli config read-error plugin-error config-missing? config-file plan help version]}]
   (let [options (:options cli)
         out (fn [lines] {:effect :print :lines (vec lines) :stream :out})
         err (fn [lines] {:effect :print :lines (vec lines) :stream :err})
@@ -102,6 +103,9 @@
        (seq (:errors config))
        [(err (map #(str "ERROR: Invalid configuration: " %) (:errors config)))
         (exit (:config-error exit-codes))]
+
+       plugin-error
+       [(err [(str "ERROR: " plugin-error)]) (exit (:plugin-error exit-codes))]
 
        (seq (:errors cli))
        [(out (concat (:errors cli) [help])) (exit (:cli-error exit-codes))]

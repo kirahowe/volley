@@ -12,7 +12,6 @@
   `apply-cli-opts` (see the docstrings of the private helpers for the Kaocha
   function each one mirrors)."
   (:require
-   [brisk.cli :as cli]
    [brisk.hooks :as hooks]
    [brisk.runtime :as runtime]
    [clojure.edn :as edn]
@@ -335,9 +334,53 @@
 ;; Normalization to brisk's config
 
 (def ^:private supported-plugins
+  "Plugins brisk implements or stands in for: filtering, capture,
+  hooks and junit-xml are built in; profiling is brisk's slowest-tests
+  list and print-invocations its rerun command. Randomize is one of
+  Kaocha's defaults; brisk accepts it and orders by timings instead."
   #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
     :kaocha.plugin/print-invocations :kaocha.plugin/profiling :kaocha.plugin/hooks
     :kaocha.plugin/junit-xml})
+
+(def ^:private ignored-plugins
+  "Plugins that ship with Kaocha (or, for cloverage and junit-xml's
+  siblings, are common add-ons) that brisk does not run. Listing them is
+  accepted, with their options, and one warning names them all."
+  #{:kaocha.plugin/notifier :kaocha.plugin/gc-profiling :kaocha.plugin/debug
+    :kaocha.plugin/orchestra :kaocha.plugin/preloads :kaocha.plugin/version-filter
+    :kaocha.plugin.alpha/info :kaocha.plugin.alpha/spec-test-check :kaocha.plugin.alpha/xfail
+    :kaocha.plugin/cloverage})
+
+(defn- plugin-key-namespaces
+  "Namespaces of the config keys of `plugins`, e.g. `kaocha.plugin.notifier`
+  for `:kaocha.plugin/notifier`; cloverage also reads `:cloverage/*`."
+  [plugins]
+  (into #{} (mapcat (fn [p] (cond-> [(str (namespace p) "." (name p))]
+                              (= :kaocha.plugin/cloverage p) (conj "cloverage"))))
+        plugins))
+
+(defn plugin-candidates
+  "The namespaces Kaocha tries to load for `plugin`
+  (`kaocha.plugin/try-load-third-party-lib`): `a.b.c` and then `a.b` for
+  `:a.b/c`, the name itself for a simple keyword."
+  [plugin]
+  (if (qualified-keyword? plugin)
+    [(symbol (str (namespace plugin) "." (name plugin))) (symbol (namespace plugin))]
+    [(symbol (name plugin))]))
+
+(defn plugin-load-error
+  "Kaocha's message (`kaocha.plugin/register`, exit 248) for `plugin` when
+  none of its candidate namespaces can be loaded; `loadable?` says whether
+  a namespace can. nil when one can: then the plugin may exist, and brisk
+  ignores it with a warning. `kaocha.plugin` itself, always there under
+  Kaocha, defines no plugin and is left out."
+  [plugin loadable?]
+  (let [candidates (remove #{'kaocha.plugin} (plugin-candidates plugin))
+        failed (remove loadable? candidates)]
+    (when (and (seq failed) (= failed candidates))
+      (str "Couldn't load plugin " plugin ". Failed to load namespace" (when (next failed) "s") " "
+           (str/join " and " failed)
+           ". This could be caused by a misspelling or a missing dependency."))))
 
 (def ^:private silent-namespaces
   #{"kaocha.plugin.profiling" "kaocha.plugin.print-invocations"
@@ -351,7 +394,7 @@
     :capture-output? :diff-style :bindings :kaocha/bindings
     ;; brisk's own shape, so a normalized config can be normalized again
     :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :reporters
-    :hooks :worker-setup :junit-xml
+    :hooks :worker-setup :junit-xml :unknown-plugins
     ;; read by brisk.hooks
     :brisk/worker-setup})
 
@@ -361,10 +404,11 @@
     :kaocha.filter/skip :kaocha.filter/focus :kaocha.filter/skip-meta
     :kaocha.filter/focus-meta :kaocha.testable/skip :skip?})
 
-(defn- silent-key? [k]
+(defn- silent-key? [plugin-namespaces k]
   (or (contains? known-keys k)
       (hooks/hook-key? k)
-      (and (qualified-keyword? k) (contains? silent-namespaces (namespace k)))))
+      (and (qualified-keyword? k) (or (contains? silent-namespaces (namespace k))
+                                      (contains? plugin-namespaces (namespace k))))))
 
 (defn- ->vec
   "Coerce a config value to a vector. Scalars become one-element vectors."
@@ -488,8 +532,8 @@
 
 (defn- cli-warnings [options]
   (cond-> []
-    (contains? options :seed) (conj "--seed ignored: brisk orders namespaces by previous timings")
-    (:randomize options) (conj "--randomize ignored: ordering is per worker")))
+    (or (contains? options :seed) (:randomize options))
+    (conj "--randomize and --seed are ignored: brisk does not randomize test order")))
 
 (defn- pick
   "First of the candidates that is not nil (false counts)."
@@ -597,19 +641,22 @@
               (->vec (:warnings raw))
               (when (and (= :jvm runtime) (pick (:isolate cli-options) (:isolate? raw)))
                 ["--isolate starts a new JVM for every namespace, which is slow"])
-              (for [p plugins :when (not (contains? supported-plugins p))]
-                (str "unsupported plugin " (pr-str p) " ignored"))
+              (when-let [ignored (seq (remove supported-plugins plugins))]
+                [(str "brisk does not run these plugins and ignores their options: "
+                      (str/join ", " ignored))])
               (for [k (sort-by str (keys cfg))
-                    :when (and (not (silent-key? k)) (not= ::error k))]
+                    :when (and (not (silent-key? (plugin-key-namespaces (remove supported-plugins plugins)) k))
+                               (not= ::error k))]
                 (str "unsupported option " (pr-str k) " ignored"))
               (mapcat suite-warnings suites)
               (hooks-off-warning cfg suites hooks-on?)
               (:warnings top-hooks)
               (mapcat :warnings suite-hooks)
               reporter-warnings
-              (cli-warnings cli-options)
-              (cli/plugin-flag-warnings cli-options supported-plugins))))}
+              (cli-warnings cli-options))))}
        junit (assoc :junit-xml junit)
+       (seq (remove (some-fn supported-plugins ignored-plugins) plugins))
+       (assoc :unknown-plugins (vec (remove (some-fn supported-plugins ignored-plugins) plugins)))
        ;; (:reporters raw): a normalized config normalized again keeps them
        (seq (concat custom-reporters (:reporters raw)))
        (assoc :reporters (vec (distinct (concat custom-reporters (:reporters raw)))))
