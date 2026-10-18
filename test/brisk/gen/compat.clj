@@ -18,7 +18,7 @@
   "A lowercase identifier segment such as `core` or `a2-b`. Never one of
   `reserved-segments`."
   (gen/such-that (complement reserved-segments)
-                 (gen/fmap (fn [[c rest]] (apply str c rest))
+                 (gen/fmap (fn [[c more]] (apply str c more))
                            (gen/tuple (gen/elements (seq "abcdefghijklmnopqrstuvwxyz"))
                                       (gen/vector (gen/elements (seq "abcdefghijklmnopqrstuvwxyz0123456789-")) 0 5)))
                  100))
@@ -28,6 +28,7 @@
   (gen/fmap (fn [segs] (symbol (str/join "." segs))) (gen/vector segment 1 3)))
 
 (def var-sym
+  "A var name."
   (gen/fmap symbol segment))
 
 (def meta-key
@@ -43,6 +44,7 @@
 ;; CLI
 
 (def flag-token
+  "A flag brisk or Kaocha knows."
   (gen/elements ["--focus" "--skip" "--focus-meta" "--skip-meta" "--no-color" "--color"
                  "--fail-fast" "--no-fail-fast" "--watch" "--no-watch" "-c" "--config-file"
                  "--reporter" "--plugin" "--workers" "--runtime" "--isolate" "--seed"
@@ -51,10 +53,12 @@
                  "--no-capture-output" "--version" "--focus=a" "--runtime=jvm"]))
 
 (def value-token
+  "A plausible option value."
   (gen/elements [":slow" "slow" "unit" "my.ns/foo" "my.ns-test" "3" "-5" "0" "" "jvm" "bb"
                  "tests.edn" "kaocha.report/dots" "documentation" ":ci"]))
 
 (def argv-token
+  "Any command-line token: flags, values and junk."
   (gen/one-of [flag-token value-token gen/string gen/string-alphanumeric
                (gen/fmap #(str "--" %) gen/string-alphanumeric)
                (gen/fmap #(str "-" %) gen/string-alphanumeric)]))
@@ -96,7 +100,9 @@
      :loads (vec (mapcat :loads specs))
      :aliased (vec (mapcat :aliased specs))}))
 
-(def deftest-head (gen/elements ['deftest 't/deftest 'clojure.test/deftest 'deftest- 'defspec]))
+(def deftest-head
+  "A form head that defines a test."
+  (gen/elements ['deftest 't/deftest 'clojure.test/deftest 'deftest- 'defspec]))
 
 (defn- with-meta-printing [form]
   (binding [*print-meta* true] (pr-str form)))
@@ -207,9 +213,13 @@
 ;; ---------------------------------------------------------------------------
 ;; Config
 
-(def suite-id (gen/elements [:unit :integration :slow-suite :other]))
+(def suite-id
+  "A suite id."
+  (gen/elements [:unit :integration :slow-suite :other]))
 
-(def path-str (gen/elements ["test" "test/unit" "src" "integration" "test/a"]))
+(def path-str
+  "A test or source path."
+  (gen/elements ["test" "test/unit" "src" "integration" "test/a"]))
 
 (def hook-entry
   "A hook as tests.edn may give it: a symbol, a list form, or junk."

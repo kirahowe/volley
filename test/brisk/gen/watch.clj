@@ -6,7 +6,9 @@
    [brisk.watch :as watch]
    [clojure.test.check.generators :as gen]))
 
-(def path (gen/elements ["src/a.clj" "src/b.clj" "src/c.cljc" "test/a_test.clj" "test/b_test.clj"
+(def path
+  "A watched path, a test or source file or tests.edn."
+  (gen/elements ["src/a.clj" "src/b.clj" "src/c.cljc" "test/a_test.clj" "test/b_test.clj"
                          "resources/x.edn" "tests.edn"]))
 
 (def snapshot
@@ -19,9 +21,12 @@
                   [3 (gen/elements [\backspace \u007f \u0003])]
                   [6 (gen/elements [\x \m \( \[ \space \. \* \1])]]))
 
-(def key-input (gen/fmap (fn [c] {:event :key :char c}) key-char))
+(def key-input
+  "A key press."
+  (gen/fmap (fn [c] {:event :key :char c}) key-char))
 
 (def outcome-input
+  "A finished run's outcome, as the shell reports it."
   (gen/let [failed (gen/map (gen/elements '[a.core-test b.core-test c.core-test])
                             (gen/set (gen/elements '[x y z]) {:max-elements 2})
                             {:max-elements 3})
@@ -30,6 +35,7 @@
      :outcome {:ran (set (keys failed)) :failed failed}}))
 
 (def files-input
+  "A file change."
   (gen/let [paths (gen/vector path 1 3)
             affected (gen/set (gen/elements '[a.core-test b.core-test]) {:max-elements 2})]
     {:event :files-changed :paths paths :affected affected}))

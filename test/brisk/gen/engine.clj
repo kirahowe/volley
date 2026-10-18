@@ -7,6 +7,7 @@
    [clojure.test.check.generators :as gen]))
 
 (def gen-fate
+  "What happens to a namespace a worker runs."
   (gen/frequency [[6 (gen/fmap (fn [n] [:pass n]) (gen/choose 0 3))]
                   [2 (gen/return [:fail])]
                   [1 (gen/return [:error])]

@@ -38,6 +38,7 @@
    gen-scalar))
 
 (def gen-event-kind
+  "A worker event's `:event`."
   (gen/elements [:worker/ready :ns/start :ns/error :var/start :assertion
                  :var/end :var/skipped :ns/end]))
 
@@ -48,6 +49,7 @@
     (assoc fields :event kind)))
 
 (def gen-command
+  "A parent-to-worker message with random fields."
   (gen/let [op (gen/elements [:run :shutdown])
             fields (gen/map gen/keyword gen-edn {:max-elements 4})]
     (assoc fields :op op)))
@@ -111,6 +113,7 @@
     :else recipe))
 
 (def gen-frame
+  "A `Throwable->map` stack frame, user or runner code."
   (gen/let [cls (gen/elements ["my.app$f" "my.app.core" "java.lang.Integer" "brisk.shell.worker$run"
                                "clojure.test$test_var" "babashka.impl.clojure.test$x" "clojure.core$map"])
             method (gen/elements ["invoke" "invokeStatic" "parseInt"])
@@ -134,11 +137,13 @@
   (mapv #(symbol (str prefix %)) (range n)))
 
 (def gen-plan
+  "A scheduler plan of parallel and serial namespaces."
   (gen/let [np (gen/choose 0 9)
             ns* (gen/choose 0 3)]
     {:parallel (ns-syms "p" np) :serial (ns-syms "s" ns*)}))
 
 (def gen-sched-opts
+  "Options for `brisk.schedule/init`."
   (gen/let [workers (gen/choose 1 5)
             fail-fast? gen/boolean
             isolate? gen/boolean

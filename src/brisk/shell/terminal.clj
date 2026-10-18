@@ -11,8 +11,8 @@
 
 ;;; Pure helpers
 
-(def hide-cursor "\u001b[?25l")
-(def show-cursor "\u001b[?25h")
+(def hide-cursor "Escape sequence that hides the cursor." "\u001b[?25l")
+(def show-cursor "Escape sequence that shows the cursor." "\u001b[?25h")
 
 (def ^:private clear-line "\u001b[2K")
 (def ^:private clear-below "\u001b[J")
@@ -75,8 +75,8 @@
   []
   (pick-width (sh-out "stty size < /dev/tty 2>/dev/null") (System/getenv "COLUMNS")))
 
-(defn hide-cursor! [] (print hide-cursor) (flush))
-(defn show-cursor! [] (print show-cursor) (flush))
+(defn hide-cursor! "Hide the cursor." [] (print hide-cursor) (flush))
+(defn show-cursor! "Show the cursor again." [] (print show-cursor) (flush))
 
 (defn redraw!
   "Prints `frame` (`{:emit [...] :frame [...]}`) over the previous one and

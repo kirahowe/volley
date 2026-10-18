@@ -9,6 +9,7 @@
 ;;; Values
 
 (def scalar
+  "A scalar value as tests compare them."
   (gen/one-of [gen/large-integer gen/string gen/keyword gen/boolean
                (gen/return nil) gen/symbol gen/string-alphanumeric]))
 
@@ -29,9 +30,12 @@
                (gen/elements ["\u001b[31mred\u001b[0m" "tab\there" "line1\nline2\r\nline3"
                               "日本語のテスト名" "emoji 🚀 test" "\u001b[2J\u001b[H" ""])]))
 
-(def maybe-text (gen/one-of [(gen/return nil) hostile-text]))
+(def maybe-text
+  "nil or hostile text."
+  (gen/one-of [(gen/return nil) hostile-text]))
 
 (def huge-text
+  "3000 copies of one character."
   (gen/fmap #(apply str (repeat 3000 %)) gen/char-alpha))
 
 (defn- value-event [v]
@@ -207,7 +211,9 @@
         (let [i (if cs (nth live (mod (first cs) (count live))) (first live))]
           (recur (update qs i next) (next cs) (conj out (first (qs i)))))))))
 
-(def choices (gen/vector gen/nat 0 400))
+(def choices
+  "Picks for `interleave-streams`."
+  (gen/vector gen/nat 0 400))
 
 (def run
   "A generated run: `{:plan :streams :orders [c1 c2]}` with two interleaving

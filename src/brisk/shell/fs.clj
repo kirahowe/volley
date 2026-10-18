@@ -35,7 +35,10 @@
   [path]
   (try (slurp (str path)) (catch Exception _ nil)))
 
-(defn exists? [path] (fs/exists? path))
+(defn exists?
+  "True when `path` exists."
+  [path]
+  (fs/exists? path))
 
 (defn include-resolver
   "An `#include` resolver for `brisk.config/read-config`: paths are

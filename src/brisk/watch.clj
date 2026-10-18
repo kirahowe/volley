@@ -257,6 +257,7 @@
     (into [(str head wait)] (some-> (filter-line state) vector))))
 
 (def help-lines
+  "What `h` prints."
   ["Watch mode keys:"
    "  a      rerun all tests"
    "  f      rerun only the tests that failed last time"
@@ -381,15 +382,15 @@
       (assoc last :failed failed :ok? (empty? failed)))
     last))
 
-(defn- on-finished [state {:keys [outcome empty? known]}]
+(defn- on-finished [state {run-outcome :outcome nothing-ran? :empty? known :known}]
   (if (not= :running (:mode state))
     (no-op state)
-    (let [merged (if empty? (:last state) (merge-outcome (:last state) outcome))
+    (let [merged (if nothing-ran? (:last state) (merge-outcome (:last state) run-outcome))
           state (assoc state :mode :idle :last-selection (:running state) :running nil
                        :last (forget-gone merged known))]
       {:state state
        :effects [(apply print*
-                        (concat (when empty? ["No test namespaces matched."])
+                        (concat (when nothing-ran? ["No test namespaces matched."])
                                 (status-lines state)))]})))
 
 (defn step

@@ -32,11 +32,11 @@
 
 (defspec repeatable-flags-accumulate-in-order 200
   (prop/for-all [flag (gen/elements ["--focus" "--skip" "--focus-meta" "--skip-meta"])
-                 vals (gen/vector g/segment 1 5)]
-    (let [argv (mapcat (fn [v] [flag v]) vals)
+                 values (gen/vector g/segment 1 5)]
+    (let [argv (mapcat (fn [v] [flag v]) values)
           {:keys [options errors]} (cli/parse-args argv)]
       (and (empty? errors)
-           (= (mapv keyword vals) (get options (keyword (subs flag 2))))))))
+           (= (mapv keyword values) (get options (keyword (subs flag 2))))))))
 
 (defspec leading-colon-is-optional 200
   (prop/for-all [flag (gen/elements ["--focus" "--skip" "--focus-meta" "--skip-meta"])

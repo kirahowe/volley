@@ -135,7 +135,7 @@
         pass2 (merge-filters global stripped)]
     (assoc filtered
            :unresolved (unresolved-focus-meta (:focus-meta own) used)
-           :passes (into [] (comp (remove empty-pass?)) [(pass-params pass1 suite) (pass-params pass2 suite)]))))
+           :passes (into [] (remove empty-pass?) [(pass-params pass1 suite) (pass-params pass2 suite)]))))
 
 (defn apply-filters
   "Run Kaocha's filter plugin over a static tree. `suites` are suite nodes

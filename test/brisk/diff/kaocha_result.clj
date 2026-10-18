@@ -8,7 +8,9 @@
    [kaocha.plugin :as plugin]
    [kaocha.testable :as testable]))
 
-(def marker "#brisk-diff ")
+(def marker
+  "Starts the line that carries the summary."
+  "#brisk-diff ")
 
 (defn- var-status
   "`ns-pending?` is true when the enclosing namespace is pending: Kaocha
@@ -57,6 +59,7 @@
 ;; What `kaocha.plugin/defplugin` expands to, written out so clj-kondo can
 ;; follow it.
 (def plugin-hooks
+  "The plugin's hooks: print the summary after Kaocha's."
   {:kaocha.plugin/id ::plugin
    :kaocha.plugin/description "Print per-var results for brisk's differential tests"
    :kaocha.hooks/post-summary post-summary})

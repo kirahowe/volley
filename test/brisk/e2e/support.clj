@@ -9,7 +9,9 @@
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
-(def projects-dir "dev-resources/projects")
+(def projects-dir
+  "Where the fixture projects live."
+  "dev-resources/projects")
 
 (def brisk-src
   "brisk's own source directory, absolute."

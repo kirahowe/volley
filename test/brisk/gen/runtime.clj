@@ -39,9 +39,12 @@
                         0 12)))
 
 (def alias-kw
+  "A deps.edn alias."
   (gen/fmap keyword (gen/such-that seq gen/string-alphanumeric 20)))
 
-(def aliases (gen/vector alias-kw 0 4))
+(def aliases
+  "Up to four aliases."
+  (gen/vector alias-kw 0 4))
 
 (def deps-text
   "deps.edn text defining some aliases, each with optional `:jvm-opts`."

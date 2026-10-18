@@ -52,6 +52,7 @@
        (map (juxt :event :ns))))
 
 (def all-fixtures
+  "Every exec fixture, as a plan."
   '{:parallel [exec.pass-test exec.fail-test exec.error-test exec.load-error-test
                exec.fixtures-test exec.contexts-test exec.output-test exec.exit-test
                exec.slow-test]

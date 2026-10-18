@@ -26,7 +26,9 @@
 
 (set! *warn-on-reflection* true)
 
-(def version "brisk 0.1.0-alpha")
+(def version
+  "What `--version` prints."
+  "brisk 0.1.0-alpha")
 
 (def ^:private tick-ms 80)
 

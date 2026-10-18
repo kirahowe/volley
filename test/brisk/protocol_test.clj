@@ -64,12 +64,12 @@
 
 (defspec encode-value-never-lies 300
   (prop/for-all [recipe g/gen-nasty]
-    (let [{:keys [str edn] :as r} (protocol/encode-value (g/build-nasty recipe)
+    (let [{s :str edn :edn :as r} (protocol/encode-value (g/build-nasty recipe)
                                                          {:print-length 5 :print-level 4 :max-chars 2000})]
-      (and (string? str)
-           (<= (count str) 2003)
+      (and (string? s)
+           (<= (count s) 2003)
            (or (not (contains? r :edn))
-               (= edn (edn/read-string str)))))))
+               (= edn (edn/read-string s)))))))
 
 (defspec small-edn-values-keep-their-data 300
   (prop/for-all [v g/gen-edn]
