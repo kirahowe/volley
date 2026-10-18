@@ -555,6 +555,13 @@
          [(paint opts :yellow (str "not run: " (str/join ", " (map ext vs))))])
        (when output? (output-section opts (:output f))))))))
 
+(defn still-running-line
+  "`still running: ns/var (1m 05s)`, for a test that runs for a long time
+  in CI, where no live view shows it."
+  [{:keys [ns var elapsed]} opts]
+  (first (finish [(paint opts :yellow (str "still running: " (qualified ns var) " (" (fmt-ms elapsed) ")"))]
+                 opts)))
+
 (defn stray-lines
   "Output a test printed outside capture, cleaned and fitted for the live
   view, which shows it above the frame."

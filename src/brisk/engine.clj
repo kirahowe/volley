@@ -198,6 +198,7 @@
                :suspect {}
                :watchdog-killed #{}
                :notices []
+               :still {}
                :drain-at nil
                :killed-at nil
                :now started-at}]
@@ -288,6 +289,31 @@
        (for [run (partition-by :stream entries)]
          {:effect :print :lines (mapv :line run)
           :stream (if result? :err (:stream (first run)))})])))
+
+(def ^:private still-running-ms
+  "In CI and documentation mode, how long a test may run before a line says
+  it still is, and how often that line repeats."
+  30000)
+
+(defn- still-running
+  "On a tick in the append-only modes: a line for each test (or namespace
+  between tests) running for `still-running-ms` since it started or since
+  its last such line, so a hung test does not leave the log silent."
+  [state]
+  (if-not (contains? #{:ci :documentation} (mode state))
+    [state []]
+    (let [now (:now state)
+          due (for [{:keys [worker ns var ns-at var-at]} (rs/running (:run state))
+                    :let [since (or (when var var-at) ns-at)
+                          k [worker ns var since]
+                          last (get-in state [:still k] since)]
+                    :when (and (number? now) (number? last) (>= (- now last) still-running-ms))]
+                [k {:ns ns :var var :elapsed (- now since)}])]
+      (if (empty? due)
+        [state []]
+        [(update state :still into (map (fn [[k _]] [k now])) due)
+         [{:effect :print :stream :out
+           :lines (mapv #(render/still-running-line (second %) (render-opts state false)) due)}]]))))
 
 (defn- with-notices [state frame]
   (let [ropts (render-opts state false)
@@ -509,13 +535,14 @@
                   (not tick?) (fold-event input))
           [state e0] (if (and (= :running (:phase state)) (not tick?)) (interrupt state input) [state []])
           [state ew] (if tick? (watchdog state) [state []])
+          [state es] (if tick? (still-running state) [state []])
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
           [state e2] (show state input)
           [state e3] (if (and (= :running (:phase state)) (sched/done? (:sched state)))
                        (begin-drain state)
                        [state []])
           [state e4] (if (= :draining (:phase state)) (drain-timers state) [state []])]
-      {:state state :effects (vec (concat e0 ew e1 e2 e3 e4))})))
+      {:state state :effects (vec (concat e0 ew es e1 e2 e3 e4))})))
 
 (defn start
   "The first step: spawn workers, or finish at once for an empty plan."

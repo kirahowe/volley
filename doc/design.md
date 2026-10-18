@@ -412,7 +412,9 @@ The loop runs in phases: `:running` (the scheduler hands out work),
 their exits, killing them after 5s and giving up 5s later), then `:done`
 after the final report. The reporter decides what is shown: `:live`
 (redrawn frame, failure report and summary at the end), `:ci` (a line per
-finished namespace with its failures, then the summary), `:documentation`
+finished namespace with its failures, then the summary; a test that runs
+for 30s gets a `still running: ns/var (30.01s)` line, repeated every 30s,
+in this mode and the documentation one), `:documentation`
 (Kaocha's documentation layout, failures and summary at the end) and
 `:result` (`--print-result`: one EDN map from `brisk.run-state/result`).
 

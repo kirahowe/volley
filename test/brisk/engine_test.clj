@@ -234,3 +234,22 @@
         frame (:frame (first (filter #(= :redraw (:effect %)) effects)))]
     (is (seq (:frame frame)))
     (is (every? #(<= (count %) 30) (:frame frame)) "a tick's :width replaces the width read at the start")))
+
+(deftest ci-mode-says-what-is-still-running
+  (let [plan {:suites [{:id :unit :namespaces [{:ns 'slow-test :select {}}] :load-errors []}]}
+        {:keys [state]} (engine/init plan {:workers 1 :reporter :ci :width 120 :color? false :started-at 0})
+        state (:state (engine/start state))
+        state (reduce #(:state (engine/step %1 %2)) state
+                      [{:event :worker/ready :worker 1 :at 10}
+                       {:event :ns/start :worker 1 :ns 'slow-test :at 20}
+                       {:event :var/start :worker 1 :ns 'slow-test :var 'hangs :at 30}])
+        lines-at (fn [st at] (let [{st :state effs :effects} (engine/step st {:event :tick :at at})]
+                               [st (mapcat :lines (filter #(= :print (:effect %)) effs))]))
+        [state l1] (lines-at state 20000)
+        [state l2] (lines-at state 30100)
+        [state l3] (lines-at state 40000)
+        [_ l4] (lines-at state 60200)]
+    (is (empty? l1))
+    (is (= ["still running: slow-test/hangs (30.07s)"] l2))
+    (is (empty? l3) "not again until another 30s have passed")
+    (is (= ["still running: slow-test/hangs (1m 00s)"] l4))))
