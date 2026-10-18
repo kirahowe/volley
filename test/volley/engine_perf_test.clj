@@ -45,15 +45,27 @@
 
 (defn- growth
   "How much longer a run of 4n namespaces takes than one of n, best of
-  three each."
+  five each. The two sizes alternate, so a burst of load from the rest of
+  the suite slows both rather than only the larger one."
   [n reporter]
   (run-synthetic 50 reporter)
-  (let [best (fn [k] (apply min (repeatedly 3 #(time-ms (fn [] (run-synthetic k reporter))))))]
-    (/ (best (* 4 n)) (best n))))
+  (let [pairs (doall (repeatedly 5 (fn [] [(time-ms #(run-synthetic n reporter))
+                                           (time-ms #(run-synthetic (* 4 n) reporter))])))]
+    (/ (apply min (map second pairs)) (apply min (map first pairs)))))
+
+(defn- growths
+  "Up to three `growth` measurements, stopping at the first under 8.
+  Linear is 4x and quadratic 16x. Load from the rest of the suite only
+  ever inflates the ratio, so one measurement under the bound settles it,
+  and a quadratic engine never gets one."
+  [reporter]
+  (let [[over under] (split-with #(>= % 8) (repeatedly 3 #(growth 100 reporter)))]
+    (vec (concat over (take 1 under)))))
 
 (deftest ci-output-is-linear-in-namespaces
-  ;; Linear is 4x; quadratic would be 16x. The bound leaves room for noise.
-  (is (< (growth 200 :ci) 8)))
+  (let [gs (growths :ci)]
+    (is (< (peek gs) 8) (str "growth ratios: " gs))))
 
 (deftest documentation-output-is-linear-in-namespaces
-  (is (< (growth 200 :documentation) 8)))
+  (let [gs (growths :documentation)]
+    (is (< (peek gs) 8) (str "growth ratios: " gs))))
