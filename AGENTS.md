@@ -13,6 +13,8 @@ architecture and the data contracts between namespaces.
   on reflection warnings in `src` (every shell namespace sets
   `*warn-on-reflection*`).
 - `bb test:diff` compares volley with Kaocha (downloads Kaocha).
+- `bb record` re-records `doc/volley.gif`, the README's GIF of a `bb test`
+  run (needs `asciinema` and `agg`). It leaves the GIF alone if the tests fail.
 - `bb lint` runs clj-kondo over `src` and `test`. It must report no errors
   or warnings.
 

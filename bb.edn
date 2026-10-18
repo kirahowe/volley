@@ -38,5 +38,9 @@
         :extra-paths ["dev"]
         :requires ([demo])
         :task (demo/-main *command-line-args*)}
+  record {:doc "Record bb test to doc/volley.gif for the README (needs asciinema and agg)"
+          :extra-paths ["dev"]
+          :requires ([record])
+          :task (record/-main)}
   lint {:doc "Lint src and test with clj-kondo"
         :task (shell "clj-kondo --lint src test")}}}

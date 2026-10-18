@@ -500,8 +500,8 @@
 
 (def ^:private builtin-reporters
   "Kaocha's own reporters and the volley output each stands for. volley
-  prints its own output for them without a word: a run under volley never
-  looks like Kaocha's anyway."
+  prints its own output for them without a warning, since its output has
+  its own layout whichever reporter is named."
   {'kaocha.report/documentation :documentation
    'kaocha.report/dots :live
    'kaocha.report/result :live

@@ -6,8 +6,8 @@ and has a watch mode that reruns only the tests affected by a change. It reads
 Kaocha's `tests.edn` and command-line flags, so a project that runs Kaocha today
 can switch by changing one command. It was built for suites that are slow enough
 that waiting for a single process to finish is noticeable, and for babashka
-projects that already use kaocha, which can keep using their existing
-configuration without its startup cost.
+projects that already use Kaocha and want to keep their existing
+configuration.
 
 volley is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
 

@@ -499,7 +499,7 @@ output costs time linear in its namespaces.
 spec (a suite id that is not a keyword) 252, a plugin that cannot be
 loaded 248, other config errors (including an unreadable tests.edn, and
 values volley cannot use such as `:preload? "yes"` or a `:kaocha/bindings`
-that is not a map, on which Kaocha crashes) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
+that is not a map, which Kaocha does not accept either) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
 (-2), help/version/print-config/print-test-plan 0 (also with `--watch`,
 as Kaocha prints and exits; `--print-result` turns `--watch` off with a
 warning and prints the one result), and an empty plan prints
@@ -863,8 +863,8 @@ difference:
   raised while loading a test namespace in a `CompilerException`; babashka
   throws the `FileNotFoundException` itself. volley reports whatever the
   worker saw, with the cause chain.
-- **A test that calls `System/exit`.** It ends Kaocha's process, with
-  whatever code the test chose, so `(System/exit 0)` makes Kaocha pass.
+- **A test that calls `System/exit`.** Kaocha runs every test in one
+  process, so the call ends the run with whatever code the test chose.
   In volley it ends one worker; the namespace is reported as a CRASH,
   whatever the code, and the run goes on.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
