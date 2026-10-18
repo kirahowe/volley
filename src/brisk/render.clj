@@ -905,7 +905,8 @@
 
 (defn summary
   "Final block: the counts line, namespaces that never ran, the five slowest
-  tests, and a command to rerun the failures. The counts line has the shape
+  tests, and a command to rerun the failures; with `:compact?` in `opts`
+  (watch mode) the counts line and the namespaces that never ran only. The counts line has the shape
   `N tests | P passed | F failed | E errors | S skipped (A assertions, 2.31s)`. The time
   is the span of the events in `state`, so it does not depend on a clock."
   [state opts]
@@ -924,7 +925,7 @@
     (->> (concat [""]
                  (map #(paint opts style %) lines)
                  (when-let [s (seq (not-run-lines opts state))] (cons "" s))
-                 (when-let [s (seq (slowest-lines opts state))] (cons "" s))
-                 (when (seq ids) (cons "" (rerun-lines opts ids))))
+                 (when-let [s (and (not (:compact? opts)) (seq (slowest-lines opts state)))] (cons "" s))
+                 (when (and (seq ids) (not (:compact? opts))) (cons "" (rerun-lines opts ids))))
          (#(finish % opts))
          (str/join "\n"))))

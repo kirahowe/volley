@@ -460,3 +460,18 @@
   (let [long-line (apply str (repeat 30 "abcdef "))]
     (is (= [long-line "next"] (render/stray-lines (str long-line "\nnext") {:width 40})))
     (is (= ["red text" "x"] (render/stray-lines "\u001b[31mred text\u001b[0m\r\nx\u0007" {:width 40})))))
+
+(deftest watch-mode-ends-each-run-with-a-compact-summary
+  (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
+                      [{:event :ns/start :ns 'a-test :worker 1 :at 0}
+                       {:event :var/start :ns 'a-test :var 'x :worker 1 :at 1}
+                       {:event :assertion :ns 'a-test :var 'x :type :fail :worker 1 :at 2}
+                       {:event :var/end :ns 'a-test :var 'x :pass 0 :fail 1 :duration-ms 5 :worker 1 :at 3}
+                       {:event :ns/end :ns 'a-test :duration-ms 6 :worker 1 :at 4}])
+        full (render/summary state {:width 80})
+        compact (render/summary state {:width 80 :compact? true})]
+    (is (str/includes? full "Rerun failures"))
+    (is (str/includes? full "Slowest tests"))
+    (is (not (str/includes? compact "Rerun failures")))
+    (is (not (str/includes? compact "Slowest tests")))
+    (is (str/includes? compact "1 test | 0 passed | 1 failed"))))

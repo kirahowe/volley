@@ -704,7 +704,10 @@ swallowed. With stdin not a terminal, no keys are read and raw mode is not
 entered; file changes still work, and the process stops on SIGTERM or
 SIGINT.
 
-After each run the machine prints `PASS  Waiting for file changes...` or
+Each run ends with a compact summary: the counts line (and namespaces
+that never ran), without the slowest tests or the rerun command, since
+`f` reruns the failures and the next change brings another run. After
+each run the machine prints `PASS  Waiting for file changes...` or
 `FAIL  n failures  Waiting for file changes...`, with `press h to show
 help, q to quit` when keys are on, and a `Filters:` line when filters are
 set.

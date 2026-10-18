@@ -142,7 +142,8 @@
       (let [opts (cond-> (merge engine-opts
                                 (hooks/engine-opts (:config sess))
                                 {:started-at (now-ms) :durations (bfs/read-timings)
-                                 :first-worker-id (:next-worker-id sess)})
+                                 :first-worker-id (:next-worker-id sess)
+                                 :compact-summary? true})
                    (:live? env) (assoc :width (term/width)))
             ctx (assoc ctx :command (:command sess))
             {state :state effects :effects} (engine/init plan opts)

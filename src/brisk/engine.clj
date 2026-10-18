@@ -178,7 +178,9 @@
   `:timestamp` and `:cwd`: the report is written after the summary.
   `:bindings` (`{var-sym value}`, Kaocha's `:kaocha/bindings`) goes to the
   workers with every run message. `:config` is the normalized config, for
-  the Kaocha-shaped result `--print-result` prints.
+  the Kaocha-shaped result `--print-result` prints. `:compact-summary?`
+  (watch mode) ends the run with the counts line alone: no slowest tests,
+  and no rerun command, which `f` does there.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -258,7 +260,8 @@
 
 (defn- render-opts [{:keys [opts now]} final?]
   (cond-> {:width (:width opts 80) :color? (boolean (:color? opts)) :now now :final? final?}
-    (:invocation opts) (assoc :invocation (:invocation opts))))
+    (:invocation opts) (assoc :invocation (:invocation opts))
+    (:compact-summary? opts) (assoc :compact? true)))
 
 (defn- mode [state] (get-in state [:opts :reporter] :ci))
 
