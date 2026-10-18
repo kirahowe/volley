@@ -175,12 +175,21 @@
         :else :not-focused)
       (or (skip-ns) (skip-var)))))
 
+(defn- var-pattern-reason
+  "Watch mode's test-name filter: `:not-focused` unless the var's name
+  matches the regex string `pattern`. A missing pattern selects every var."
+  [pattern var-sym]
+  (when (and pattern (not (re-find (re-pattern pattern) (str var-sym))))
+    :not-focused))
+
 (defn decide
   "Decide whether a test var runs. `select-spec` is the `:select` value from
   `plan`; `var-meta` is the var's real metadata and the namespace metadata
   comes from the spec's static copy (the 5-arity takes the namespace's real
   metadata instead). Returns `{:run? bool :reason kw}` where reason is
-  `:selected`, `:skip`, `:skip-meta`, `:not-focused` or `:pending`.
+  `:selected`, `:skip`, `:skip-meta`, `:not-focused` or `:pending`. A
+  `:var-pattern` in the spec (watch mode's test-name filter) makes vars
+  whose names do not match it `:not-focused`.
 
   Skips are decided before `:kaocha/pending`, as in `kaocha.testable/run-testable`."
   ([select-spec ns-sym var-sym var-meta]
@@ -188,7 +197,8 @@
   ([select-spec ns-sym ns-meta var-sym var-meta]
    (let [ns-node {:id (keyword (str ns-sym)) :meta ns-meta}
          var-node {:id (keyword (str ns-sym) (str var-sym)) :meta var-meta}
-         reason (some #(decide-pass % ns-node var-node) (:passes select-spec))]
+         reason (or (some #(decide-pass % ns-node var-node) (:passes select-spec))
+                    (var-pattern-reason (:var-pattern select-spec) var-sym))]
      (cond
        reason {:run? false :reason reason}
        (or (get var-meta :kaocha/pending) (get ns-meta :kaocha/pending))

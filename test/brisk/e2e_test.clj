@@ -137,8 +137,6 @@
 
 (deftest informational-flags
   (is (= 0 (:exit (run "default" ["--help"]))))
-  (is (str/includes? (:err (run "pending" ["--watch"])) "watch mode is not implemented")
-      "unsupported options warn instead of being ignored")
   (is (str/starts-with? (:out (run "default" ["--version"])) "brisk "))
   (let [{:keys [exit out]} (run "suites" ["--print-config"])
         cfg (edn/read-string out)]

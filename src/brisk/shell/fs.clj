@@ -79,3 +79,27 @@
   "Absolute form of `path`."
   [path]
   (str (fs/absolutize path)))
+
+(defn mtime-snapshot
+  "Modification times, `{relative-path millis}`, of the files under `dirs`
+  plus the existing `files`, for `brisk.watch/changes`. Directories whose
+  name starts with a dot are not entered. `keep?` takes a path and decides
+  whether to include a file (`brisk.watch/watched-file?`)."
+  [dirs files keep?]
+  (let [found (volatile! {})
+        record! (fn [path millis]
+                  (let [p (relative path)]
+                    (when (keep? p) (vswap! found assoc (str/replace p "\\" "/") millis))))]
+    (doseq [dir dirs :when (fs/directory? dir)]
+      (fs/walk-file-tree
+       dir
+       {:pre-visit-dir (fn [d _]
+                         (if (and (not= (str d) (str dir)) (str/starts-with? (str (fs/file-name d)) "."))
+                           :skip-subtree
+                           :continue))
+        :visit-file (fn [f attrs]
+                      (record! f (.toMillis (.lastModifiedTime ^java.nio.file.attribute.BasicFileAttributes attrs)))
+                      :continue)}))
+    (doseq [f files :when (fs/regular-file? f)]
+      (record! f (.toMillis (fs/last-modified-time f))))
+    @found))

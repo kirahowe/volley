@@ -16,6 +16,7 @@
    [brisk.shell.fs :as bfs]
    [brisk.shell.pool :as pool]
    [brisk.shell.terminal :as term]
+   [brisk.shell.watch :as watch-loop]
    [clojure.string :as str])
   (:import
    (java.util.concurrent LinkedBlockingQueue TimeUnit)))
@@ -42,9 +43,7 @@
         cfg (config/normalize (:config read) options env)
         cfg (cond-> cfg
               (= :jvm (:runtime cfg))
-              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka")
-              (:watch? cfg)
-              (update :warnings conj "watch mode is not implemented yet; running the tests once"))]
+              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka"))]
     {:cli parsed
      :config (update cfg :warnings into (:warnings read))
      :read-error (:error read)
@@ -172,6 +171,35 @@
         (kill-workers)
         (try (.removeShutdownHook (Runtime/getRuntime) hook) (catch IllegalStateException _ nil))))))
 
+(defn- reload-config
+  "Re-read tests.edn for watch mode: `{:config c}`, or `{:error msg}` when
+  it is invalid."
+  [args env]
+  (let [{:keys [config read-error]} (load-config args env)
+        errors (:errors config)]
+    (if (or read-error (seq errors))
+      {:error (or read-error (str/join "; " errors))}
+      {:config config})))
+
+(defn- watch-tests!
+  "Watch mode: run `brisk.shell.watch` with this namespace's effect carrier.
+  `reload` re-reads tests.edn for the loop."
+  [cfg loaded opts reload]
+  (let [ctx {:queue (pool/new-queue)
+             :command (pool/bb-command (worker-classpath cfg))
+             :handles (volatile! {})
+             :height (volatile! 0)}]
+    (watch-loop/watch! {:ctx ctx
+                      :run-effects! run-effects!
+                      :print! print-lines!
+                      :reload-config reload
+                      :config cfg
+                      :config-file (:config-file loaded)
+                      :cli-suites (:suites (:cli loaded))
+                      :engine-opts opts
+                      :keys? (term/stdin-tty?)
+                      :live? (= :live (:reporter opts))})))
+
 ;; ---------------------------------------------------------------------------
 ;; Entry point
 
@@ -187,17 +215,19 @@
         code (run-effects! {} effects)]
     (or code
         (let [tty? (term/tty?)
-              mode (reporter config (:options cli) tty?)]
-          (run-tests! plan config
-                      {:workers (:workers config)
-                       :fail-fast? (:fail-fast? config)
-                       :isolate? (:isolate? config)
-                       :capture-output? (:capture-output? config)
-                       :reporter mode
-                       :width (if (= :live mode) (term/width) 1000)
-                       :color? (color? config (:options cli) env tty?)
-                       :durations (bfs/read-timings)
-                       :started-at (System/currentTimeMillis)})))))
+              mode (reporter config (:options cli) tty?)
+              opts {:workers (:workers config)
+                    :fail-fast? (:fail-fast? config)
+                    :isolate? (:isolate? config)
+                    :capture-output? (:capture-output? config)
+                    :reporter mode
+                    :width (if (= :live mode) (term/width) 1000)
+                    :color? (color? config (:options cli) env tty?)
+                    :durations (bfs/read-timings)
+                    :started-at (System/currentTimeMillis)}]
+          (if (:watch? config)
+            (watch-tests! config loaded opts #(reload-config args env))
+            (run-tests! plan config opts))))))
 
 (defn -main
   "`bb -m brisk.main [OPTIONS]... [TEST-SUITE]...`"

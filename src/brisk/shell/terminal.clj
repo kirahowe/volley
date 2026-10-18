@@ -120,3 +120,43 @@
       (pos? (.available System/in)) (char (.read System/in))
       (>= waited timeout-ms)        nil
       :else (do (Thread/sleep 10) (recur (+ waited 10))))))
+
+(defn stdin-tty?
+  "True when stdin is a terminal, so raw mode and key presses make sense."
+  []
+  (try
+    (zero? (:exit (p/shell {:in :inherit :out :string :err :string :continue true}
+                           "sh" "-c" "test -t 0")))
+    (catch Exception _ false)))
+
+(defn- drain-escape!
+  "After an ESC byte: swallow the rest of a CSI/SS3 sequence (arrow keys and
+  the like) if one follows within a few milliseconds. True when one did."
+  []
+  (Thread/sleep 15)
+  (when (and (pos? (.available System/in))
+             (contains? #{(int \[) (int \O)} (.read System/in)))
+    (loop []
+      (when (pos? (.available System/in))
+        (let [b (.read System/in)]
+          (when-not (<= 0x40 b 0x7e) (recur)))))
+    true))
+
+(defn read-key!
+  "A pending key press as a character, without waiting, or nil. A lone ESC
+  comes back as `\\u001b`; escape sequences (arrows, function keys) are
+  swallowed and give nil. Call inside `with-raw-mode!`."
+  []
+  (when (pos? (.available System/in))
+    (let [b (.read System/in)]
+      (cond
+        (neg? b) nil
+        (= b 27) (if (drain-escape!) nil \u001b)
+        :else (char b)))))
+
+(defn prompt!
+  "Draws a one-line prompt in place: `label> buffer`. A nil `buffer` closes
+  the prompt by moving to a fresh line."
+  [label buffer]
+  (print (if buffer (str "\r" clear-line label "> " buffer) "\r\n"))
+  (flush))
