@@ -388,7 +388,9 @@ in the summary, and never count as failures.
 Events from a worker id the run never spawned are ignored.
 Inputs are the flat events from the queue plus `{:event :tick :at ms}`,
 which `brisk.main` feeds whenever 80ms pass (the poll timeout, or after an
-event if the queue never goes quiet). Effects:
+event if the queue never goes quiet). In live mode a tick at most every
+250ms also carries `:width`, the terminal width read again, which
+replaces the width the live view renders to. Effects:
 
 ```clojure
 {:effect :spawn :worker id}

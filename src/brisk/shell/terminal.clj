@@ -63,6 +63,11 @@
                            "sh" "-c" "test -t 1")))
     (catch Exception _ false)))
 
+(def width-check-ms
+  "How often a live view re-reads the terminal width. Each read runs
+  `stty`; until it does, a resized terminal shows frames of the old width."
+  250)
+
 (defn width
   "Current terminal width: `stty size`, then $COLUMNS, then 80."
   []

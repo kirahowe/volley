@@ -195,7 +195,7 @@
 
 (defn- watch-loop [{:keys [ctx keys?] :as env} sess]
   (let [^LinkedBlockingQueue queue (:queue ctx)]
-    (loop [sess sess last-tick (now-ms) last-poll (now-ms)]
+    (loop [sess sess last-tick (now-ms) last-poll (now-ms) last-width 0]
       (if (:quit? sess)
         0
         (let [wait (max 0 (- (+ last-tick tick-ms) (now-ms)))
@@ -203,7 +203,9 @@
               at (now-ms)
               tick? (>= (- at last-tick) tick-ms)
               poll? (>= (- at last-poll) watch/poll-ms)
-              engine-inputs (cond-> [] ev (conj ev) tick? (conj {:event :tick :at at}))
+              width? (and tick? (:live? env) (>= (- at last-width) term/width-check-ms))
+              engine-inputs (cond-> [] ev (conj ev)
+                              tick? (conj (cond-> {:event :tick :at at} width? (assoc :width (term/width)))))
               sess (reduce #(engine-input env %1 %2) (assoc sess :inbox []) engine-inputs)
               [sess changed] (if poll? (scan env sess at) [sess nil])
               inputs (concat (:inbox sess)
@@ -211,7 +213,7 @@
                              (when keys? (read-keys!))
                              (when tick? [{:event :tick :at at}]))
               sess (drive env sess inputs)]
-          (recur sess (if tick? at last-tick) (if poll? at last-poll)))))))
+          (recur sess (if tick? at last-tick) (if poll? at last-poll) (if width? at last-width)))))))
 
 (defn watch!
   "Run watch mode until the user quits. Returns the exit code."

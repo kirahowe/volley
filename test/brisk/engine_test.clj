@@ -222,3 +222,15 @@
            :spawn-fails [] :hung? false :choices []}
         {:keys [world]} (ge/simulate w max-steps)]
     (is (= '{old-test 99 a-test 5} (:timings world)))))
+
+(deftest the-live-view-follows-the-terminal-width
+  (let [plan {:suites [{:id :unit :namespaces [{:ns 'a-very-long-namespace-name-for-a-test :select {}}]
+                        :load-errors []}]}
+        {:keys [state]} (engine/init plan {:workers 1 :reporter :live :width 120 :color? false :started-at 0})
+        {state :state} (engine/start state)
+        state (:state (engine/step state {:event :worker/ready :worker 1 :at 10}))
+        state (:state (engine/step state {:event :ns/start :worker 1 :ns 'a-very-long-namespace-name-for-a-test :at 20}))
+        {:keys [effects]} (engine/step state {:event :tick :at 100 :width 30})
+        frame (:frame (first (filter #(= :redraw (:effect %)) effects)))]
+    (is (seq (:frame frame)))
+    (is (every? #(<= (count %) 30) (:frame frame)) "a tick's :width replaces the width read at the start")))

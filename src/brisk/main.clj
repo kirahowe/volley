@@ -140,18 +140,21 @@
   (when (= :worker/exit event) (vswap! handles dissoc worker)))
 
 (defn- event-loop!
-  "Feed queue events and ticks to the engine until it exits."
+  "Feed queue events and ticks to the engine until it exits. In live mode
+  (`:live?` in `ctx`) a tick carries the terminal width, read at most every
+  `brisk.shell.terminal/width-check-ms`, so the frame follows a resize."
   [ctx state]
   (let [^LinkedBlockingQueue queue (:queue ctx)]
-    (loop [state state last-tick (System/currentTimeMillis)]
+    (loop [state state last-tick (System/currentTimeMillis) last-width 0]
       (let [now (System/currentTimeMillis)
             wait (max 0 (- (+ last-tick tick-ms) now))
             ev (.poll queue wait TimeUnit/MILLISECONDS)
             now (System/currentTimeMillis)
             tick? (>= (- now last-tick) tick-ms)
+            width? (and tick? (:live? ctx) (>= (- now last-width) term/width-check-ms))
             inputs (cond-> []
                      ev (conj ev)
-                     tick? (conj {:event :tick :at now}))
+                     tick? (conj (cond-> {:event :tick :at now} width? (assoc :width (term/width)))))
             [state code] (reduce (fn [[st _] input]
                                    (forget-exited! (:handles ctx) input)
                                    (let [{st :state effs :effects} (engine/step st input)
@@ -161,7 +164,7 @@
                                  inputs)]
         (if code
           code
-          (recur state (if tick? now last-tick)))))))
+          (recur state (if tick? now last-tick) (if width? now last-width)))))))
 
 (defn- run-tests!
   "Start the engine on `plan` and run it to completion. Returns the exit
@@ -170,7 +173,8 @@
   (let [ctx {:queue (pool/new-queue)
              :command command
              :handles (volatile! {})
-             :height (volatile! 0)}
+             :height (volatile! 0)
+             :live? (= :live (:reporter opts))}
         kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))
         hook (Thread. ^Runnable kill-workers)
         go (fn []

@@ -3,7 +3,8 @@
 
   `(step state input)` returns `{:state state' :effects [...]}`. Inputs are
   the flat events the pool puts on the queue (worker events, `:output`,
-  `:worker/exit`) and timer ticks `{:event :tick :at ms}`. Effects are data
+  `:worker/exit`) and timer ticks `{:event :tick :at ms}`, which may carry
+  `:width`, the terminal's current width, for the live view. Effects are data
   for `brisk.main` to carry out:
 
       {:effect :spawn :worker id}
@@ -502,6 +503,7 @@
     {:state state :effects []}
     (let [tick? (= :tick event)
           state (cond-> (advance-clock state at)
+                  (and tick? (:width input)) (assoc-in [:opts :width] (:width input))
                   tick? (update :run rs/apply-event {:event :tick :at at})
                   (not tick?) (fold-event input))
           [state e0] (if (and (= :running (:phase state)) (not tick?)) (interrupt state input) [state []])
