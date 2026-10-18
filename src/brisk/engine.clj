@@ -41,6 +41,7 @@
   "Kaocha's early-exit codes, as the process sees them."
   {:cli-error 255          ; kaocha.runner/run returns -1
    :unknown-suite 254      ; kaocha.runner/run returns -2
+   :config-invalid 252     ; kaocha.runner: the config fails Kaocha's spec
    :config-error 250       ; kaocha.config/replace-by-default
    :plugin-error 248       ; kaocha.plugin/register: a plugin that cannot load
    :no-tests 0})           ; kaocha.api/run warns and exits 0
@@ -99,6 +100,10 @@
      (cond
        read-error
        [(err [(str "ERROR: " read-error)]) (exit (:config-error exit-codes))]
+
+       (seq (:invalid config))
+       [(err (map #(str "ERROR: Invalid configuration file: " %) (:invalid config)))
+        (exit (:config-invalid exit-codes))]
 
        (seq (:errors config))
        [(err (map #(str "ERROR: Invalid configuration: " %) (:errors config)))

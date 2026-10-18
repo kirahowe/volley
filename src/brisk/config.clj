@@ -394,7 +394,7 @@
     :capture-output? :diff-style :bindings :kaocha/bindings
     ;; brisk's own shape, so a normalized config can be normalized again
     :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :reporters
-    :hooks :worker-setup :junit-xml :unknown-plugins
+    :hooks :worker-setup :junit-xml :unknown-plugins :invalid
     ;; read by brisk.hooks
     :brisk/worker-setup})
 
@@ -540,12 +540,29 @@
   [& xs]
   (first (filter some? xs)))
 
+(defn- spec-errors
+  "What Kaocha's config spec rejects (\"Invalid configuration file\", exit
+  252) that brisk checks: a suite id that is not a keyword."
+  [suites]
+  (vec (for [s suites
+             :let [id (:kaocha.testable/id s)]
+             :when (not (keyword? id))]
+         (str "suite id " (pr-str id) " should be a keyword (:kaocha.testable/id)"))))
+
 (defn- brisk-value-errors
   "brisk's own tests.edn keys with values it cannot use. Like the values
   Kaocha rejects, they stop the run (exit 250) rather than being guessed
   at."
   [raw]
   (cond-> []
+    (and (contains? raw :preload?) (not (boolean? (:preload? raw))))
+    (conj (str ":preload? must be true or false, got " (pr-str (:preload? raw))))
+    (and (contains? raw :isolate?) (not (boolean? (:isolate? raw))))
+    (conj (str ":isolate? must be true or false, got " (pr-str (:isolate? raw))))
+    ;; Kaocha's kaocha.config/binding-map fails on anything but a map
+    (some #(and (contains? raw %) (not (map? (get raw %)))) [:bindings :kaocha/bindings])
+    (conj (str ":kaocha/bindings must be a map of var symbols to values, got "
+               (pr-str (or (:kaocha/bindings raw) (:bindings raw)))))
     (and (contains? raw :workers) (not (pos-int? (:workers raw))))
     (conj (str ":workers must be a positive integer, got " (pr-str (:workers raw))))
     (and (contains? raw :runtime) (not (contains? #{:bb :jvm} (:runtime raw))))
@@ -627,7 +644,9 @@
                                        (:kaocha.plugin.capture-output/capture-output? cfg)
                                        true))
        :reporter reporter
-       :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
+       ;; --print-result prints one result and exits, as without --watch
+       :watch? (and (not (:print-result cli-options))
+                    (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false)))
        :workers (pick (:workers cli-options)
                       (when (pos-int? (:workers raw)) (:workers raw))
                       (runtime/default-workers runtime (:cpus env)))
@@ -653,7 +672,10 @@
               (:warnings top-hooks)
               (mapcat :warnings suite-hooks)
               reporter-warnings
-              (cli-warnings cli-options))))}
+              (cli-warnings cli-options)
+              (when (and (:print-result cli-options) (pick (:watch cli-options) (:kaocha/watch? cfg)))
+                ["--watch ignored with --print-result: brisk runs once and prints the result"]))))}
+       (seq (spec-errors suites)) (assoc :invalid (spec-errors suites))
        junit (assoc :junit-xml junit)
        (seq (remove (some-fn supported-plugins ignored-plugins) plugins))
        (assoc :unknown-plugins (vec (remove (some-fn supported-plugins ignored-plugins) plugins)))

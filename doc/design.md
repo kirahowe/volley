@@ -486,9 +486,14 @@ then look at those namespaces alone, and `brisk.run-state/ns-failures-of`
 gives one namespace's failures without walking the others, so a run's
 output costs time linear in its namespaces.
 
-`preflight` returns Kaocha's exit codes: config errors (including an
-unreadable tests.edn) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
-(-2), help/version/print-config/print-test-plan 0, and an empty plan prints
+`preflight` returns Kaocha's exit codes: a config that fails Kaocha's
+spec (a suite id that is not a keyword) 252, a plugin that cannot be
+loaded 248, other config errors (including an unreadable tests.edn, and
+values brisk cannot use such as `:preload? "yes"` or a `:kaocha/bindings`
+that is not a map, on which Kaocha crashes) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
+(-2), help/version/print-config/print-test-plan 0 (also with `--watch`,
+as Kaocha prints and exits; `--print-result` turns `--watch` off with a
+warning and prints the one result), and an empty plan prints
 Kaocha's "No tests were found" warning and exits 0. A run exits with
 `brisk.run-state/exit-code`.
 

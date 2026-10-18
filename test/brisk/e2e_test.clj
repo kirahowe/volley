@@ -356,3 +356,17 @@
     (let [{:keys [exit out]} (run "bindings" [] {"tests.edn" "#kaocha/v1 {:bindings {bd.config/*nope* 1}}"})]
       (is (= 1 exit))
       (is (str/includes? out ":kaocha/bindings: no such var bd.config/*nope*")))))
+
+(deftest invalid-configs-stop-the-run
+  (testing "kaocha.runner: a config that fails Kaocha's spec exits 252"
+    (let [{:keys [exit err]} (run "default" ["--config-file" "bad.edn"] {"bad.edn" "#kaocha/v1 {:tests [{:id \"unit\"}]}"})]
+      (is (= 252 exit))
+      (is (str/includes? err "Invalid configuration file: suite id \"unit\""))))
+  (testing "values brisk cannot use exit 250"
+    (let [{:keys [exit err]} (run "default" ["--config-file" "bad.edn"] {"bad.edn" "#kaocha/v1 {:preload? \"yes\"}"})]
+      (is (= 250 exit))
+      (is (str/includes? err ":preload? must be true or false"))))
+  (testing "--watch with --print-result prints one result and exits"
+    (let [{:keys [exit out]} (run "default" ["--watch" "--print-result"])]
+      (is (= 1 exit))
+      (is (some? (e2e/last-edn-line out "{:vars"))))))

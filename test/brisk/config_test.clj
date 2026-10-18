@@ -420,3 +420,19 @@
     (is (= :bb (:runtime (config/normalize {:runtime :jvmx} {} {:bb? true}))) "defaults are kept"))
   (testing "good values pass"
     (is (= [] (:errors (config/normalize {:workers 3 :runtime :jvm} {}))))))
+
+(deftest values-brisk-cannot-use-are-errors
+  (testing "brisk's own keys and :kaocha/bindings (which crashes Kaocha's binding-map)"
+    (doseq [[raw msg] [[{:preload? "yes"} ":preload? must be true or false"]
+                       [{:isolate? 1} ":isolate? must be true or false"]
+                       [{:kaocha/bindings [1 2]} ":kaocha/bindings must be a map"]
+                       [{:bindings [1 2]} ":kaocha/bindings must be a map"]]]
+      (is (some #(str/includes? % msg) (:errors (config/normalize raw {}))) (pr-str raw))))
+  (testing "a suite id Kaocha's spec rejects (exit 252)"
+    (is (= ["suite id \"unit\" should be a keyword (:kaocha.testable/id)"]
+           (:invalid (config/normalize {:tests [{:id "unit"}]} {}))))
+    (is (nil? (:invalid (config/normalize {:tests [{:id :unit}]} {})))))
+  (testing "--print-result runs once even with --watch"
+    (let [c (config/normalize {:watch? true} {:print-result true})]
+      (is (false? (:watch? c)))
+      (is (some #(str/includes? % "--watch ignored with --print-result") (:warnings c))))))
