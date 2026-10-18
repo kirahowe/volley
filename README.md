@@ -1,17 +1,21 @@
 # volley
 
-volley is a test runner for `clojure.test` on babashka and the JVM. It runs
-test namespaces in parallel worker processes, shows each namespace as it
-finishes, and has a watch mode that reruns only the tests affected by a
-change. It reads Kaocha's `tests.edn` and command-line flags, so a project
-that runs Kaocha today can switch by changing one command. It was built
-for suites that are slow enough that waiting for a single process to finish
-hurts, and for babashka projects that want Kaocha's configuration without
-its startup cost.
+volley is a test runner for `clojure.test` on babashka and the JVM. It runs test
+namespaces in parallel worker processes, shows each namespace as it finishes,
+and has a watch mode that reruns only the tests affected by a change. It reads
+Kaocha's `tests.edn` and command-line flags, so a project that runs Kaocha today
+can switch by changing one command. It was built for suites that are slow enough
+that waiting for a single process to finish is noticeable, and for babashka
+projects that already use kaocha, which can keep using their existing
+configuration without its startup cost.
 
 volley is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
 
 ## What it looks like
+
+![volley running its own test suite](doc/volley.gif)
+
+That is `bb test` on volley's own suite, in a terminal.
 
 This is a run of a small fixture project with failures, with output piped
 (not a terminal). On a terminal volley redraws one line per running
@@ -180,7 +184,7 @@ to a `:local/root` dependency's own `deps.edn`, or to `~/.clojure/deps.edn`,
 is not noticed; delete `.volley/classpath-*.txt` after one. `--runtime bb`
 from a JVM parent starts babashka workers.
 
-### What carries over unchanged
+### Same as kaocha
 
 - `tests.edn`, including `#kaocha/v1`, `#profile`, `#env`, suite ids,
   `:test-paths`, `:source-paths`, `:ns-patterns`, `:focus`, `:skip`,
@@ -211,7 +215,7 @@ from a JVM parent starts babashka workers.
 - A test var that makes no assertion fails with Kaocha's "Test ran without
   assertions" message.
 
-### What differs
+### Differences from kaocha
 
 Kaocha options volley does not support print a warning instead of being
 ignored silently. Kaocha's other plugins (notifier, gc-profiling,

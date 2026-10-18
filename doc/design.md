@@ -3,8 +3,10 @@
 volley is a test runner for `clojure.test` that runs on babashka and on the
 JVM. It runs test namespaces in parallel worker processes, shows results
 live as they happen, and has a watch mode with vitest-style keys. Moving from
-Kaocha takes one binstub change: volley reads `tests.edn` and accepts
-Kaocha's CLI flags.
+Kaocha takes one binstub change: volley reads `tests.edn` and accepts Kaocha's
+CLI flags. This document is mostly for agents or humans wanting to better
+understand the internals, probably mostly relevant for those interested in
+developing or extending the library.
 
 ## Goals for the alpha
 

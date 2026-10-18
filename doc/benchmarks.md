@@ -59,7 +59,7 @@ both projects. The reader numbers are lower than in the table above for
 both runners; the two sets were taken on different days under different
 load, so compare within a row, not across tables.
 
-## What the numbers say
+## Conclusions
 
 - On small suites volley gains little. On a short JVM suite it is slower
   than Kaocha by about half a second, because the parent and a worker each
