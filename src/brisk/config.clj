@@ -1,0 +1,505 @@
+(ns brisk.config
+  "tests.edn text and CLI options to brisk's normalized config.
+
+  Reading follows Aero as Kaocha uses it: `#profile`, `#env`, `#envf`,
+  `#prop`, `#long`, `#double`, `#keyword`, `#boolean`, `#include`, `#join`,
+  `#read-edn`, `#merge`, `#ref`, `#hostname`, `#user` and `#or` are Aero's
+  readers; `#kaocha/v1`, `#kaocha` and `#meta-merge` are the ones Kaocha adds
+  (`kaocha.config`). Anything environmental (env vars, system properties,
+  included files) is passed in, never read here.
+
+  Normalizing follows `kaocha.config/normalize`, `merge-config` and
+  `apply-cli-opts` (see the docstrings of the private helpers for the Kaocha
+  function each one mirrors)."
+  (:require
+   [clojure.edn :as edn]
+   [clojure.string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; meta-merge (port of meta-merge.core/meta-merge, which Kaocha uses)
+
+(defn- meta* [obj]
+  (when (instance? clojure.lang.IObj obj) (meta obj)))
+
+(defn- with-meta* [obj m]
+  (if (instance? clojure.lang.IObj obj) (with-meta obj m) obj))
+
+(defn- displace? [obj] (:displace (meta* obj)))
+(defn- replace? [obj] (:replace (meta* obj)))
+(defn- top-displace? [obj] (:top-displace (meta* obj)))
+
+(defn- different-priority? [left right]
+  (boolean
+   (or (some (some-fn nil? displace? replace?) [left right])
+       (top-displace? left))))
+
+(defn- remove-top-displace [obj]
+  (if (top-displace? obj) (vary-meta obj dissoc :top-displace) obj))
+
+(defn- pick-prioritized [left right]
+  (cond
+    (nil? left) right
+    (nil? right) (remove-top-displace left)
+    (top-displace? left) right
+    (and (displace? left) (displace? right))
+    (with-meta* right (merge (meta* left) (meta* right)))
+    (and (replace? left) (replace? right))
+    (with-meta* right (merge (meta* left) (meta* right)))
+    (or (displace? left) (replace? right))
+    (with-meta* right (merge (dissoc (meta* left) :displace) (dissoc (meta* right) :replace)))
+    (or (replace? left) (displace? right))
+    (with-meta* left (merge (dissoc (meta* right) :displace) (dissoc (meta* left) :replace)))))
+
+(defn meta-merge
+  "Recursively merge values based on `:replace`, `:displace`, `:prepend` and
+  `:append` metadata, exactly like `meta-merge.core/meta-merge`."
+  ([] {})
+  ([left] left)
+  ([left right]
+   (cond
+     (different-priority? left right) (pick-prioritized left right)
+     (and (map? left) (map? right)) (merge-with meta-merge left right)
+     (and (set? left) (set? right)) (into right left)
+     (and (coll? left) (coll? right))
+     (if (or (:prepend (meta left)) (:prepend (meta right)))
+       (-> (into (empty left) (concat right left))
+           (with-meta (merge (meta left) (select-keys (meta right) [:displace]))))
+       (into (empty left) (concat left right)))
+     :else right))
+  ([left right & more]
+   (reduce meta-merge left (cons right more))))
+
+;; ---------------------------------------------------------------------------
+;; Kaocha defaults and normalization
+
+(def kaocha-defaults
+  "The value of `kaocha/default_config.edn` in Kaocha 1.91.1392."
+  {:kaocha/reporter ['kaocha.report/dots]
+   :kaocha/color? true
+   :kaocha/fail-fast? false
+   :kaocha/plugins [:kaocha.plugin/randomize
+                    :kaocha.plugin/filter
+                    :kaocha.plugin/capture-output]
+   :kaocha/tests [{:kaocha.testable/type :kaocha.type/clojure.test
+                   :kaocha.testable/id :unit
+                   :kaocha/ns-patterns ["-test$"]
+                   :kaocha/source-paths ["src"]
+                   :kaocha/test-paths ["test"]
+                   :kaocha.filter/skip-meta [:kaocha/skip]}]})
+
+(defn- config-error [msg data]
+  (ex-info msg (assoc data :brisk/config-error true)))
+
+(defn- rename-key [m old-key new-key]
+  (if (contains? m old-key)
+    (assoc (dissoc m old-key) new-key (get m old-key))
+    m))
+
+(defn- replace-by-default
+  "Mirrors `kaocha.config/replace-by-default`: values under the given key
+  replace the default instead of being appended, unless they say otherwise."
+  [config k]
+  (if-let [v (get config k)]
+    (cond
+      (some #{:prepend :append} (keys (meta v))) config
+      (or (coll? v) (symbol? v)) (update config k vary-meta assoc :replace true)
+      :else (throw (config-error
+                    (str "Test suite configuration value with key " k
+                         " should be a collection or symbol, but got '" (pr-str v) "'")
+                    {:key k :value v})))
+    config))
+
+(defn merge-config
+  "Mirrors `kaocha.config/merge-config`: `meta-merge` where tests, reporter,
+  test-paths, source-paths and ns-patterns replace rather than concatenate."
+  [c1 c2]
+  (meta-merge c1 (reduce replace-by-default c2
+                         [:kaocha/reporter :kaocha/tests :kaocha/test-paths
+                          :kaocha/source-paths :kaocha/ns-patterns])))
+
+(defn- normalize-test-suite
+  "Mirrors `kaocha.config/normalize-test-suite`."
+  [m]
+  (let [m (-> m
+              (rename-key :type :kaocha.testable/type)
+              (rename-key :id :kaocha.testable/id)
+              (rename-key :test-paths :kaocha/test-paths)
+              (rename-key :source-paths :kaocha/source-paths)
+              (rename-key :ns-patterns :kaocha/ns-patterns)
+              (rename-key :skip :kaocha.filter/skip)
+              (rename-key :focus :kaocha.filter/focus)
+              (rename-key :skip-meta :kaocha.filter/skip-meta)
+              (rename-key :focus-meta :kaocha.filter/focus-meta))]
+    (merge-config (first (:kaocha/tests kaocha-defaults)) m)))
+
+(defn- kaocha-normalize
+  "Mirrors `kaocha.config/normalize` (renames unqualified keys, normalizes
+  each suite against the default suite). Unlike Kaocha it tolerates a brisk
+  reporter keyword so already-normalized configs can be normalized again."
+  [config]
+  (let [{:keys [tests plugins reporter color? fail-fast? diff-style randomize?
+                capture-output? watch? bindings]} config
+        tests (some->> (or tests (:kaocha/tests config)) (mapv normalize-test-suite))
+        kaocha-reporter? (and reporter (not (keyword? reporter)))]
+    (cond-> {}
+      tests (assoc :kaocha/tests (vary-meta tests assoc :replace true))
+      plugins (assoc :kaocha/plugins plugins)
+      kaocha-reporter? (assoc :kaocha/reporter (vary-meta reporter assoc :replace true))
+      bindings (assoc :kaocha/bindings bindings)
+      (some? color?) (assoc :kaocha/color? color?)
+      (some? fail-fast?) (assoc :kaocha/fail-fast? fail-fast?)
+      (some? diff-style) (assoc :kaocha/diff-style diff-style)
+      (some? watch?) (assoc :kaocha/watch? watch?)
+      (some? randomize?) (assoc :kaocha.plugin.randomize/randomize? randomize?)
+      (some? capture-output?) (assoc :kaocha.plugin.capture-output/capture-output? capture-output?)
+      true (merge (dissoc config :tests :plugins :reporter :color? :fail-fast? :watch? :randomize?)
+                  (when tests {:kaocha/tests (vary-meta tests assoc :replace true)})))))
+
+;; ---------------------------------------------------------------------------
+;; Reading (Aero + Kaocha readers)
+
+(declare resolve-form)
+
+(defn- pending?
+  "True when `form` still contains an unresolved tagged literal."
+  [form]
+  (boolean (some tagged-literal? (tree-seq coll? seq form))))
+
+(defn- rebuild
+  "Apply `f` to the elements of collection `form`, keeping its type and meta."
+  [form f]
+  (let [out (cond
+              (map? form) (into (empty form) (map (fn [[k v]] [(f k) (f v)])) form)
+              (vector? form) (into (empty form) (map f) form)
+              (set? form) (into (empty form) (map f) form)
+              (seq? form) (apply list (map f form))
+              :else form)]
+    (if (and (coll? form) (meta form)) (with-meta out (meta form)) out)))
+
+(defn- expand-set-keys
+  "Aero lets `#{:a :b} v` stand for both `:a v` and `:b v` in case maps."
+  [m]
+  (into {} (mapcat (fn [[k v]] (if (set? k) (map #(vector % v) k) [[k v]]))) m))
+
+(defn- resolve-case
+  "`#profile`, `#hostname` and `#user`: pick a branch by `value`, else `:default`."
+  [ctx tag form value]
+  (when-not (map? form)
+    (throw (config-error (str "#" tag " expects a map") {:tag tag})))
+  (let [m (expand-set-keys form)]
+    (resolve-form ctx (get m value (get m :default)))))
+
+(defn- resolve-or
+  [ctx form]
+  (let [vs (mapv #(resolve-form ctx %) form)]
+    (if (some pending? vs)
+      (tagged-literal 'or vs)
+      (first (filter identity vs)))))
+
+(defn- resolve-ref
+  [ctx form]
+  (let [path (resolve-form ctx form)
+        v (when-not (pending? path) (get-in (:root ctx) path ::absent))]
+    (if (or (pending? path) (= ::absent v) (pending? v))
+      (tagged-literal 'ref path)
+      v)))
+
+(declare read-source)
+
+(defn- resolve-include
+  [{:keys [opts source depth] :as ctx} form]
+  (let [path (resolve-form ctx form)]
+    (if (pending? path)
+      (tagged-literal 'include path)
+      (let [text (when-let [f (:include opts)] (f path source))]
+        (if text
+          (read-source text opts path (inc depth))
+          {:aero/missing-include path})))))
+
+(defn- parse-double* [s]
+  (Double/parseDouble s))
+
+(defn- apply-tag
+  "Apply the reader for `tag` to its fully resolved `value`."
+  [{:keys [opts]} tag value]
+  (let [env (:env opts)]
+    (case tag
+      env (get env (str value))
+      envf (let [[fmt & args] value]
+             (apply format fmt (map #(str (get env (str %))) args)))
+      prop (get (:props opts) (str value))
+      long (or (parse-long (str value))
+               (throw (config-error (str "#long cannot parse " (pr-str value)) {})))
+      double (parse-double* (str value))
+      keyword (if (keyword? value) value (keyword (str value)))
+      boolean (= "true" (str/lower-case (str value)))
+      join (apply str value)
+      read-edn (some-> value str edn/read-string)
+      merge (apply merge value)
+      (kaocha/v1 kaocha) value
+      meta-merge (apply meta-merge value)
+      (throw (config-error (str "No reader for tag " tag) {:tag tag})))))
+
+(defn- resolve-tag
+  [{:keys [opts] :as ctx} tl]
+  (let [{:keys [tag form]} tl]
+    (case tag
+      ref (resolve-ref ctx form)
+      include (resolve-include ctx form)
+      profile (resolve-case ctx tag form (:profile opts))
+      hostname (resolve-case ctx tag form (:hostname opts))
+      user (resolve-case ctx tag form (or (:user opts) (get (:env opts) "USER")))
+      or (resolve-or ctx form)
+      (let [v (resolve-form ctx form)]
+        (if (pending? v)
+          (tagged-literal tag v)
+          (apply-tag ctx tag v))))))
+
+(defn- resolve-form [ctx form]
+  (cond
+    (tagged-literal? form) (resolve-tag ctx form)
+    (coll? form) (rebuild form #(resolve-form ctx %))
+    :else form))
+
+(defn- drop-refs
+  "Aero replaces references that never resolve with nil."
+  [form]
+  (cond
+    (and (tagged-literal? form) (= 'ref (:tag form))) nil
+    (tagged-literal? form) (tagged-literal (:tag form) (drop-refs (:form form)))
+    (coll? form) (rebuild form drop-refs)
+    :else form))
+
+(defn- settle
+  "Resolve tags repeatedly so `#ref` can point at values that themselves
+  needed resolving."
+  [ctx form]
+  (loop [root form n 0]
+    (let [out (resolve-form (assoc ctx :root root) root)]
+      (cond
+        (not (pending? out)) out
+        (or (= out root) (> n 20)) (drop-refs out)
+        :else (recur out (inc n))))))
+
+(defn- read-source [text opts source depth]
+  (when (> depth 20)
+    (throw (config-error "#include nesting is too deep" {:source source})))
+  (let [form (edn/read-string {:default tagged-literal :eof nil} text)]
+    (settle {:opts opts :source source :depth depth} form)))
+
+(defn- deprecated-tags
+  "Warnings for the `#kaocha` literal, which Kaocha deprecates in favour of
+  `#kaocha/v1`."
+  [form]
+  (when (some #(and (tagged-literal? %) (= 'kaocha (:tag %)))
+              (tree-seq #(or (coll? %) (tagged-literal? %))
+                        #(if (tagged-literal? %) [(:form %)] (seq %))
+                        form))
+    ["The #kaocha reader literal is deprecated, please change it to kaocha/v1."]))
+
+(defn- default-profile [{:keys [profile env]}]
+  (or profile (if (= "true" (get env "CI")) :ci :default)))
+
+(defn read-config
+  "Parse tests.edn `text`. Returns `{:config raw :warnings [...]}` or
+  `{:error \"message\"}`; never throws.
+
+  `opts` (all optional):
+  - `:profile`  the `#profile` to pick. Default `:ci` when env CI is \"true\",
+                else `:default` (as `kaocha.config/read-config-source`).
+  - `:env`      map of environment variables (string keys) for `#env`/`#envf`.
+  - `:props`    map of system properties for `#prop`.
+  - `:hostname` and `:user` for `#hostname` and `#user`.
+  - `:include`  `(fn [path including-source])` returning the text of an
+                included file, or nil when it does not exist (Aero then
+                yields `{:aero/missing-include path}`).
+
+  The result is the raw value, tags resolved. `#kaocha/v1` is the identity
+  here; `normalize` applies Kaocha's defaults exactly once. Blank text gives a
+  nil config (Kaocha's \"use the defaults\")."
+  ([text] (read-config text {}))
+  ([text opts]
+   (try
+     (let [opts (assoc opts :profile (default-profile opts))
+           form (edn/read-string {:default tagged-literal :eof nil} (or text ""))]
+       {:config (settle {:opts opts :source nil :depth 0} form)
+        :warnings (vec (deprecated-tags form))})
+     (catch Exception e
+       {:error (str "Failed reading tests.edn: " (or (ex-message e) (str e)))}))))
+
+;; ---------------------------------------------------------------------------
+;; Normalization to brisk's config
+
+(def ^:private supported-plugins
+  #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
+    :kaocha.plugin/print-invocations :kaocha.plugin/profiling})
+
+(def ^:private silent-namespaces
+  #{"kaocha.plugin.profiling" "kaocha.plugin.print-invocations"
+    "kaocha.plugin.randomize" "kaocha.plugin.capture-output" "kaocha.filter"})
+
+(def ^:private known-keys
+  #{:kaocha/tests :kaocha/plugins :kaocha/reporter :kaocha/color? :kaocha/fail-fast?
+    :kaocha/watch? :kaocha/cli-options :kaocha/cli-args
+    ;; unqualified leftovers that kaocha-normalize copies through
+    :capture-output? :diff-style :bindings
+    ;; brisk's own shape, so a normalized config can be normalized again
+    :workers :isolate? :runtime :warnings :errors :filters :reporter})
+
+(def ^:private known-suite-keys
+  #{:kaocha.testable/id :kaocha.testable/type :kaocha.testable/desc
+    :kaocha/test-paths :kaocha/source-paths :kaocha/ns-patterns
+    :kaocha.filter/skip :kaocha.filter/focus :kaocha.filter/skip-meta
+    :kaocha.filter/focus-meta :kaocha.testable/skip})
+
+(defn- silent-key? [k]
+  (or (contains? known-keys k)
+      (and (qualified-keyword? k) (contains? silent-namespaces (namespace k)))))
+
+(defn- ->vec
+  "Coerce a config value to a vector. Scalars become one-element vectors."
+  [x]
+  (cond (nil? x) [] (sequential? x) (vec x) (set? x) (vec x) :else [x]))
+
+(defn- normalize-plugin
+  "Mirrors `kaocha.plugin/normalize-name` (what Kaocha applies when loading
+  plugins): a simple keyword without a period lives in `kaocha.plugin`.
+  Non-keywords are dropped instead of throwing."
+  [p]
+  (cond
+    (not (keyword? p)) nil
+    (and (simple-keyword? p) (not (str/includes? (name p) "."))) (keyword "kaocha.plugin" (name p))
+    :else p))
+
+(defn- suite-view [suite]
+  (let [{:kaocha.testable/keys [id type] :kaocha/keys [test-paths source-paths ns-patterns]
+         :kaocha.filter/keys [skip focus skip-meta focus-meta]} suite]
+    {:id id
+     :type type
+     :test-paths (->vec test-paths)
+     :source-paths (->vec source-paths)
+     :ns-patterns (->vec ns-patterns)
+     :focus (->vec focus)
+     :skip (->vec skip)
+     :focus-meta (->vec focus-meta)
+     :skip-meta (->vec (distinct (->vec skip-meta)))}))
+
+(defn- suite-warnings [suite]
+  (let [id (:kaocha.testable/id suite)
+        type (:kaocha.testable/type suite)]
+    (concat
+     (when (not= :kaocha.type/clojure.test type)
+       [(str "suite " (pr-str id) " has unsupported type " (pr-str type) ", skipped")])
+     (for [k (sort-by str (keys suite))
+           :when (not (contains? known-suite-keys k))]
+       (str "unsupported suite option " (pr-str k) " ignored (suite " (pr-str id) ")")))))
+
+(defn- reporter-name [sym]
+  (when (symbol? sym) [(namespace sym) (name sym)]))
+
+(defn- brisk-reporter
+  "Map Kaocha reporter symbols to the closest brisk reporter keyword.
+  Returns `[reporter warnings]`."
+  [reporter]
+  (if (keyword? reporter)
+    [reporter []]
+    (let [syms (->vec reporter)
+          mapped (map (fn [r]
+                        (let [[ns n] (reporter-name r)]
+                          (cond
+                            (and (= ns "kaocha.report") (= n "documentation")) [:documentation nil]
+                            (contains? #{"kaocha.report" "kaocha.report.progress" "clojure.test"} ns) [:live nil]
+                            :else [:live (str "reporter " (pr-str r) " is not supported, using :live")])))
+                      syms)]
+      [(or (first (remove #{:live} (map first mapped))) :live)
+       (vec (keep second mapped))])))
+
+(defn- cli-filters [options]
+  (into {}
+        (keep (fn [k] (when (seq (get options k)) [k (->vec (get options k))])))
+        [:focus :skip :focus-meta :skip-meta]))
+
+(defn- config-filters
+  "Global filters: brisk's `:filters`, else Kaocha's top-level
+  `:kaocha.filter/*` keys, with the CLI taking precedence key by key (the
+  `kaocha.plugin.filter/config` hook)."
+  [cfg cli-options]
+  (let [from-config (merge (into {} (map (fn [k] [k (->vec (get cfg (keyword "kaocha.filter" (name k))))]))
+                                 [:focus :skip :focus-meta :skip-meta])
+                           (when (map? (:filters cfg)) (update-vals (:filters cfg) ->vec)))]
+    (merge {:focus [] :skip [] :focus-meta [] :skip-meta []}
+           from-config
+           (cli-filters cli-options))))
+
+(defn- cli-warnings [options]
+  (cond-> []
+    (contains? options :seed) (conj "--seed ignored: brisk orders namespaces by previous timings")
+    (:randomize options) (conj "--randomize ignored: ordering is per worker")))
+
+(defn- pick
+  "First of the candidates that is not nil (false counts)."
+  [& xs]
+  (first (filter some? xs)))
+
+(defn- default-workers [{:keys [cpus]}]
+  (-> (or cpus 4) (min 8) (max 1)))
+
+(defn normalize
+  "Normalize raw `tests.edn` data (from `read-config`, or nil when the file is
+  missing) and parsed CLI `cli-options` (the `:options` of
+  `brisk.cli/parse-args`) into brisk's config; see doc/design.md.
+
+  Applies Kaocha's `#kaocha/v1` defaults and `normalize`, then the CLI
+  overrides of `kaocha.config/apply-cli-opts`; the CLI always wins. Accepts
+  both `:test-paths` and `:kaocha/test-paths` style keys. Unsupported plugins
+  and options become `:warnings` entries. `env` may carry `:cpus` for the
+  default worker count.
+
+  Total: input Kaocha would reject (where it exits with an error, such as a
+  string for `:test-paths`) yields the defaults and a message in `:errors`,
+  which the caller should report and exit on. A non-map config yields the
+  defaults and a warning."
+  ([raw cli-options] (normalize raw cli-options {}))
+  ([raw cli-options env]
+   (let [bad? (and (some? raw) (not (map? raw)))
+         raw (if (map? raw) raw {})
+         cli-options (or cli-options {})
+         cfg (try (merge-config kaocha-defaults (kaocha-normalize raw))
+                  (catch Exception e
+                    (assoc (merge-config kaocha-defaults {})
+                           ::error (str "invalid configuration: " (ex-message e)))))
+         plugins (->> (concat (->vec (:kaocha/plugins cfg)) (:plugin cli-options))
+                      (map normalize-plugin) (remove nil?) distinct vec)
+         [reporter reporter-warnings]
+         (brisk-reporter (pick (when (seq (:reporter cli-options)) (:reporter cli-options))
+                               (:reporter raw)
+                               (:kaocha/reporter cfg)))
+         suites (->vec (:kaocha/tests cfg))
+         tests (mapv suite-view suites)]
+     {:tests tests
+      :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
+      :filters (config-filters cfg cli-options)
+      :plugins plugins
+      :fail-fast? (boolean (pick (:fail-fast cli-options) (:kaocha/fail-fast? cfg) false))
+      :color? (boolean (pick (:color cli-options) (:kaocha/color? cfg) true))
+      :capture-output? (boolean (pick (:capture-output cli-options)
+                                      (:kaocha.plugin.capture-output/capture-output? cfg)
+                                      true))
+      :reporter reporter
+      :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
+      :workers (pick (:workers cli-options) (:workers raw) (default-workers env))
+      :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
+      :runtime (pick (:runtime cli-options) (:runtime raw) :bb)
+      :warnings
+      (vec (distinct
+            (concat
+             (when bad? ["tests.edn did not contain a map, using defaults"])
+             (->vec (:warnings raw))
+             (for [p plugins :when (not (contains? supported-plugins p))]
+               (str "unsupported plugin " (pr-str p) " ignored"))
+             (for [k (sort-by str (keys cfg))
+                   :when (and (not (silent-key? k)) (not= ::error k))]
+               (str "unsupported option " (pr-str k) " ignored"))
+             (mapcat suite-warnings suites)
+             reporter-warnings
+             (cli-warnings cli-options))))})))

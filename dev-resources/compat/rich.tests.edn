@@ -1,0 +1,15 @@
+;; Exercises the Aero and Kaocha reader tags brisk supports. Used by
+;; brisk.config-test and the Kaocha differential test.
+#kaocha/v1
+{:tests [{:id           :unit
+          :test-paths   ["test/unit"]
+          :ns-patterns  ["-test$" "^it\\."]
+          :skip-meta    [:slow]
+          :focus-meta   #profile {:focus [:wip] :default []}}
+         {:id         :integration
+          :test-paths #or [#env "IT_PATHS_UNSET" ["test/integration"]]
+          :skip       [my.app.flaky-test]}]
+ :plugins [:kaocha.plugin/profiling :kaocha.plugin/notifier]
+ :fail-fast? #boolean #env "FAIL_FAST"
+ :color?     false
+ :reporter   [kaocha.report/documentation]}
