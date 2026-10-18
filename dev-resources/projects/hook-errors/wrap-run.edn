@@ -1,0 +1,1 @@
+#kaocha/v1 {:plugins [:kaocha.plugin/hooks] :kaocha.hooks/wrap-run [he.hooks/skip-wrap-run]}

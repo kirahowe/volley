@@ -215,7 +215,18 @@
   (let [err {:class "clojure.lang.ExceptionInfo" :message "post-run hook threw" :trace []}
         state (reduce rs/apply-event (rs/init {:namespaces []})
                       [{:event :worker/error :worker 2 :phase :shutdown :error err :at 1}])]
-    (is (= [{:kind :worker-error :worker 2 :error err :phase :shutdown}] (rs/failures state)))
+    (is (= [{:kind :worker-error :worker 2 :error err :phase :shutdown :workers [2]}] (rs/failures state)))
+    (is (= 1 (rs/exit-code state)))))
+
+(deftest the-same-shutdown-hook-failing-in-every-worker-is-one-failure
+  ;; Kaocha runs post-run once, so it fails once
+  (let [err {:class "clojure.lang.ExceptionInfo" :message "boom" :trace []}
+        hook {:kind :post-run :entry 'my.hooks/done}
+        state (reduce rs/apply-event (rs/init {:namespaces []})
+                      (for [w [3 1 2]]
+                        {:event :worker/error :worker w :phase :shutdown :error err :hook hook :at 1}))]
+    (is (= [{:kind :worker-error :worker 1 :error err :phase :shutdown :hook hook :workers [1 2 3]}]
+           (rs/failures state)))
     (is (= 1 (rs/exit-code state)))))
 
 (deftest a-lost-assertion-still-fails-the-var

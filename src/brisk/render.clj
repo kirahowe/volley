@@ -480,16 +480,26 @@
     :protocol-error (paint opts :red " ERROR ")
     (paint opts :red (str " " (name kind) " "))))
 
+(defn- hook-name
+  "`pre-test hook my.hooks/check` for a failure's `:hook`."
+  [{:keys [kind entry]}]
+  (str (some-> kind name) " hook " (ext (pr-str entry))))
+
 (defn- header-text [{:keys [kind ns var] :as f}]
   (case kind
-    :ns-error (str (qualified ns nil) (case (:phase f)
-                                        :run "  failed in a fixture"
-                                        :setup "  not run: worker setup failed"
-                                        "  failed to load"))
+    :ns-error (str (qualified ns nil) (cond
+                                        (= :setup (:phase f)) "  not run: worker setup failed"
+                                        (:hook f) (str "  the " (hook-name (:hook f)) " failed")
+                                        (= :run (:phase f)) "  failed in a fixture"
+                                        :else "  failed to load"))
     :crash    (str (if ns (qualified ns var) (str "worker " (:worker f)))
                    "  worker exited with code " (:exit-code f))
     :file-error "ns form could not be read"
-    :worker-error (str "worker " (:worker f) "  a hook failed as it shut down")
+    :worker-error (str (if (next (:workers f))
+                         (str "workers " (str/join ", " (:workers f)))
+                         (str "worker " (:worker f)))
+                       "  " (if-let [h (:hook f)] (str "the " (hook-name h)) "a hook")
+                       " failed as " (if (next (:workers f)) "they" "it") " shut down")
     (:fail :error) (str (qualified ns var) (when-not var "  in a :once fixture"))
     :protocol-error (str (if ns (qualified ns var) (str "worker " (:worker f)))
                          "  a message from the worker could not be read")
@@ -623,7 +633,11 @@
       :failed  (if (zero? failed)
                  "(failed in a fixture)"
                  (str "(" failed "/" (count vars) " failed)"))
-      :error   (case (:phase rec) :run "(fixture failed)" :setup "(worker setup failed)" "(failed to load)")
+      :error   (cond
+                 (= :setup (:phase rec)) "(worker setup failed)"
+                 (:hook rec) (str "(" (some-> rec :hook :kind name) " hook failed)")
+                 (= :run (:phase rec)) "(fixture failed)"
+                 :else "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
       :interrupted (str "(interrupted by fail-fast, " (count vars) " done)")
       "")))

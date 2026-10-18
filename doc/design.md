@@ -279,7 +279,8 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 {:event :var/skipped   :ns ns :var sym :reason (:pending | :skip-meta | ...)}
 {:event :ns/end        :ns ns :run-id n :duration-ms num
                        :pass n}                    ; only when a :once fixture asserted
-{:event :worker/error  :phase :shutdown :error err}   ; a shutdown hook threw; one failure
+{:event :worker/error  :phase :shutdown :error err    ; a shutdown hook threw; one failure
+                       :hook {:kind kw :entry entry}}       ;   per hook, across workers
 {:event :worker/warning :message str}                ; printed once per run, e.g. an unused focus-meta key
 ```
 
@@ -550,10 +551,16 @@ every namespace it is given is reported as an `:ns/error` with phase
 `:setup` ("not run: worker setup failed"), so a process that could not be
 isolated never runs a test. A load hook that throws is that namespace's
 load error, a namespace or var hook that throws is a namespace error
-(phase `:run`), and the error names the hook. A `pre-report` hook that
+(phase `:run`), and the error names the hook (the `:ns/error` carries
+`:hook {:kind kw :entry entry}`, and the report says "the pre-test hook
+my.hooks/check failed" rather than blaming a fixture). A `pre-report` hook that
 throws is printed to the worker's stderr and the event is counted as it
-was. A shutdown hook that throws is sent as `:worker/error` and counts as
-one failure.
+was. A shutdown hook that throws is sent as `:worker/error` (with `:hook`)
+and counts as one failure per hook and message, however many workers
+it failed in, since Kaocha runs `post-run` once; the report lists the
+workers. A `wrap-run` hook that never calls `run` leaves the namespace's
+tests unrun: Kaocha then reports nothing and exits 0, and so does brisk,
+with a warning naming the namespace.
 In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker killed by
 fail-fast or a watch cancel runs no shutdown hooks.

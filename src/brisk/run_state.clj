@@ -83,13 +83,14 @@
   [vars]
   (update-vals vars #(cond-> % (= :running (:phase % :running)) (assoc :phase :crashed))))
 
-(defn- on-ns-error [state {:keys [worker ns at error phase]}]
+(defn- on-ns-error [state {:keys [worker ns at error phase hook]}]
   (let [crash? (crash-error? error)]
     (-> state
         (update-in [:namespaces ns]
                    #(cond-> (merge ((ns-record ns) %)
                                    {:status (if crash? :crashed :error) :error error
                                     :phase phase :worker worker :end-at at})
+                      hook (assoc :hook hook)
                       crash? (-> (assoc :exit-code (:exit-code error))
                                  (update :vars crash-running-vars))))
         (set-worker worker idle))))
@@ -159,8 +160,9 @@
   [state {:keys [worker code]}]
   (set-worker state worker (merge idle {:exited? true :code code})))
 
-(defn- on-worker-error [state {:keys [worker error phase]}]
-  (update-in state [:worker-errors worker] (fnil conj []) {:worker worker :error error :phase phase}))
+(defn- on-worker-error [state {:keys [worker error phase hook]}]
+  (update-in state [:worker-errors worker] (fnil conj [])
+             (cond-> {:worker worker :error error :phase phase} hook (assoc :hook hook))))
 
 (defn- on-file-error [state {:keys [file error]}]
   (assoc-in state [:file-errors file] error))
@@ -364,10 +366,11 @@
             :output (var-output v)))
    (mapcat #(lost-failures ns %) (vals vars))))
 
-(defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase]}]
+(defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase hook]}]
   (case status
     :error   [(cond-> {:kind :ns-error :ns ns :error error :worker worker :phase phase
                        :output (str/join "\n" stray)}
+                hook (assoc :hook hook)
                 (some #(= :fixture-failed (:reason %)) (vals vars))
                 (assoc :not-run-vars (vec (sort (keep #(when (= :fixture-failed (:reason %)) (:var %))
                                                       (vals vars))))))]
@@ -378,10 +381,26 @@
                  :output (str/join "\n" (concat stray (when v [(var-output v)])))}])
     []))
 
-(defn- worker-failures [state]
-  (for [[_ errors] (sort-by key (:worker-errors state))
-        {:keys [worker error phase]} errors]
-    {:kind :worker-error :worker worker :error error :phase phase}))
+(defn- worker-failures
+  "One failure per hook that threw as workers shut down: Kaocha runs
+  `post-run` once, so the same hook failing in every worker is one
+  failure, listing the workers. An error that names no hook counts per
+  worker."
+  [state]
+  (->> (for [[_ errors] (sort-by key (:worker-errors state))
+             {:keys [worker hook] :as e} errors]
+         [(if hook [hook (get-in e [:error :message])] [:worker worker]) e])
+       (partition-by first)
+       (reduce (fn [acc [[k e] :as group]]
+                 (if (contains? (:seen acc) k)
+                   (update-in acc [:out (get (:seen acc) k) :workers] into (map (comp :worker second) group))
+                   (-> acc
+                       (assoc-in [:seen k] (count (:out acc)))
+                       (update :out conj (cond-> {:kind :worker-error :worker (:worker e) :error (:error e)
+                                                  :phase (:phase e) :workers (mapv (comp :worker second) group)}
+                                           (:hook e) (assoc :hook (:hook e)))))))
+               {:seen {} :out []})
+       :out))
 
 (defn- protocol-failures [state]
   (for [[_ errors] (sort-by key (:protocol-errors state))

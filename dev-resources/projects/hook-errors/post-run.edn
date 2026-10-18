@@ -1,0 +1,1 @@
+#kaocha/v1 {:plugins [:kaocha.plugin/hooks] :kaocha.hooks/post-run [he.hooks/throw-post-run]}

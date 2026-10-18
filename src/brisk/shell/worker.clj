@@ -356,20 +356,35 @@
                 *out* *out*
                 *err* *err*]
         (try
-          [(first (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))) nil @outside]
+          (let [[hs _ ran?] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))]
+            (when-not ran?
+              (emit! {:event :worker/warning
+                      :message (str "the wrap-run hook did not call run for " ns-sym
+                                    ", so its " (count vars) " test" (when (next vars) "s")
+                                    " did not run (Kaocha does not run them either)")}))
+            [hs nil @outside])
           (catch ^:sci/error Throwable e
             (safely #(end-var! acc emit! ns-sym))
             (abandon!)
             [hs e @outside])))
       (catch ^:sci/error Throwable e (abandon!) [hs e @outside]))))
 
+(defn- hook-of
+  "`{:kind kw :entry entry}` when `e` (or what it wraps) is the error of a
+  hook (`brisk.shell.hooks`), else nil."
+  [e]
+  (let [{:keys [hook entry]} (ex-data (hooks/unwrap e))]
+    (when (keyword? hook) {:kind hook :entry entry})))
+
 (defn- error-event
   "`phase` is `:setup` for a worker setup or run-level hook that failed,
   `:load` for a failed require (or load hook) and `:run` for an error that
-  escaped the tests themselves (a fixture or hook, typically)."
+  escaped the tests themselves (a fixture or hook, typically). `:hook`
+  names the hook when one threw."
   [ns-sym run-id phase e]
-  {:event :ns/error :ns ns-sym :run-id run-id :phase phase
-   :error (safely #(encode-throwable e))})
+  (cond-> {:event :ns/error :ns ns-sym :run-id run-id :phase phase
+           :error (safely #(encode-throwable e))}
+    (hook-of e) (assoc :hook (hook-of e))))
 
 (defn- ns-metadata
   "The loaded namespace's metadata, over the static copy the parent read
@@ -557,7 +572,8 @@
   `:worker/error` events; there is no namespace to attach them to."
   [emit! errors]
   (doseq [e errors]
-    (emit! {:event :worker/error :phase :shutdown :error (safely #(encode-throwable e))})))
+    (emit! (cond-> {:event :worker/error :phase :shutdown :error (safely #(encode-throwable e))}
+             (hook-of e) (assoc :hook (hook-of e))))))
 
 (defn- handle-line!
   "Handle one stdin line with hook state `hs`. Returns the next state, or

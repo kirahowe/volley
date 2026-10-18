@@ -87,5 +87,5 @@
         dir (e2e/copy-project "hooks" {"tests.edn" edn})
         {:keys [exit out]} (e2e/brisk dir ["--workers" "1"])]
     (is (= 1 exit) "the tests pass; the failed hook is the one failure")
-    (is (str/includes? out "a hook failed as it shut down") out)
+    (is (re-find #"the post-run hook .* failed as (it|they) shut down" out) out)
     (is (str/includes? out "post-run broke") "a list form is evaluated in the worker, as Kaocha's load-hook does")))

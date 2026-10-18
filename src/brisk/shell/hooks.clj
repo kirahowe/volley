@@ -239,20 +239,25 @@
 (defn run-ns
   "Run a namespace: `pre-test` with its testable, `run` (a fn of no
   arguments returning the var results) wrapped by the `wrap-run` hooks,
-  then `post-test` with the result. Returns `[hs result]`; throws when a
-  hook does."
+  then `post-test` with the result. Returns `[hs result ran?]`, `ran?`
+  false when a `wrap-run` hook never called `run`; throws when a hook
+  does."
   [hs suite ns-sym ns-obj run]
   (if-not (active? hs)
-    [hs (run)]
+    [hs (run) true]
     (let [p (plan hs)
           t (assoc (hooks/ns-testable ns-sym) :kaocha.ns/ns ns-obj :kaocha.testable/meta (meta ns-obj))
           t (run-chain :pre-test (top hs :pre-test) t p)
-          base (fn [testable _plan] (assoc testable :kaocha.result/tests (run)))
+          ;; the one way to learn whether a wrap-run hook called run
+          ran? (volatile! false)
+          base (fn [testable _plan]
+                 (vreset! ran? true)
+                 (assoc testable :kaocha.result/tests (run)))
           wrapped (run-chain :wrap-run (top hs :wrap-run) base)
           r (wrapped t p)
           r (if (map? r) r (assoc t :kaocha.result/tests []))
           r (run-chain :post-test (top hs :post-test) r p)]
-      [(update-in hs [:results suite] (fnil conj []) r) r])))
+      [(update-in hs [:results suite] (fnil conj []) r) r @ran?])))
 
 (defn run-var
   "Run test var `v` of `ns-sym`: `pre-test` with its testable, then

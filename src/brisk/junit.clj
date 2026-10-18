@@ -123,10 +123,19 @@
   "A failure that belongs to no var, as an error with a description."
   [{:keys [kind ns file worker error reason exit-code] :as f}]
   (let [message (case kind
-                  :ns-error (case (:phase f) :run "failed in a fixture" :setup "not run: worker setup failed" "failed to load")
+                  :ns-error (cond
+                              (= :setup (:phase f)) "not run: worker setup failed"
+                              (:hook f) (str (some-> f :hook :kind name) " hook " (pr-str (get-in f [:hook :entry])) " failed")
+                              (= :run (:phase f)) "failed in a fixture"
+                              :else "failed to load")
                   :crash (str "worker exited with code " exit-code)
                   :file-error "ns form could not be read"
-                  :worker-error (str "worker " worker ": a hook failed as it shut down")
+                  :worker-error (str "worker" (when (next (:workers f)) "s") " "
+                                     (str/join ", " (or (:workers f) [worker])) ": "
+                                     (if-let [h (:hook f)]
+                                       (str (some-> h :kind name) " hook " (pr-str (:entry h)))
+                                       "a hook")
+                                     " failed as the worker shut down")
                   :protocol-error (str "a message from worker " worker " could not be read")
                   :not-run (str "not run: " (name reason))
                   (name kind))]

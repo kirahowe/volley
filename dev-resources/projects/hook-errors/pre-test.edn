@@ -1,0 +1,1 @@
+#kaocha/v1 {:plugins [:kaocha.plugin/hooks] :kaocha.hooks/pre-test [he.hooks/throw-pre-test]}
