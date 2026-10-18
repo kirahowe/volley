@@ -19,6 +19,7 @@
    [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
    [brisk.shell.watch :as watch-loop]
+   [clojure.edn :as edn]
    [clojure.java.io :as io]
    [clojure.pprint :as pprint]
    [clojure.string :as str])
@@ -28,8 +29,9 @@
 (set! *warn-on-reflection* true)
 
 (def version
-  "What `--version` prints."
-  "brisk 0.1.0-alpha")
+  "What `--version` prints. The version lives in `brisk/version.edn` on
+  the classpath, the one place the release and the CHANGELOG follow."
+  (str "brisk " (:version (edn/read-string (slurp (io/resource "brisk/version.edn"))))))
 
 (def ^:private tick-ms 80)
 
