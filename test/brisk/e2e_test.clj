@@ -187,3 +187,12 @@
       (is (= '#{ordered.a-test ordered.b-test ordered.shared-state-test ordered.var-serial-test}
              (set (keys timings))))
       (is (every? nat-int? (vals timings))))))
+
+(deftest print-vars-a-test-binds-cannot-hide-failures
+  (testing "a fixture, a test and a top-level set! changing *print-length* and friends"
+    (let [{:keys [exit out]} (e2e/brisk (e2e/copy-project "print-vars") ["--workers" "3"]
+                                        {:timeout-ms 60000})]
+      (is (= 6 exit))
+      (is (str/starts-with? (e2e/summary-line out) "7 tests | 1 passed | 5 failed | 1 errors"))
+      (is (str/includes? out "actual:   [1 2 4]") "the value printed in full")
+      (is (not (str/includes? out "could not be read"))))))

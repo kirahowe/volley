@@ -78,7 +78,8 @@
       (every? (fn [{:keys [kind ns var]}]
                 (case kind
                   (:fail :error :ns-error) (str/includes? report (str ns (when (and var (not= :ns-error kind)) (str "/" var))))
-                  :crash (str/includes? report "worker exited")))
+                  :crash (str/includes? report "worker exited")
+                  :protocol-error (str/includes? report "could not be read")))
               (rs/failures state)))))
 
 (defspec no-failures-no-report runs

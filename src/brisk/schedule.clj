@@ -19,7 +19,8 @@
   * `{:event :ns/end :worker id :ns sym}`  (the worker always sends this last,
     also after `:ns/error`)
   * `{:event :ns/error ...}`, `{:event :assertion :type :fail|:error ...}`,
-    `{:event :var/end :fail n :error n ...}`  mark the run as failed
+    `{:event :var/end :fail n :error n ...}` and an `:output` with a
+    `:protocol-error`  mark the run as failed
   * `{:event :worker/exit :worker id :code n}`  emitted by the pool
 
   Worker statuses: `:starting`, `:idle`, `:busy`, `:retiring` (shutdown
@@ -105,18 +106,25 @@
            (and (spawning-disabled? state)
                 (not-any? #{:idle :starting} (vals workers))))))
 
+(defn holding
+  "The namespace `worker` is running, or nil."
+  [state worker]
+  (get-in state [:assignments worker]))
+
 (defn crash-events
   "Events to show for `event` when it is a `:worker/exit` of a worker that
   held an assignment: an `:ns/error` describing the crash, then the `:ns/end`
   the dead worker could not send. Empty for any other event. Call before
-  `handle-event`."
-  [{:keys [assignments]} {:keys [event worker code at]}]
+  `handle-event`. A `:reason` on the exit event (the parent killed the
+  worker, say) is added to the message."
+  [{:keys [assignments]} {:keys [event worker code at reason]}]
   (if-let [ns-sym (and (= :worker/exit event) (get assignments worker))]
     [{:event :ns/error :ns ns-sym :worker worker :at at :synthetic? true
       :error {:class "brisk.WorkerCrashed"
               :message (str "worker process exited with code " code
-                            " while running " ns-sym)
-              :data nil :trace [] :exit-code code}}
+                            " while running " ns-sym
+                            (when reason (str " (" reason ")")))
+              :data nil :trace [] :exit-code code :reason reason}}
      {:event :ns/end :ns ns-sym :worker worker :at at :synthetic? true
       :crashed? true}]
     []))
@@ -156,9 +164,10 @@
                (assoc-in [:crashed held] true)
                (assoc :failed? true)))))
 
-(defn- failure-event? [{:keys [event type fail error]}]
+(defn- failure-event? [{:keys [event type fail error protocol-error]}]
   (case event
     :ns/error true
+    :output (some? protocol-error)
     :assertion (contains? #{:fail :error} type)
     :var/end (pos? (+ (or fail 0) (or error 0)))
     false))

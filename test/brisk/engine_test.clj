@@ -64,6 +64,12 @@
       (every? (fn [ns] (<= (count (filter #(finished-line? mode ns %) lines)) 1))
               (planned w)))))
 
+(defspec a-bad-namespace-always-fails-the-run runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world]} (ge/simulate w max-steps)]
+      (or (not-any? (comp ge/bad-fates first) (vals (:fates w)))
+          (pos? (:exit world))))))
+
 (defspec clean-shutdowns-never-fail runs
   (prop/for-all [w ge/gen-world]
     (let [w (-> w
@@ -183,6 +189,20 @@
         {:keys [world]} (ge/simulate w max-steps)]
     (is (pos? (:kills world 0)) "a worker that ignores the shutdown is killed by handle")
     (is (= 0 (:exit world)))))
+
+(deftest a-worker-whose-ns-end-was-lost-is-killed-by-the-watchdog
+  (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
+           :fates {'a-test [:garbled]}
+           :opts {:workers 1 :reporter :ci :width 120 :color? false :started-at 0 :watchdog-ms 1000}
+           :spawn-fails [] :hung? false :choices []}
+        {:keys [world state]} (ge/simulate w max-steps)
+        out (str/join "\n" (printed-lines world))
+        kinds (set (map :kind (rs/failures (:run state))))]
+    (is (pos? (:kills world 0)))
+    (is (= 2 (:exit world)) "the unreadable line and the crash")
+    (is (= #{:protocol-error :crash} kinds))
+    (is (str/includes? out "brisk: a message from worker 1 (running a-test) could not be read: EOF while reading"))
+    (is (str/includes? out "its protocol output could not be read and it went silent"))))
 
 (deftest timings-are-saved
   (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}

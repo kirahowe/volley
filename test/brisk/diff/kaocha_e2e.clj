@@ -64,7 +64,8 @@
                           ["pending" []]
                           ["serial" []]
                           ["failures" []]
-                          ["failures" ["--focus" "shop.errors-test"]]]]
+                          ["failures" ["--focus" "shop.errors-test"]]
+                          ["print-vars" []]]]
     (same-run? project args)))
 
 (deftest fail-fast-stops-after-the-failing-var-like-kaocha

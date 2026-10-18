@@ -213,7 +213,20 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
 - The pool turns every line into a flat event: worker events plus `:worker`
   and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
   A line with the `#brisk/event ` prefix whose payload does not parse stays
-  an `:output` event and gains `:protocol-error msg`.
+  an `:output` event and gains `:protocol-error msg`. It is never dropped:
+  run-state counts it as a failure of its own (`:protocol-error`, and the
+  namespace the worker held fails), and the engine prints a notice the
+  moment it arrives. Because the lost line may have been the `:ns/end`, a
+  worker that holds a namespace and sends nothing readable for 10s after
+  a protocol error is killed by the engine's watchdog, and its exit is
+  reported as a crash that says why.
+- The worker encodes every event with the print vars bound to
+  `brisk.protocol/safe-print-bindings` (`*print-length*` and
+  `*print-level*` nil, `*print-dup*`, `*print-meta*` and
+  `*print-namespace-maps*` false, `*print-readably*` true). Events are
+  printed inside the test's dynamic scope, and a fixture that binds
+  `*print-length*` or a namespace that `set!`s it would otherwise cut
+  protocol lines short.
 - The pool emits `{:event :worker/exit :worker id :code n}` after both
   streams close. When the worker held a namespace, `brisk.schedule/crash-events`
   yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
@@ -287,6 +300,11 @@ worker events above, run-state folds:
 {:event :run/interrupted :namespaces [ns ...]         ; from the engine, fail-fast
  :reason :fail-fast}
 ```
+
+A var's failure and error counts are the larger of the assertion events
+that arrived and the counts in its `:var/end`. When `:var/end` counts
+more, the difference is reported as a failure saying the details were
+lost, and counts toward the exit code as that many assertions.
 
 A crash is counted once, from the scheduler's synthetic `:ns/error`
 (class `brisk.WorkerCrashed`); it renders as CRASH. `:worker/exit` never

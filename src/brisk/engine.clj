@@ -49,6 +49,12 @@
   "How long after the kills the loop waits for exits before ending anyway."
   5000)
 
+(def ^:private default-watchdog-ms
+  "How long a busy worker whose last protocol line could not be read may
+  stay silent before it is killed. The lost line may have been the
+  `:ns/end`, and then nothing else would ever arrive."
+  10000)
+
 ;; ---------------------------------------------------------------------------
 ;; Preflight
 
@@ -144,6 +150,8 @@
               :durations {ns ms} :started-at ms :first-worker-id n}`
 
   `:first-worker-id` (default 1) is where this run's worker ids start.
+  `:watchdog-ms` (default 10000) is how long a busy worker may stay silent
+  after a protocol line that could not be read before it is killed.
   `:configure` is a `{:op :configure}` message sent to each worker right
   after it is spawned (`brisk.hooks/configure-message`). `:post-summary`
   is `{:hooks [entry] :config normalized-config}`: the hooks to run in the
@@ -174,6 +182,9 @@
                :spawned #{}
                :silenced #{}
                :interrupted? false
+               :suspect {}
+               :watchdog-killed #{}
+               :notices []
                :drain-at nil
                :killed-at nil
                :now started-at}]
@@ -227,6 +238,28 @@
                    (render/documentation-lines prev run ropts)
                    (render/ci-lines prev run ropts)))])
 
+(defn- notice
+  "Lines to show as soon as `ev` arrives, whatever the reporter: a protocol
+  line that could not be read."
+  [state {:keys [protocol-error worker] :as ev}]
+  (when (and (= :output (:event ev)) protocol-error)
+    [(render/protocol-notice {:worker worker
+                              :ns (sched/holding (:sched state) worker)
+                              :reason protocol-error}
+                             (render-opts state false))]))
+
+(defn- flush-notices
+  "Append-only reporters print notices at once, on stderr; the live view
+  shows them above the frame at its next redraw."
+  [state]
+  (let [lines (:notices state)]
+    (if (or (empty? lines) (= :live (mode state)))
+      [state []]
+      [(assoc state :notices []) [{:effect :print :lines lines :stream :err}]])))
+
+(defn- with-notices [state frame]
+  [(assoc state :notices []) (update frame :emit #(into (vec (:notices state)) %))])
+
 (defn- show
   "Effects that bring the screen up to date with the run state, and the
   state with `:shown` advanced. The live view redraws on ticks only; the
@@ -236,17 +269,20 @@
   (let [prev (:shown state)
         run (:run state)
         ropts (render-opts state false)
-        tick? (= :tick event)]
-    (case (mode state)
-      :result [state []]
-      (:documentation :ci) (if (contains? #{:ns/end :worker/exit} event)
-                             (show* state prev run ropts)
-                             [state []])
-      :live (if tick?
-              [(assoc state :shown run)
-               [{:effect :redraw :frame (render/live-frame prev run ropts)}]]
-              [state []])
-      [state []])))
+        tick? (= :tick event)
+        [state notices] (flush-notices state)
+        [state effects]
+        (case (mode state)
+          :result [state []]
+          (:documentation :ci) (if (contains? #{:ns/end :worker/exit} event)
+                                 (show* state prev run ropts)
+                                 [state []])
+          :live (if tick?
+                  (let [[state frame] (with-notices state (render/live-frame prev run ropts))]
+                    [(assoc state :shown run) [{:effect :redraw :frame frame}]])
+                  [state []])
+          [state []])]
+    [state (concat notices effects)]))
 
 (defn- final-output
   "Everything printed once the run is over."
@@ -258,7 +294,7 @@
         summary (render/summary run ropts)]
     (case (mode state)
       :result (print-effect [(binding [*print-namespace-maps* false] (pr-str (rs/result run)))])
-      :live (concat [{:effect :redraw :frame (render/live-frame prev run ropts)}]
+      :live (concat [{:effect :redraw :frame (second (with-notices state (render/live-frame prev run ropts)))}]
                     (print-effect (concat (nonblank (render/failure-report run ropts)) [summary])))
       ;; Each namespace block ends with a blank line, so the summary's own
       ;; leading one would double it.
@@ -334,12 +370,45 @@
 ;; ---------------------------------------------------------------------------
 ;; Step
 
+(defn- watch-protocol
+  "Track busy workers whose last protocol line could not be read. Any
+  event that did decode clears the suspicion."
+  [state {:keys [event worker protocol-error at]}]
+  (cond
+    (nil? worker) state
+    (and (= :output event) protocol-error (sched/holding (:sched state) worker))
+    (assoc-in state [:suspect worker] at)
+    (= :output event) state
+    :else (update state :suspect dissoc worker)))
+
+(defn- watchdog
+  "Kill a suspect worker that has said nothing readable for the watchdog
+  period while holding a namespace; its exit then reports as a crash."
+  [state]
+  (let [limit (get-in state [:opts :watchdog-ms] default-watchdog-ms)
+        now (:now state)
+        due (->> (:suspect state)
+                 (filter (fn [[w at]] (and (number? at) (number? now) (>= (- now at) limit)
+                                           (sched/holding (:sched state) w))))
+                 (map key)
+                 (remove (:watchdog-killed state))
+                 sort)]
+    [(-> state
+         (update :watchdog-killed into due)
+         (update :suspect #(apply dissoc % due)))
+     (map (fn [w] {:effect :kill :worker w}) due)]))
+
 (defn- fold-event
   "Feed a pool event to the scheduler and the run state. A worker that dies
   holding a namespace gets the scheduler's synthetic crash events first."
   [state ev]
-  (let [crash (sched/crash-events (:sched state) ev)]
+  (let [ev (cond-> ev
+             (and (= :worker/exit (:event ev)) (contains? (:watchdog-killed state) (:worker ev)))
+             (assoc :reason "killed: its protocol output could not be read and it went silent"))
+        crash (sched/crash-events (:sched state) ev)]
     (-> state
+        (update :notices into (notice state ev))
+        (watch-protocol ev)
         (update :sched sched/handle-event ev)
         (update :run #(reduce rs/apply-event % (conj (vec crash) ev))))))
 
@@ -394,13 +463,14 @@
                   tick? (update :run rs/apply-event {:event :tick :at at})
                   (not tick?) (fold-event input))
           [state e0] (if (and (= :running (:phase state)) (not tick?)) (interrupt state input) [state []])
+          [state ew] (if tick? (watchdog state) [state []])
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
           [state e2] (show state input)
           [state e3] (if (and (= :running (:phase state)) (sched/done? (:sched state)))
                        (begin-drain state)
                        [state []])
           [state e4] (if (= :draining (:phase state)) (drain-timers state) [state []])]
-      {:state state :effects (vec (concat e0 e1 e2 e3 e4))})))
+      {:state state :effects (vec (concat e0 ew e1 e2 e3 e4))})))
 
 (defn start
   "The first step: spawn workers, or finish at once for an empty plan."

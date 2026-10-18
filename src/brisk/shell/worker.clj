@@ -52,6 +52,15 @@
 
 (defn- throwable? [x] (instance? Throwable x))
 
+(defn safely
+  "Call `f` with the print vars bound to `brisk.protocol/safe-print-bindings`.
+  Events are printed inside the user's dynamic scope (a report from an `is`,
+  a fixture that bound `*print-length*`, a namespace that `set!` it at load
+  time), so without this a protocol line could come out truncated or in a
+  form EDN cannot read."
+  [f]
+  (with-bindings* protocol/safe-print-bindings f))
+
 (defn- bb? [] (some? (System/getProperty "babashka.version")))
 
 (defn- same-file?
@@ -236,14 +245,16 @@
 (defn- make-report
   "A `clojure.test/report` replacement. clojure.test reports through a
   callback with no return channel, so the open var's counters live in `acc`,
-  an atom local to one `run-vars!` call."
+  an atom local to one `run-vars!` call. It runs inside the test's dynamic
+  scope, so values are printed with `safely`."
   [acc emit! ns-sym capture?]
   (fn [m]
-    (case (:type m)
-      :begin-test-var (start-var! acc emit! ns-sym capture? (:var m))
-      :end-test-var (end-var! acc emit! ns-sym)
-      (:pass :fail :error) (count-and-emit! acc emit! ns-sym m)
-      nil)))
+    (safely
+     #(case (:type m)
+        :begin-test-var (start-var! acc emit! ns-sym capture? (:var m))
+        :end-test-var (end-var! acc emit! ns-sym)
+        (:pass :fail :error) (count-and-emit! acc emit! ns-sym m)
+        nil))))
 
 (defn- test-vars!
   "What `clojure.test/test-vars` does for the vars of one namespace: the
@@ -302,7 +313,7 @@
   escaped the tests themselves (a fixture or hook, typically)."
   [ns-sym run-id phase e]
   {:event :ns/error :ns ns-sym :run-id run-id :phase phase
-   :error (encode-throwable e)})
+   :error (safely #(encode-throwable e))})
 
 (defn- ns-metadata
   "The loaded namespace's metadata, over the static copy the parent read
@@ -377,7 +388,7 @@
   "Emit function writing whole protocol lines to `out`, atomically."
   [^java.io.Writer out]
   (fn [event]
-    (let [line (str (protocol/encode-event event) "\n")]
+    (let [line (safely #(str (protocol/encode-event event) "\n"))]
       (locking out
         (.write out line)
         (.flush out)))))
@@ -387,7 +398,7 @@
   `:worker/error` events; there is no namespace to attach them to."
   [emit! errors]
   (doseq [e errors]
-    (emit! {:event :worker/error :phase :shutdown :error (encode-throwable e)})))
+    (emit! {:event :worker/error :phase :shutdown :error (safely #(encode-throwable e))})))
 
 (defn- handle-line!
   "Handle one stdin line with hook state `hs`. Returns the next state, or

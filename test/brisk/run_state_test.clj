@@ -2,6 +2,7 @@
   (:require
    [brisk.gen.report :as gr]
    [brisk.run-state :as rs]
+   [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [clojure.test.check.clojure-test :refer [defspec]]
    [clojure.test.check.properties :as prop]))
@@ -10,12 +11,23 @@
 
 (defn- all-events [r] (gr/events r 0))
 
-(defn- count-events [events pred] (count (filter pred events)))
 
 (defspec interleaving-independence runs
   (prop/for-all [r gr/run]
     (= (gr/fold (:plan r) (gr/events r 0))
        (gr/fold (:plan r) (gr/events r 1)))))
+
+(defn- failed-count
+  "Assertions of `type` per var, the larger of the assertion events that
+  arrived and the var's `:var/end` count, summed."
+  [events type]
+  (let [arrived (frequencies (keep #(when (and (= :assertion (:event %)) (= type (:type %)))
+                                      [(:ns %) (:var %)])
+                                   events))
+        reported (into {} (keep #(when (= :var/end (:event %)) [[(:ns %) (:var %)] (get % type 0)]))
+                       events)]
+    (reduce + (map #(max (get arrived % 0) (get reported % 0))
+                   (distinct (concat (keys arrived) (keys reported)))))))
 
 (defspec summary-counts-are-consistent runs
   (prop/for-all [r gr/run]
@@ -30,10 +42,8 @@
                                (:skipped vars) (:running vars)))
            (= (:total assertions) (+ (:passed assertions) (:failed assertions)
                                      (:errored assertions)))
-           (= (:failed assertions)
-              (count-events events #(and (= :assertion (:event %)) (= :fail (:type %)))))
-           (= (:errored assertions)
-              (count-events events #(and (= :assertion (:event %)) (= :error (:type %)))))
+           (= (:failed assertions) (failed-count events :fail))
+           (= (:errored assertions) (failed-count events :error))
            (= (:passed assertions)
               (reduce + (keep #(when (= :var/end (:event %)) (:pass %)) events)))))))
 
@@ -41,7 +51,7 @@
   (prop/for-all [r gr/run]
     (let [events (all-events r)
           state (gr/fold (:plan r) events)
-          bad? (some #(#{:assertion :ns/error} (:event %)) events)]
+          bad? (some #(or (#{:assertion :ns/error} (:event %)) (:protocol-error %)) events)]
       (and (= (boolean bad?) (pos? (rs/exit-code state)))
            (= (zero? (rs/exit-code state)) (empty? (rs/failures state)))
            (<= (rs/exit-code state) 255)))))
@@ -165,3 +175,32 @@
                       [{:event :worker/error :worker 2 :phase :shutdown :error err :at 1}])]
     (is (= [{:kind :worker-error :worker 2 :error err :phase :shutdown}] (rs/failures state)))
     (is (= 1 (rs/exit-code state)))))
+
+(deftest a-lost-assertion-still-fails-the-var
+  (testing "the :var/end counts win over the assertion events that arrived"
+    (let [state (reduce rs/apply-event (rs/init plan)
+                        [(ev {:event :ns/start :ns 'a-test})
+                         (ev {:event :var/start :ns 'a-test :var 'x})
+                         (ev {:event :var/end :ns 'a-test :var 'x :pass 1 :fail 2 :error 1 :duration-ms 1})
+                         (ev {:event :ns/end :ns 'a-test :duration-ms 2})])
+          fs (rs/failures state)]
+      (is (= :failed (rs/ns-result (get-in state [:namespaces 'a-test]))))
+      (is (= {:pass 1 :fail 2 :error 1} (rs/var-counts (get-in state [:namespaces 'a-test :vars 'x]))))
+      (is (= [:error :fail] (map :kind fs)))
+      (is (every? #(str/includes? (:message %) "details never arrived") fs))
+      (is (= 3 (rs/exit-code state)) "one per lost assertion, as Kaocha counts fail + error"))))
+
+(deftest an-unreadable-protocol-line-is-a-failure
+  (let [state (reduce rs/apply-event (rs/init plan)
+                      [(ev {:event :ns/start :ns 'a-test})
+                       (ev {:event :var/start :ns 'a-test :var 'x})
+                       (ev {:event :output :stream :stdout :text "#brisk/event {:event :var/end ..."
+                            :protocol-error "EOF while reading"})
+                       (ev {:event :ns/end :ns 'a-test :duration-ms 2})])
+        [f :as fs] (rs/failures state)]
+    (is (= 1 (count fs)))
+    (is (= {:kind :protocol-error :worker 0 :ns 'a-test :var 'x :reason "EOF while reading"}
+           (dissoc f :text)))
+    (is (= :failed (rs/ns-result (get-in state [:namespaces 'a-test]))))
+    (is (= 1 (rs/exit-code state)))
+    (is (nil? (get-in state [:namespaces 'a-test :vars 'x :stray])) "not shown as the test's output")))

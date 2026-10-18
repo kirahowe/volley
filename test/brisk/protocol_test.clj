@@ -15,6 +15,33 @@
       (and (not (re-find #"[\n\r]" line))
            (= {:kind :event :event ev} (protocol/decode-line line))))))
 
+(def ^:private gen-print-bindings
+  "Values a test may bind or `set!` the print vars to."
+  (gen/let [length (gen/one-of [(gen/return nil) (gen/choose 0 3)])
+            level (gen/one-of [(gen/return nil) (gen/choose 0 2)])
+            dup gen/boolean
+            meta? gen/boolean
+            readably gen/boolean
+            ns-maps gen/boolean]
+    {#'*print-length* length #'*print-level* level #'*print-dup* dup
+     #'*print-meta* meta? #'*print-readably* readably #'*print-namespace-maps* ns-maps}))
+
+(defspec events-round-trip-whatever-the-print-vars 200
+  (prop/for-all [ev g/gen-event
+                 user gen-print-bindings]
+    (let [line (with-bindings user
+                 (with-bindings protocol/safe-print-bindings
+                   (protocol/encode-event ev)))]
+      (= {:kind :event :event ev} (protocol/decode-line line)))))
+
+(defspec values-encode-the-same-whatever-the-print-vars 200
+  (prop/for-all [v g/gen-edn
+                 user gen-print-bindings]
+    (= (with-bindings protocol/safe-print-bindings (protocol/encode-value v))
+       (with-bindings user
+         (with-bindings protocol/safe-print-bindings
+           (protocol/encode-value v))))))
+
 (defspec command-round-trips 200
   (prop/for-all [cmd g/gen-command]
     (let [line (protocol/encode-command cmd)]
@@ -73,6 +100,10 @@
   (testing "prefixed but not an event map"
     (is (:protocol-error (protocol/decode-line "#brisk/event [1 2]")))
     (is (:protocol-error (protocol/decode-line "#brisk/event {:no-event 1}"))))
+  (testing "the prefix counts only at the start of a line"
+    (doseq [line ["note: #brisk/event {:event :ns/end}" " #brisk/event {:event :ns/end}"
+                  "x#brisk/event {:event"]]
+      (is (= {:kind :output :text line} (protocol/decode-line line)))))
   (testing "nil and empty"
     (is (= {:kind :output :text ""} (protocol/decode-line nil)))
     (is (= {:kind :output :text ""} (protocol/decode-line "")))))

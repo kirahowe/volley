@@ -51,7 +51,7 @@
 (defn- post-summary
   "Print the summary line, return the result unchanged."
   [result]
-  (println (str marker (binding [*print-namespace-maps* false] (pr-str (summarize result)))))
+  (println (str marker (binding [*print-namespace-maps* false *print-length* nil *print-level* nil] (pr-str (summarize result)))))
   result)
 
 ;; What `kaocha.plugin/defplugin` expands to, written out so clj-kondo can

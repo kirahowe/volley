@@ -38,7 +38,8 @@
    :file-errors {}
    :not-run    {}
    :interrupted {}
-   :worker-errors {}})
+   :worker-errors {}
+   :protocol-errors {}})
 
 (defn- min* [a b] (cond (nil? a) b (nil? b) a :else (min a b)))
 (defn- max* [a b] (cond (nil? a) b (nil? b) a :else (max a b)))
@@ -114,11 +115,12 @@
   (update-in state (var-path e)
              #(update ((var-record e) %) :assertions conj (select-keys e assertion-keys))))
 
-(defn- on-var-end [state {:keys [worker at pass duration-ms output] :as e}]
+(defn- on-var-end [state {:keys [worker at pass fail error duration-ms output] :as e}]
   (-> state
       (update-in (var-path e)
                  #(assoc ((var-record e) %)
                          :phase :ended :pass (or pass 0) :duration-ms duration-ms
+                         :reported {:fail (or fail 0) :error (or error 0)}
                          :output output :end-at at))
       (set-worker worker {:var nil :var-at nil})))
 
@@ -126,12 +128,23 @@
   (update-in state (var-path e)
              #(assoc ((var-record e) %) :phase :skipped :reason reason)))
 
-(defn- on-output [state {:keys [worker text]}]
-  (let [{:keys [ns var]} (get-in state [:workers worker])
-        path (cond (and ns var) [:namespaces ns :vars var :stray]
-                   ns           [:namespaces ns :stray]
-                   :else        [:workers worker :stray])]
-    (update-in state path (fnil conj []) text)))
+(defn- on-protocol-error
+  "A protocol line the parent could not read. Whatever it said is lost, so
+  it is a failure of its own, and of the namespace the worker was running."
+  [state {:keys [worker text protocol-error at]}]
+  (let [{:keys [ns var]} (get-in state [:workers worker])]
+    (cond-> (update-in state [:protocol-errors worker] (fnil conj [])
+                       {:worker worker :ns ns :var var :text text :message protocol-error :at at})
+      ns (assoc-in [:namespaces ns :protocol-error?] true))))
+
+(defn- on-output [state {:keys [worker text protocol-error] :as e}]
+  (if protocol-error
+    (on-protocol-error state e)
+    (let [{:keys [ns var]} (get-in state [:workers worker])
+          path (cond (and ns var) [:namespaces ns :vars var :stray]
+                     ns           [:namespaces ns :stray]
+                     :else        [:workers worker :stray])]
+      (update-in state path (fnil conj []) text))))
 
 (defn- on-worker-exit
   "Informational: the worker is gone. Crashes are reported through the
@@ -187,24 +200,38 @@
 
 ;;; Derived values
 
-(defn var-status
-  "One of :running, :passed, :failed, :errored, :skipped, :crashed."
-  [{:keys [phase assertions]}]
-  (let [types (set (map :type assertions))]
-    (case phase
-      :skipped :skipped
-      :crashed :crashed
-      :ended   (cond (types :error) :errored
-                     (types :fail)  :failed
-                     :else          :passed)
-      :running)))
+(defn- lost-assertions
+  "Failures and errors the worker counted in `:var/end` beyond the assertion
+  events that arrived, `{:fail n :error n}`. Normally zero; positive when an
+  assertion's protocol line was lost."
+  [{:keys [reported assertions]}]
+  (let [n (fn [t] (count (filter #(= t (:type %)) assertions)))]
+    {:fail (max 0 (- (:fail reported 0) (n :fail)))
+     :error (max 0 (- (:error reported 0) (n :error)))}))
 
 (defn var-counts
   "Assertion counts for a var record: `{:pass n :fail n :error n}`. Failures
-  and errors are counted from assertion events; passes come from :var/end."
-  [{:keys [pass assertions]}]
-  (let [n (fn [t] (count (filter #(= t (:type %)) assertions)))]
-    {:pass (or pass 0) :fail (n :fail) :error (n :error)}))
+  and errors are counted from assertion events, or from the counts in
+  :var/end when those are larger (assertion details were lost); passes come
+  from :var/end."
+  [{:keys [pass assertions] :as v}]
+  (let [n (fn [t] (count (filter #(= t (:type %)) assertions)))
+        lost (lost-assertions v)]
+    {:pass (or pass 0)
+     :fail (+ (n :fail) (:fail lost))
+     :error (+ (n :error) (:error lost))}))
+
+(defn var-status
+  "One of :running, :passed, :failed, :errored, :skipped, :crashed."
+  [{:keys [phase] :as v}]
+  (case phase
+    :skipped :skipped
+    :crashed :crashed
+    :ended   (let [{:keys [fail error]} (var-counts v)]
+               (cond (pos? error) :errored
+                     (pos? fail)  :failed
+                     :else        :passed))
+    :running))
 
 (defn var-output
   "Everything a var printed: stray lines first, then captured output."
@@ -215,12 +242,13 @@
 
 (defn ns-result
   "One of :running, :passed, :failed, :error, :crashed, :interrupted."
-  [{:keys [status vars]}]
+  [{:keys [status vars protocol-error?]}]
   (case status
     :error   :error
     :crashed :crashed
     :interrupted :interrupted
-    :done    (if (some (comp #{:failed :errored :crashed} var-status) (vals vars))
+    :done    (if (or protocol-error?
+                     (some (comp #{:failed :errored :crashed} var-status) (vals vars)))
                :failed
                :passed)
     :running))
@@ -266,12 +294,27 @@
 (defn- sort-key [{:keys [ns var line idx]}]
   [(str ns) (str var) (if (number? line) line 0) (or idx 0)])
 
+(defn- lost-failures
+  "One failure per kind for the assertions a var's `:var/end` counted but
+  whose events never arrived; `:lost` is how many it stands for."
+  [ns v]
+  (for [[kind n] (sort-by key (lost-assertions v))
+        :when (pos? n)]
+    {:kind kind :type kind :ns ns :var (:var v) :lost n :idx Long/MAX_VALUE
+     :file (:file v) :line (:line v) :output (var-output v)
+     :message (str n (if (= :fail kind) " failed assertion" " error")
+                   (when (> n 1) "s")
+                   " counted by the worker, but the details never arrived"
+                   " (the protocol line was lost or could not be read)")}))
+
 (defn- assertion-failures [{:keys [ns vars]}]
-  (for [v (vals vars)
-        [idx a] (map-indexed vector (:assertions v))]
-    (assoc a :kind (:type a) :ns ns :var (:var v) :idx idx
-           :file (or (:file a) (:file v))
-           :output (var-output v))))
+  (concat
+   (for [v (vals vars)
+         [idx a] (map-indexed vector (:assertions v))]
+     (assoc a :kind (:type a) :ns ns :var (:var v) :idx idx
+            :file (or (:file a) (:file v))
+            :output (var-output v)))
+   (mapcat #(lost-failures ns %) (vals vars))))
 
 (defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase]}]
   (case status
@@ -279,6 +322,7 @@
                :output (str/join "\n" stray)}]
     :crashed (let [v (first (filter #(= :crashed (var-status %)) (vals vars)))]
                [{:kind :crash :ns ns :var (:var v) :exit-code exit-code :worker worker
+                 :message (:reason error)
                  :line (:line v) :file (:file v)
                  :output (str/join "\n" (concat stray (when v [(var-output v)])))}])
     []))
@@ -287,6 +331,11 @@
   (for [[_ errors] (sort-by key (:worker-errors state))
         {:keys [worker error phase]} errors]
     {:kind :worker-error :worker worker :error error :phase phase}))
+
+(defn- protocol-failures [state]
+  (for [[_ errors] (sort-by key (:protocol-errors state))
+        {:keys [worker ns var text message]} errors]
+    {:kind :protocol-error :worker worker :ns ns :var var :text text :reason message}))
 
 (defn- file-failures [state]
   (for [[file error] (:file-errors state)]
@@ -306,7 +355,8 @@
 (defn failures
   "Every failed assertion, errored assertion, namespace load error, worker
   crash, hook that failed as a worker shut down (`:worker-error`),
-  unreadable test file (`:file-error`) and namespace that could not
+  unreadable test file (`:file-error`), protocol line the parent could not
+  read (`:protocol-error`) and namespace that could not
   be run (`:not-run`, except after fail-fast), ordered by namespace, var,
   line. Each carries :kind, :ns, and for assertions :var, :line, :message,
   :contexts, :expected, :actual, :error and the var's captured :output."
@@ -315,6 +365,7 @@
                (mapcat ns-failures (vals (:namespaces state)))
                (file-failures state)
                (worker-failures state)
+               (protocol-failures state)
                (not-run-failures state))
        (sort-by (juxt sort-key #(str (:kind %))))
        vec))
@@ -355,10 +406,11 @@
 (defn exit-code
   "0 when nothing failed, otherwise the number of failures capped at 255,
   like Kaocha (`kaocha.runner/run`: `(min (+ error fail) 255)`). Load
-  errors, unreadable files, crashed workers and namespaces that could not be
-  run each count as one."
+  errors, unreadable files, crashed workers, protocol lines that could not
+  be read and namespaces that could not be run each count as one;
+  assertions whose details were lost count as many as were lost."
   [state]
-  (min 255 (count (failures state))))
+  (min 255 (reduce + (map #(:lost % 1) (failures state)))))
 
 (defn result
   "Plain data about the finished run, for `--print-result` and for

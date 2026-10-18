@@ -11,7 +11,13 @@
                   [2 (gen/return [:fail])]
                   [1 (gen/return [:error])]
                   [1 (gen/return [:load-error])]
-                  [1 (gen/return [:crash])]]))
+                  [1 (gen/return [:crash])]
+                  [1 (gen/return [:lost])]
+                  [1 (gen/return [:garbled])]]))
+
+(def bad-fates
+  "Fates that must make the run fail."
+  #{:fail :error :load-error :crash :lost :garbled})
 
 (defn- ns-sym [i] (symbol (str "sim.ns" i "-test")))
 
@@ -43,6 +49,7 @@
               :warnings [] :errors []}
        :fates (zipmap (map :ns entries) fates)
        :opts {:workers workers :fail-fast? fail-fast? :isolate? isolate? :capture-output? true
+              :watchdog-ms 2000
               :reporter reporter :width 120 :color? false :started-at 0 :durations {}
               :first-worker-id first-id
               :configure (when hooks? {:op :configure :hooks {:pre-load ['my/hook]}})
@@ -56,6 +63,9 @@
   "The namespace a worker of an earlier run reports in `simulate` when the
   world is `:stale?`."
   'stale.earlier-run-test)
+
+(defn- unreadable [text]
+  {:event :output :stream :stdout :text text :protocol-error "EOF while reading"})
 
 (defn- ns-events [ns-sym fate]
   (let [v 'a-test
@@ -78,7 +88,16 @@
                             {:event :var/end :ns ns-sym :var v :pass 0 :error 1 :duration-ms 1}]
                      end)
       :load-error (concat start [{:event :ns/error :ns ns-sym :error {:class "L" :message "x" :trace []}}] end)
-      :crash (concat start [var-start {:event :output :text "dying" :stream :stderr}]))))
+      :crash (concat start [var-start {:event :output :text "dying" :stream :stderr}])
+      ;; the assertion's line could not be read; :var/end still counts it
+      :lost (concat start [var-start
+                           (unreadable "#brisk/event {:event :assertion :ns")
+                           {:event :var/end :ns ns-sym :var v :pass 0 :fail 1 :duration-ms 1}]
+                    end)
+      ;; the :ns/end could not be read; the worker then waits, alive and silent
+      :garbled (concat start [var-start
+                              {:event :var/end :ns ns-sym :var v :pass 1 :duration-ms 1}
+                              (unreadable "#brisk/event {:event :ns/end ...")]))))
 
 (defn- enqueue [world id events]
   (update-in world [:workers id :queue] (fnil into []) events))

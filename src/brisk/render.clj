@@ -405,6 +405,7 @@
     :crash    (paint opts :red " CRASH ")
     :file-error (paint opts :red " ERROR ")
     :worker-error (paint opts :red " ERROR ")
+    :protocol-error (paint opts :red " ERROR ")
     (paint opts :red (str " " (name kind) " "))))
 
 (defn- header-text [{:keys [kind ns var] :as f}]
@@ -417,7 +418,15 @@
                    "  worker exited with code " (:exit-code f))
     :file-error "ns form could not be read"
     :worker-error (str "worker " (:worker f) "  a hook failed as it shut down")
+    :protocol-error (str (if ns (qualified ns var) (str "worker " (:worker f)))
+                         "  a message from the worker could not be read")
     (qualified ns var)))
+
+(defn- protocol-error-lines [opts {:keys [reason text]}]
+  (let [t (ext text)]
+    [(paint opts :red (str "reason: " (ext reason)))
+     (paint opts :gray (str "line: " (if (> (count t) 300) (str (subs t 0 300) "…") t)))
+     (paint opts :gray "the results of this worker may be incomplete")]))
 
 (defn- output-section [opts output]
   (when-not (str/blank? output)
@@ -459,7 +468,17 @@
        (when pair (diff-section opts pair))
        (when check (check-lines opts f))
        (when (#{:error :ns-error :worker-error} kind) (error-lines opts error 0))
+       (when (= :protocol-error kind) (protocol-error-lines opts f))
        (when output? (output-section opts (:output f))))))))
+
+(defn protocol-notice
+  "One line saying that a protocol line from `worker` could not be read,
+  shown the moment it happens. `ns` is the namespace the worker held."
+  [{:keys [worker ns reason]} opts]
+  (first (finish [(paint opts :red (str "brisk: a message from worker " worker
+                                        (when ns (str " (running " (ext ns) ")"))
+                                        " could not be read: " (ext reason)))]
+                 opts)))
 
 (defn- reported-failures
   "Failures that get a detailed entry. Namespaces that never ran are listed

@@ -6,7 +6,8 @@
   (`encode-event`). Any other line is stray output.
 
   Pure: printing is bounded by structurally truncating values before they
-  reach the printer, so no dynamic bindings are needed."
+  reach the printer. The printer itself obeys the caller's print vars, so
+  the shell encodes inside `safe-print-bindings`."
   (:require
    [clojure.edn :as edn]
    [clojure.string :as str]))
@@ -14,6 +15,20 @@
 (def event-prefix
   "Marks a worker stdout line as a protocol event."
   "#brisk/event ")
+
+(def safe-print-bindings
+  "Print vars and the values the protocol needs, for the shell to bind
+  around encoding (`with-bindings`). Messages are printed with `pr-str`,
+  and tests often bind or `set!` these vars: a `*print-length*` would cut
+  a message short and `*print-dup*`, `*print-meta*`, `*print-readably*` or
+  `*print-namespace-maps*` would print forms the reader on the other side
+  treats differently."
+  {#'*print-length* nil
+   #'*print-level* nil
+   #'*print-dup* false
+   #'*print-meta* false
+   #'*print-readably* true
+   #'*print-namespace-maps* false})
 
 ;; ---------------------------------------------------------------------------
 ;; Parent -> worker

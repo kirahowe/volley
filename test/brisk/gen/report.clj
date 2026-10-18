@@ -100,6 +100,12 @@
       (= :error type) (assoc :error err)
       (and chk (= :fail type)) (assoc :check chk))))
 
+(defn lost-line
+  "The `:output` a protocol line for `event` becomes when it cannot be read."
+  [event]
+  {:event :output :stream :stdout :text (str "#brisk/event {:event " (:event event))
+   :protocol-error "EOF while reading"})
+
 (defn- var-script [ns j]
   (let [var (var-sym j)]
     (gen/one-of
@@ -108,12 +114,16 @@
       (gen/let [pass gen/nat
                 types (gen/vector (gen/elements [:fail :error]) 0 3)
                 as (apply gen/tuple (map #(assertion-event ns var %) types))
+                lost (gen/vector (gen/frequency [[5 (gen/return false)] [1 (gen/return true)]])
+                                 (count types))
                 strays (gen/vector hostile-text 0 2)
                 output maybe-text
                 duration (gen/choose 0 5000)]
         (concat [{:event :var/start :ns ns :var var :file "test/gen_test.clj" :line 1}]
                 (map (fn [t] {:event :output :text t :stream :stderr}) strays)
-                as
+                ;; an assertion whose line could not be read arrives as a
+                ;; protocol error; :var/end still counts it
+                (map (fn [a lost?] (if lost? (lost-line a) a)) as lost)
                 [{:event :var/end :ns ns :var var :pass pass
                   :fail (count (filter #(= :fail %) types))
                   :error (count (filter #(= :error %) types))
@@ -171,7 +181,7 @@
             start (gen/choose 1000 2000)
             ending (gen/elements [:exit :crash :none :none])
             cut gen/nat
-            code (gen/choose 1 255)]
+            code (gen/choose 0 255)]
     (let [body (vec (cons {:event :worker/ready} (apply concat scripts)))
           events (case ending
                    :exit  (conj body {:event :worker/exit :code 0})
