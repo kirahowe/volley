@@ -72,7 +72,7 @@ Pure core:
 | `brisk.run-state` | Fold events into the run's state: counts, failures, durations, exit code. |
 | `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
 | `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
-| `brisk.watch` | Watch-mode UI state machine: keypresses and file changes → commands. |
+| `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
 
 Shell:
 
@@ -80,9 +80,10 @@ Shell:
 |---|---|
 | `brisk.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
 | `brisk.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
-| `brisk.shell.fs` | Glob test paths, read files, poll modification times. |
+| `brisk.shell.fs` | Glob test paths, read files, snapshot modification times. |
 | `brisk.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
-| `brisk.main` | `-main`: wire everything together and run the event loop. |
+| `brisk.shell.watch` | The watch loop: polls mtimes and keys, drives `brisk.watch` and one engine run at a time. |
+| `brisk.main` | `-main`: wire everything together and run the event loop (or hand over to `brisk.shell.watch`). |
 
 ## Data contracts
 
@@ -281,6 +282,120 @@ unreadable tests.edn) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
 Kaocha's "No tests were found" warning and exits 0. A run exits with
 `brisk.run-state/exit-code`.
 
+## Watch mode
+
+`brisk.shell.watch` runs a single loop on one thread. Each pass it waits up
+to 80ms on the event queue, feeds the event and an 80ms tick to the current
+run's `brisk.engine` state, reads pending key presses, and every 200ms
+(`brisk.watch/poll-ms`) takes a snapshot of modification times. The queue
+still holds only worker events: keys and file changes are read by the loop
+that reads the queue, so there is no second queue and no extra thread or
+atom. The shell threads one value through the loop (UI state, config,
+`{path ns-info}` for every Clojure file under the test and source paths, the
+last snapshot, the engine state of the run in progress). Its mutable
+objects are the ones a one-shot run has: the queue, the worker handles and
+the live frame height.
+
+**Watched files.** Every file under every suite's `:test-paths` and
+`:source-paths`, plus tests.edn. Dot directories and editor droppings
+(`.#x`, `x~`, `#x#`, `.swp`, `.tmp`) are skipped (`brisk.watch/watched-file?`).
+
+**From files to a rerun.**
+
+1. `brisk.watch/changes` diffs two snapshots into added, modified and
+   deleted paths.
+2. The shell re-reads and re-parses only the added and modified Clojure
+   files (`brisk.discover/ns-info`; `watch/update-infos`) and computes
+   `watch/affected-by`: `brisk.deps-graph/affected` over the new graph for
+   added and modified files, over the old graph for deleted ones, since the
+   new graph no longer knows them. A path the graph cannot place (a
+   resource, an unreadable file) affects every test namespace, as in
+   `affected`.
+3. The shell hands the state machine
+   `{:event :files-changed :paths [...] :affected #{ns} :at ms}`. The state
+   machine keeps the paths pending and fires one rerun when `debounce-ms`
+   (250ms, longer than the poll interval) passes with no new change, so an
+   editor's save-and-rename burst, or two consecutive polls that both saw
+   part of it, produces one run and loses no change.
+4. A change to tests.edn makes the selection "everything, reload the
+   config first". The shell re-reads the file, re-normalizes it and
+   rebuilds the graph and snapshot; an invalid file keeps the old config
+   and prints the error.
+
+**Selections.** The state machine emits `{:effect :start-run :selection s}`
+where `s` is `{:all? :failed? :namespaces :reload-config? :ns-pattern
+:test-pattern}`. `watch/select-plan` builds the plan: it takes the normal
+`brisk.select/plan` (so the config's suites, ns-patterns, `:focus`,
+`:skip` and meta filters always apply), then keeps only the namespaces that
+
+- are selected: `:all?`, or `:namespaces` (the affected ones), or with
+  `:failed?` the namespaces that failed last time;
+- match `:ns-pattern` (`re-find` on the namespace name);
+- can hold a var matching `:test-pattern`, judged from the deftests the
+  parser sees. Workers also get `:var-pattern` in the select spec and skip
+  other vars (`:not-focused`) so generated tests are filtered too. The
+  pattern is matched against the var name.
+
+A namespace selected only because it failed last time runs just its failed
+vars, through one extra select pass that focuses `ns/var` ids. A namespace
+whose failure had no var (load error, crash) runs whole. Every run starts
+fresh workers; nothing is reloaded in a live process, so stale state is
+impossible.
+
+**Run state across runs.** The UI keeps the failures of the last run per
+namespace, replaces them for the namespaces a run covered, and carries the
+rest, so PASS means nothing in the project failed, not that the affected
+subset passed. Failures of namespaces that no longer exist are dropped.
+
+**Cancel.** When a debounced change (or `a`, `f`, `Enter`, `c`) arrives
+during a run, the shell kills the workers by handle, waits for their exit
+events so none of their output reaches the next run, and starts the new
+run. The new selection is the union of the cancelled run's selection and
+the new one, so a cancelled affected-only run does not lose its namespaces.
+A change that affects no test namespace does not disturb a run.
+
+**Keys** (raw mode through `brisk.shell.terminal`, restored when the loop
+ends, on Ctrl-C, on a crash, and by a shutdown hook; `isig` stays on, so
+Ctrl-C still interrupts):
+
+| Key | Action |
+|---|---|
+| `a` | rerun all namespaces (filters still apply) |
+| `f` | rerun the failures; prints a note when there are none |
+| `p` / `t` | prompt for a namespace / test-name regex. Enter applies it and reruns, Esc cancels, backspace edits, an empty pattern clears the filter, an invalid regex keeps the prompt open |
+| `Enter` | rerun the last selection (while a run is in progress: restart it) |
+| `c` | clear filters and rerun |
+| `h` | help |
+| `q` | cancel any run and quit (exit code 0) |
+
+`p` and `t` are ignored while a run is in progress (the live frame and the
+prompt would fight over the screen). Changes that arrive while the prompt
+is open wait until it closes. Escape sequences (arrows and the like) are
+swallowed. With stdin not a terminal, no keys are read and raw mode is not
+entered; file changes still work, and the process stops on SIGTERM or
+SIGINT.
+
+After each run the machine prints `PASS  Waiting for file changes...` or
+`FAIL  n failures  Waiting for file changes...`, with `press h to show
+help, q to quit` when keys are on, and a `Filters:` line when filters are
+set.
+
+**Watch effects.** Pure, in the style of the engine's:
+
+```clojure
+{:effect :start-run :selection s}
+{:effect :cancel-run}
+{:effect :print :lines [str]}
+{:effect :prompt :label str :buffer str-or-nil}   ; nil closes the prompt
+{:effect :quit}
+```
+
+Inputs: `{:event :start}`, `{:event :key :char c}`,
+`{:event :files-changed ...}`, `{:event :tick :at ms}` and
+`{:event :run/finished :outcome o :known #{ns} :empty? bool}`. An empty plan
+(nothing affected, or a filter that matches nothing) finishes at once with
+`:empty? true` and prints `No test namespaces matched.`
+
 ## Behaviour notes
 
 - **Pooling vs isolation.** By default each worker takes namespaces from the
@@ -295,11 +410,8 @@ Kaocha's "No tests were found" warning and exits 0. A run exits with
   timings from a previous run (stored by the shell in `.brisk/timings.edn`).
 - **Fail fast.** On the first failure, stop handing out work and shut workers
   down; report what finished.
-- **Watch mode** polls modification times (no native watcher dependency),
-  maps changed files to affected test namespaces through `brisk.deps-graph`,
-  and reruns them in fresh workers. Keys: `a` all, `f` failed, `p` filter by
-  namespace pattern, `t` filter by test-name pattern, `Enter` rerun, `q` quit,
-  `h` help.
+- **Watch mode** (`--watch`, or `:watch? true` in tests.edn) does a full
+  run, then stays running. See "Watch mode" below.
 - **CLI.** Kaocha's: `[suite-id ...]`, `--focus`, `--skip`, `--focus-meta`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
@@ -324,6 +436,8 @@ exactly. Each is the conservative option.
   environment can never exit 0. Fail-fast leftovers are listed but not
   counted.
 - **`--runtime jvm`** is accepted and warns; workers run on babashka.
+- **Watch mode with no tests at startup** exits 0 with Kaocha's "No tests
+  were found" warning instead of waiting for tests to appear.
 
 ### Deliberate divergences from Kaocha
 

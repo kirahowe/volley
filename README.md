@@ -5,7 +5,7 @@ parallel worker processes, shows each namespace as it finishes, and reads
 Kaocha's `tests.edn` and command-line flags, so a Kaocha suite runs
 unchanged.
 
-brisk is alpha software. Watch mode is not implemented yet.
+brisk is alpha software.
 
 ## Install
 
@@ -81,6 +81,37 @@ always off when `NO_COLOR` is set.
 
 Namespace durations are kept in `.brisk/timings.edn`. The next run starts
 the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
+
+## Watch mode
+
+`--watch` (or `:watch? true` in `tests.edn`) runs everything once and then
+keeps running. brisk polls the modification times of every file under the
+suites' `:test-paths` and `:source-paths`, and of `tests.edn`, every 200ms.
+When files change it works out which test namespaces depend on them (from
+the `ns` forms) and reruns just those in fresh worker processes, so no
+state survives between runs. New and deleted test files are picked up. A
+change to `tests.edn` reloads the config and reruns everything. If a run is
+still going when files change, it is cancelled and replaced.
+
+Each run ends with a status line such as
+`PASS  Waiting for file changes...  press h to show help, q to quit`
+(`FAIL  2 failures` when something is failing; failures from earlier runs
+stay counted until their namespace passes again). On a terminal:
+
+| Key | Action |
+|---|---|
+| `a` | rerun all |
+| `f` | rerun only the failures |
+| `p` | filter namespaces by regex (Enter applies, Esc cancels, empty clears) |
+| `t` | filter test names by regex |
+| `Enter` | rerun the last selection |
+| `c` | clear filters |
+| `h` | help |
+| `q` | quit |
+
+Filters combine with the config's `:focus` and `:skip`; they never widen
+it. When stdin is not a terminal, keys are off and watch mode reacts to
+file changes only; stop it with Ctrl-C or a signal.
 
 ## Serial tests
 
