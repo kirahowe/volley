@@ -88,11 +88,6 @@
     nil
     (catch Exception e (or (ex-message e) (str e)))))
 
-(defn absolute
-  "Absolute form of `path`."
-  [path]
-  (str (fs/absolutize path)))
-
 (defn mtime-snapshot
   "Modification times, `{relative-path millis}`, of the files under `dirs`
   plus the existing `files`, for `brisk.watch/changes`. Directories whose

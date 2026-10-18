@@ -25,13 +25,13 @@
 
 (defspec each-namespace-assigned-at-most-once 300
   (sim-prop (fn [_ _ {:keys [state]}]
-              (let [nses (map second (sched/assigned state))]
+              (let [nses (map second (:assigned state))]
                 (= (count nses) (count (set nses)))))))
 
 (defspec every-namespace-assigned-unless-fail-fast-stopped 300
   (sim-prop (fn [plan _ {:keys [state]}]
               (let [wanted (set (concat (:parallel plan) (:serial plan)))
-                    got (set (map second (sched/assigned state)))]
+                    got (set (map second (:assigned state)))]
                 (if (sched/stopped? state)
                   (and (every? wanted got)
                        (= wanted (into got (sched/pending state))))
@@ -39,7 +39,7 @@
 
 (defspec serial-namespaces-come-after-all-parallel-ones 300
   (sim-prop (fn [plan _ {:keys [state]}]
-              (let [order (map second (sched/assigned state))
+              (let [order (map second (:assigned state))
                     serial (set (:serial plan))
                     [par ser] (split-with (complement serial) order)]
                 (and (every? serial ser)
@@ -47,7 +47,7 @@
 
 (defspec isolate-never-reuses-a-worker 300
   (sim-prop (fn [_ opts {:keys [state spawned]}]
-              (let [workers (map first (sched/assigned state))]
+              (let [workers (map first (:assigned state))]
                 (and (= spawned (distinct spawned))
                      (or (not (:isolate? opts))
                          (= workers (distinct workers))))))))
@@ -59,8 +59,8 @@
   (sim-prop (fn [plan opts {:keys [state]}]
               (let [total (+ (count (:parallel plan)) (count (:serial plan)))]
                 (or (not (:fail-fast? opts))
-                    (not (sched/failed? state))
-                    (<= (count (sched/assigned state)) total))))))
+                    (not (:failed? state))
+                    (<= (count (:assigned state)) total))))))
 
 (defspec longest-known-namespace-is-assigned-first 200
   (prop/for-all [opts g/gen-sched-opts
@@ -108,14 +108,16 @@
         [s _] (step (sched/handle-event s (ev :worker/ready 1)))
         exit (ev :worker/exit 1 :code 3 :at 7)
         crash (sched/crash-events s exit)]
-    (is (= '[a] (map second (sched/assigned s))))
+    (is (= '[a] (map second (:assigned s))))
     (is (= [:ns/error :ns/end] (map :event crash)))
     (is (= ['a 'a] (map :ns crash)))
     (is (= 3 (get-in (first crash) [:error :exit-code])))
     (let [s (sched/handle-event s exit)
           [s a] (step s)]
       (is (= [2] (:spawn a)) "a replacement is requested, with a fresh id")
-      (is (= {:finished 1 :pending 2 :crashed 1 :failed? true} (sched/summary s)))
+      (is (= {:finished 1 :pending 2 :crashed 1 :failed? true}
+             {:finished (count (:finished s)) :pending (count (sched/pending s))
+              :crashed (count (:crashed s)) :failed? (:failed? s)}))
       (is (not (sched/done? s)))
       (is (empty? (sched/crash-events s (ev :worker/exit 2 :code 0)))))))
 

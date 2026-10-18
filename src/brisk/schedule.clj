@@ -86,16 +86,6 @@
   [{:keys [queue serial]}]
   (into (vec queue) serial))
 
-(defn assigned
-  "Log of every assignment so far, `[[worker-id ns] ...]` in order."
-  [state]
-  (:assigned state))
-
-(defn failed?
-  "True once any failure, namespace error or worker crash has been seen."
-  [state]
-  (:failed? state))
-
 (defn done?
   "True when nothing is in flight and nothing more will be assigned: the
   queues are empty, fail-fast stopped the run, or no worker can be started."
@@ -292,11 +282,3 @@
   "The id the next spawned worker will get."
   [state]
   (:next-id state))
-
-(defn summary
-  "Counts for reporting: `{:finished n :pending n :crashed n :failed? bool}`."
-  [state]
-  {:finished (count (:finished state))
-   :pending (count (pending state))
-   :crashed (count (:crashed state))
-   :failed? (:failed? state)})

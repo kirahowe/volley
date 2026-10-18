@@ -32,15 +32,17 @@
     (is (= :worker/exit (:event (peek evs))))
     (is (false? (pool/send! w {:op :shutdown})) "writing to a dead worker reports false")))
 
+(defn- alive? [w] (.isAlive ^Process (:proc (:proc w))))
+
 (deftest kill-uses-the-process-handle
   (let [queue (pool/new-queue)
         w (pool/start-worker! {:queue queue :command ["sleep" "30"]} 1)]
-    (is (pool/alive? w))
+    (is (alive? w))
     (pool/kill! w)
     (let [exit (peek (drain queue #(= :worker/exit (:event %)) 5000))]
       (is (= :worker/exit (:event exit)))
       (is (not= 0 (:code exit)))
-      (is (not (pool/alive? w))))))
+      (is (not (alive? w))))))
 
 (defn- events-of [r kind] (filter #(= kind (:event %)) (:events r)))
 

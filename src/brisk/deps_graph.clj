@@ -58,9 +58,3 @@
     (if unknown?
       tests
       (set/intersection tests (reverse-closure rdeps changed)))))
-
-(defn file-namespaces
-  "Namespaces defined by `paths`, for callers that need them (e.g. to show
-  what changed). Unknown paths are skipped."
-  [{:keys [files]} paths]
-  (into #{} (keep files) paths))

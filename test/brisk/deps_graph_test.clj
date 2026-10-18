@@ -44,7 +44,7 @@
 
 (defspec affected-is-the-reverse-dependency-closure-restricted-to-tests 300
   (prop/for-all [{:keys [infos graph a]} graph-and-paths]
-    (let [changed-ns (deps/file-namespaces graph a)
+    (let [changed-ns (into #{} (keep (:files graph)) a)
           tests (set (for [i infos :when (:test? i)] (:ns i)))]
       (= (set/intersection tests (oracle infos changed-ns))
          (deps/affected graph a)))))

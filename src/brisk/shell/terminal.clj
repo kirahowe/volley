@@ -137,16 +137,6 @@
      (with-restore! restore
        (fn [] (stty! "-icanon" "-echo" "min" "1") (f))))))
 
-(defn poll-key!
-  "Waits up to `timeout-ms` for a key press and returns it as a character,
-  or nil. Call inside `with-raw-mode!`."
-  [timeout-ms]
-  (loop [waited 0]
-    (cond
-      (pos? (.available System/in)) (char (.read System/in))
-      (>= waited timeout-ms)        nil
-      :else (do (Thread/sleep 10) (recur (+ waited 10))))))
-
 (defn stdin-tty?
   "True when stdin is a terminal, so raw mode and key presses make sense."
   []

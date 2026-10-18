@@ -102,9 +102,6 @@
 ;; ---------------------------------------------------------------------------
 ;; Selection
 
-(def empty-selection
-  {:all? false :failed? false :namespaces #{} :reload-config? false})
-
 (defn merge-selection
   "The selection that covers both `a` and `b`."
   [a b]

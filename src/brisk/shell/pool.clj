@@ -109,11 +109,6 @@
     (.destroyForcibly h))
   nil)
 
-(defn alive?
-  "True while the worker's process is running."
-  [{:keys [proc]}]
-  (.isAlive ^Process (:proc proc)))
-
 (defn kill-all!
   "Kill every worker handle in `workers` (a seq of handles)."
   [workers]
