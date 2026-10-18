@@ -98,6 +98,15 @@
   (p/destroy-tree proc)
   nil)
 
+(defn kill-descendants!
+  "Forcibly kill every process this one started, directly or not: the
+  workers and whatever they started. Used when the run ends and in a
+  shutdown hook, where no worker handle is at hand."
+  []
+  (doseq [^java.lang.ProcessHandle h (iterator-seq (.iterator (.descendants (java.lang.ProcessHandle/current))))]
+    (.destroyForcibly h))
+  nil)
+
 (defn alive?
   "True while the worker's process is running."
   [{:keys [proc]}]

@@ -54,7 +54,11 @@ This is structural, not a guideline:
   thin as possible. They call into the core for every decision.
 - The parent's state is one immutable value threaded through a single event
   loop: `(reduce step state events)` in spirit. The one queue the loop reads
-  from is the only shared mutable object, plus the OS process handles.
+  from is the only shared mutable object. The worker process handles and
+  the live frame height are a value (`world`) the shell threads beside the
+  engine's state; when the run ends, or the process shuts down, the parent
+  kills whatever processes it started that are still alive (its
+  descendants), so no handle has to be reachable from a shutdown hook.
 
 ### Namespaces
 
@@ -399,6 +403,7 @@ replaces the width the live view renders to. Effects:
 {:effect :stop :worker id}          ; clean shutdown request
 {:effect :kill :worker id}          ; 5s after the run, for workers still alive
 {:effect :print :lines [str] :stream :out|:err}
+{:effect :print-data :value v :pretty? bool}   ; EDN on stdout: --print-config, --print-test-plan, --print-result
 {:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
 {:effect :save-timings :timings {ns ms}}
 {:effect :write-file :path str :text str}   ; the junit-xml report, after the summary
@@ -503,9 +508,9 @@ still holds only worker events: keys and file changes are read by the loop
 that reads the queue, so there is no second queue and no extra thread or
 atom. The shell threads one value through the loop (UI state, config,
 `{path ns-info}` for every Clojure file under the test and source paths, the
-last snapshot, the engine state of the run in progress). Its mutable
-objects are the ones a one-shot run has: the queue, the worker handles and
-the live frame height.
+last snapshot, the engine state of the run in progress, and the worker
+handles and live frame height as a value). Its one mutable object is the
+queue, as in a one-shot run.
 
 **Watched files.** Every file under every suite's `:test-paths` and
 `:source-paths`, plus tests.edn. Dot directories and editor droppings

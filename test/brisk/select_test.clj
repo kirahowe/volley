@@ -333,3 +333,12 @@
   (testing "the spec crosses the process boundary as EDN"
     (let [spec (:select (first (:namespaces (first (:suites (select/plan (cfg {} {:focus [:app.a-test/one]}) infos [])))))) ]
       (is (= spec (read-string (pr-str spec)))))))
+
+(deftest prepare-compiles-the-var-pattern-once
+  (let [spec (select/prepare {:passes [] :ns-meta {} :var-pattern "^add"})]
+    (is (instance? java.util.regex.Pattern (:var-re spec)))
+    (is (= {:run? true :reason :selected} (select/decide spec 'a-test 'add-one {})))
+    (is (= {:run? false :reason :not-focused} (select/decide spec 'a-test 'sub-one {})))
+    (is (= (select/decide {:passes [] :ns-meta {} :var-pattern "^add"} 'a-test 'sub-one {})
+           (select/decide spec 'a-test 'sub-one {}))
+        "deciding without prepare gives the same answer")))

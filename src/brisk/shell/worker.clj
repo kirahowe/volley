@@ -371,6 +371,11 @@
         m (cons (meta ns-obj) (map meta (test-vars-of ns-obj)))]
     m))
 
+(def ^:private prepare-select
+  "`brisk.select/prepare`, or identity when brisk.select is absent."
+  (delay (or (try (requiring-resolve 'brisk.select/prepare) (catch Throwable _ nil))
+             identity)))
+
 (def ^:private resolve-focus-meta
   "`brisk.select/resolve-focus-meta` and `used-meta`, when brisk.select is
   on the classpath."
@@ -401,6 +406,7 @@
       [hs e :setup]
       (let [ns-obj (find-ns ns)
             [hs select] (settle-select hs emit! (:select cmd) preload)
+            select (@prepare-select select)
             {:keys [run skipped]}
             (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]

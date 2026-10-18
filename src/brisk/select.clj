@@ -198,10 +198,22 @@
 
 (defn- var-pattern-reason
   "Watch mode's test-name filter: `:not-focused` unless the var's name
-  matches the regex string `pattern`. A missing pattern selects every var."
-  [pattern var-sym]
-  (when (and pattern (not (re-find (re-pattern pattern) (str var-sym))))
-    :not-focused))
+  matches the spec's `:var-pattern` (a regex string, compiled once by
+  `prepare` into `:var-re`). No pattern selects every var."
+  [{:keys [var-pattern var-re]} var-sym]
+  (when-let [re (or var-re (some-> var-pattern re-pattern))]
+    (when-not (re-find re (str var-sym))
+      :not-focused)))
+
+(defn prepare
+  "The select spec ready for deciding many vars: its `:var-pattern`
+  compiled once (as `:var-re`), rather than once per var. Workers call it
+  once per namespace; the spec that crosses the process boundary stays
+  EDN."
+  [select-spec]
+  (cond-> select-spec
+    (and (:var-pattern select-spec) (not (:var-re select-spec)))
+    (assoc :var-re (re-pattern (:var-pattern select-spec)))))
 
 (defn decide
   "Decide whether a test var runs. `select-spec` is the `:select` value from
@@ -220,7 +232,7 @@
          var-node {:id (keyword (str ns-sym) (str var-sym)) :meta var-meta}
          reason (or (when (:excluded? select-spec) :not-focused)
                     (some #(decide-pass % ns-node var-node) (:passes select-spec))
-                    (var-pattern-reason (:var-pattern select-spec) var-sym))]
+                    (var-pattern-reason select-spec var-sym))]
      (cond
        reason {:run? false :reason reason}
        (or (get var-meta :kaocha/pending) (get ns-meta :kaocha/pending))

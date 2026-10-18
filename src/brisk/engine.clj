@@ -12,6 +12,7 @@
       {:effect :stop :worker id}               ; ask a worker to shut down
       {:effect :kill :worker id}               ; it did not exit in time
       {:effect :print :lines [str] :stream :out|:err}
+      {:effect :print-data :value v :pretty? bool}   ; EDN on stdout
       {:effect :redraw :frame {:emit [str] :frame [str]}}
       {:effect :save-timings :timings {ns millis}}
       {:effect :write-file :path str :text str}   ; the junit-xml report
@@ -31,7 +32,6 @@
    [brisk.render :as render]
    [brisk.run-state :as rs]
    [brisk.schedule :as sched]
-   [clojure.pprint :as pprint]
    [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -60,10 +60,6 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Preflight
-
-(defn- pprint-str [x]
-  (binding [*print-namespace-maps* false]
-    (with-out-str (pprint/pprint x))))
 
 (defn- plan-namespaces
   "Every namespace entry of the plan, with its suite id as `:suite`."
@@ -117,10 +113,10 @@
        [(out [version]) (exit 0)]
 
        (:print-config options)
-       [(out [(str/trimr (pprint-str (dissoc config :warnings :errors)))]) (exit 0)]
+       [{:effect :print-data :value (dissoc config :warnings :errors) :pretty? true} (exit 0)]
 
        (:print-test-plan options)
-       [(out [(str/trimr (pprint-str plan))]) (exit 0)]
+       [{:effect :print-data :value plan :pretty? true} (exit 0)]
 
        (seq (:errors plan))
        [(out (:errors plan)) (exit (:unknown-suite exit-codes))]
@@ -354,7 +350,7 @@
         nonblank (fn [s] (when-not (str/blank? s) [s]))
         summary (render/summary run ropts)]
     (case (mode state)
-      :result (print-effect [(binding [*print-namespace-maps* false] (pr-str (rs/result run)))])
+      :result [{:effect :print-data :value (rs/result run)}]
       :live (concat [{:effect :redraw :frame (second (with-notices state (render/live-frame prev run ropts)))}]
                     (print-effect (concat (nonblank (render/failure-report run ropts)) [summary])))
       ;; Each namespace block ends with a blank line, so the summary's own

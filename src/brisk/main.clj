@@ -3,9 +3,9 @@
 
   Shell only. It gathers the inputs (argv, tests.edn, test files, the
   environment, the terminal), hands them to the pure core, and carries out
-  the effects `brisk.engine` returns. The only mutable things are the one
-  event queue, the worker process handles, and the frame height of the
-  live view, all local to `run!`."
+  the effects `brisk.engine` returns. The one mutable object is the event
+  queue; the worker handles and the live view's frame height are a value
+  (`world`) threaded through the loop with the engine's state."
   (:require
    [brisk.cli :as cli]
    [brisk.config :as config]
@@ -19,6 +19,7 @@
    [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
    [brisk.shell.watch :as watch-loop]
+   [clojure.pprint :as pprint]
    [clojure.string :as str])
   (:import
    (java.util.concurrent LinkedBlockingQueue TimeUnit)))
@@ -110,42 +111,66 @@
                            (str "  " (some-> (ex-cause e) ex-message))]
                    :stream :err})))
 
+(defn- print-data!
+  "Print a data effect's `:value`: pretty-printed for `--print-config` and
+  `--print-test-plan`, on one line for `--print-result`. The print vars are
+  bound here, in the shell, so the core stays free of dynamic bindings."
+  [{:keys [value pretty?]}]
+  (binding [*print-namespace-maps* false *print-length* nil *print-level* nil]
+    (print-lines! {:lines [(if pretty?
+                             (str/trimr (with-out-str (pprint/pprint value)))
+                             (pr-str value))]
+                   :stream :out})))
+
 (defn- run-effects!
-  "Carry out `effects`. `ctx` holds the queue, the worker command and two
-  volatiles: worker handles and the live frame height. Returns the exit
-  code when an `:exit` effect was among them, else nil."
-  [{:keys [queue command handles height]} effects]
+  "Carry out `effects` against `world`, `{:handles {id handle} :height n}`:
+  the worker handles and the live frame's height, threaded as a value.
+  `ctx` holds the queue and the worker command. Returns `[world code]`,
+  code being the exit code when an `:exit` effect was among them."
+  [{:keys [queue command]} world effects]
   (reduce
-   (fn [_ {:keys [effect worker msg frame timings code] :as e}]
-     (case effect
-       :spawn (vswap! handles assoc worker (pool/start-worker! {:queue queue :command command} worker))
-       :send (some-> (get @handles worker) (pool/send! msg))
-       :stop (some-> (get @handles worker) pool/stop!)
-       :kill (some-> (get @handles worker) pool/kill!)
-       :print (print-lines! e)
-       :redraw (vreset! height (term/redraw! @height frame))
-       :save-timings (bfs/write-timings! timings)
-       :write-file (when-let [err (bfs/write-file! (:path e) (:text e))]
-                     (print-lines! {:lines [(str "WARNING: could not write " (:path e) ": " err)]
-                                    :stream :err}))
-       :post-summary (post-summary! e)
-       :exit nil)
-     (when (= :exit effect) (reduced code)))
-   nil
+   (fn [[world _] {:keys [effect worker msg frame timings code] :as e}]
+     (let [handle (get-in world [:handles worker])
+           world (case effect
+                   :spawn (assoc-in world [:handles worker]
+                                    (pool/start-worker! {:queue queue :command command} worker))
+                   :send (do (some-> handle (pool/send! msg)) world)
+                   :stop (do (some-> handle pool/stop!) world)
+                   :kill (do (some-> handle pool/kill!) world)
+                   :print (do (print-lines! e) world)
+                   :print-data (do (print-data! e) world)
+                   :redraw (assoc world :height (term/redraw! (:height world 0) frame))
+                   :save-timings (do (bfs/write-timings! timings) world)
+                   :write-file (do (when-let [err (bfs/write-file! (:path e) (:text e))]
+                                     (print-lines! {:lines [(str "WARNING: could not write " (:path e) ": " err)]
+                                                    :stream :err}))
+                                   world)
+                   :post-summary (do (post-summary! e) world)
+                   :exit world)]
+       (if (= :exit effect) (reduced [world code]) [world nil])))
+   [world nil]
    effects))
 
-(defn- forget-exited!
-  "Drop the handle of a worker the pool reported as exited."
-  [handles {:keys [event worker]}]
-  (when (= :worker/exit event) (vswap! handles dissoc worker)))
+(def ^:private no-workers {:handles {} :height 0})
+
+(defn- step!
+  "Feed one input to the engine and carry out what it returns. A worker the
+  pool reported as exited loses its handle. Returns `[world state code]`.
+  Watch mode drives its runs with this too."
+  [ctx world state {:keys [event worker] :as input}]
+  (let [world (cond-> world (= :worker/exit event) (update :handles dissoc worker))
+        {state :state effects :effects} (engine/step state input)
+        [world code] (run-effects! ctx world effects)]
+    [world state code]))
 
 (defn- event-loop!
   "Feed queue events and ticks to the engine until it exits. In live mode
   (`:live?` in `ctx`) a tick carries the terminal width, read at most every
-  `brisk.shell.terminal/width-check-ms`, so the frame follows a resize."
-  [ctx state]
+  `brisk.shell.terminal/width-check-ms`, so the frame follows a resize.
+  Returns the exit code."
+  [ctx world state]
   (let [^LinkedBlockingQueue queue (:queue ctx)]
-    (loop [state state last-tick (System/currentTimeMillis) last-width 0]
+    (loop [world world state state last-tick (System/currentTimeMillis) last-width 0]
       (let [now (System/currentTimeMillis)
             wait (max 0 (- (+ last-tick tick-ms) now))
             ev (.poll queue wait TimeUnit/MILLISECONDS)
@@ -155,41 +180,37 @@
             inputs (cond-> []
                      ev (conj ev)
                      tick? (conj (cond-> {:event :tick :at now} width? (assoc :width (term/width)))))
-            [state code] (reduce (fn [[st _] input]
-                                   (forget-exited! (:handles ctx) input)
-                                   (let [{st :state effs :effects} (engine/step st input)
-                                         code (run-effects! ctx effs)]
-                                     (if code (reduced [st code]) [st nil])))
-                                 [state nil]
-                                 inputs)]
+            [world state code] (reduce (fn [[world state _] input]
+                                         (let [[world state code] (step! ctx world state input)]
+                                           (if code (reduced [world state code]) [world state nil])))
+                                       [world state nil]
+                                       inputs)]
         (if code
           code
-          (recur state (if tick? now last-tick) (if width? now last-width)))))))
+          (recur world state (if tick? now last-tick) (if width? now last-width)))))))
 
 (defn- run-tests!
   "Start the engine on `plan` and run it to completion. Returns the exit
-  code."
+  code. Workers still alive when it ends, or when the JVM shuts down, are
+  killed: they are this process's descendants, so no handle is needed."
   [plan command opts]
   (let [ctx {:queue (pool/new-queue)
              :command command
-             :handles (volatile! {})
-             :height (volatile! 0)
              :live? (= :live (:reporter opts))}
-        kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))
-        hook (Thread. ^Runnable kill-workers)
+        hook (Thread. ^Runnable pool/kill-descendants!)
         go (fn []
              (let [{:keys [state effects]} (engine/init plan opts)
-                   _ (run-effects! ctx effects)
-                   {state :state effects :effects} (engine/start state)]
-               (or (run-effects! ctx effects)
-                   (event-loop! ctx state))))]
+                   [world _] (run-effects! ctx no-workers effects)
+                   {state :state effects :effects} (engine/start state)
+                   [world code] (run-effects! ctx world effects)]
+               (or code (event-loop! ctx world state))))]
     (.addShutdownHook (Runtime/getRuntime) hook)
     (try
       (if (= :live (:reporter opts))
         (term/with-hidden-cursor! go)
         (go))
       (finally
-        (kill-workers)
+        (pool/kill-descendants!)
         (try (.removeShutdownHook (Runtime/getRuntime) hook) (catch IllegalStateException _ nil))))))
 
 (defn- reload-config
@@ -208,11 +229,10 @@
   worker command for a reloaded config."
   [command cfg loaded opts reload worker-command]
   (let [ctx {:queue (pool/new-queue)
-             :command command
-             :handles (volatile! {})
-             :height (volatile! 0)}]
+             :command command}]
     (watch-loop/watch! {:ctx ctx
                       :run-effects! run-effects!
+                      :step! step!
                       :print! print-lines!
                       :reload-config reload
                       :worker-command worker-command
@@ -236,7 +256,7 @@
         {:keys [effects]} (engine/preflight (assoc loaded :plan plan
                                                    :help (cli/help-text (runtime/invocation))
                                                    :version version))
-        code (run-effects! {} effects)]
+        [_ code] (run-effects! {} no-workers effects)]
     (or code
         (let [tty? (term/tty?)
               mode (reporter config (:options cli) tty?)

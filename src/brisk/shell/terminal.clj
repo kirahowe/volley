@@ -122,12 +122,18 @@
 
 (defn with-raw-mode!
   "Runs `(f)` with the terminal in raw-ish mode (no line buffering, no echo)
-  and restores the saved settings when `f` ends, throws, or the JVM exits."
-  [f]
-  (let [saved (some-> (stty! "-g") str/trim not-empty)
-        restore (fn [] (if saved (stty! saved) (stty! "icanon" "echo")))]
-    (with-restore! restore
-      (fn [] (stty! "-icanon" "-echo" "min" "1") (f)))))
+  and restores the saved settings when `f` ends, throws, or the JVM exits.
+  `after`, when given, runs right after the restore, in the same shutdown
+  hook: JVM shutdown hooks run concurrently, so cleanup that kills child
+  processes must not race the `stty` that restores the terminal."
+  ([f] (with-raw-mode! f (fn [])))
+  ([f after]
+   (let [saved (some-> (stty! "-g") str/trim not-empty)
+         restore (fn []
+                   (if saved (stty! saved) (stty! "icanon" "echo"))
+                   (after))]
+     (with-restore! restore
+       (fn [] (stty! "-icanon" "-echo" "min" "1") (f))))))
 
 (defn poll-key!
   "Waits up to `timeout-ms` for a key press and returns it as a character,

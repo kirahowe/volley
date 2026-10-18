@@ -7,15 +7,19 @@
   Both inputs sit beside the one event queue instead of in a second one: the
   queue holds only worker events, and the loop that reads it with a timeout
   also checks the keyboard and, every `brisk.watch/poll-ms`, the files. The
-  mutable things are the queue, the worker handles and the live frame height
-  (all in `ctx`, shared with the one-shot run); the rest is threaded through
-  the loop as a value, including the next worker id: ids keep counting up
+  queue is the one mutable object; everything else is threaded through the
+  loop as a value: the worker handles and the live frame height (`:world`,
+  as `brisk.main` threads them for a one-shot run) and the next worker id:
+  ids keep counting up
   across runs, so a late event from a cancelled run's worker belongs to no
   worker of the next run, and the engine drops it.
 
   `env` (from `brisk.main`):
-  * `:ctx`            `{:queue :command :handles :height}`
-  * `:run-effects!`   carries out engine effects, returns an exit code or nil
+  * `:ctx`            `{:queue :command}`
+  * `:run-effects!`   `(fn [ctx world effects])` carries out engine effects,
+                      returns `[world exit-code-or-nil]`
+  * `:step!`          `(fn [ctx world state input])` feeds the engine one
+                      input and carries out its effects, `[world state code]`
   * `:print!`         `(fn [{:lines :stream}])`
   * `:reload-config`  `(fn [])` returning `{:config c}` or `{:error msg}`
   * `:worker-command` `(fn [config])` returning `{:command argv}` or
@@ -106,13 +110,10 @@
                            :outcome (watch/outcome (:run (:engine sess)))})
       end-engine))
 
-(defn- engine-input [{:keys [ctx run-effects!]} sess input]
+(defn- engine-input [{:keys [ctx step!]} sess input]
   (if-let [state (:engine sess)]
-    (let [{:keys [event worker]} input
-          _ (when (= :worker/exit event) (vswap! (:handles ctx) dissoc worker))
-          {state :state effects :effects} (engine/step state input)
-          code (run-effects! (assoc ctx :command (:command sess)) effects)
-          sess (assoc sess :engine state)]
+    (let [[world state code] (step! (assoc ctx :command (:command sess)) (:world sess) state input)
+          sess (assoc sess :engine state :world world)]
       (cond-> sess code finish-run))
     sess))
 
@@ -141,27 +142,26 @@
                                 {:started-at (now-ms) :durations (bfs/read-timings)
                                  :first-worker-id (:next-worker-id sess)})
                    (:live? env) (assoc :width (term/width)))
+            ctx (assoc ctx :command (:command sess))
             {state :state effects :effects} (engine/init plan opts)
-            _ (vreset! (:height ctx) 0)
-            _ (run-effects! (assoc ctx :command (:command sess)) effects)
+            [world _] (run-effects! ctx (assoc (:world sess) :height 0) effects)
             {state :state effects :effects} (engine/start state)
-            code (run-effects! (assoc ctx :command (:command sess)) effects)]
-        (cond-> (assoc sess :engine state) code finish-run)))))
+            [world code] (run-effects! ctx world effects)]
+        (cond-> (assoc sess :engine state :world world) code finish-run)))))
 
 (defn- cancel-run
   "Kill the run's workers by handle and wait for their exit events, so none
   of their output reaches the next run."
   [{:keys [ctx]} sess]
   (let [^LinkedBlockingQueue queue (:queue ctx)
-        handles (:handles ctx)
+        handles (get-in sess [:world :handles])
         deadline (+ (now-ms) cancel-wait-ms)]
-    (pool/kill-all! (vals @handles))
-    (loop [waiting (set (keys @handles))]
+    (pool/kill-all! (vals handles))
+    (loop [waiting (set (keys handles))]
       (when (and (seq waiting) (< (now-ms) deadline))
         (let [ev (.poll queue 100 TimeUnit/MILLISECONDS)]
           (recur (if (= :worker/exit (:event ev)) (disj waiting (:worker ev)) waiting)))))
-    (vreset! handles {})
-    (cond-> sess (:engine sess) end-engine)))
+    (cond-> (assoc-in sess [:world :handles] {}) (:engine sess) end-engine)))
 
 ;; ---------------------------------------------------------------------------
 ;; Effects of the UI state machine
@@ -224,9 +224,11 @@
               :snapshot (take-snapshot env config)
               :engine nil
               :command (:command ctx)
+              :world {:handles {} :height 0}
               :next-worker-id 1
               :inbox []}
-        kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))
         go (fn [] (watch-loop env (drive env sess [{:event :start}])))
-        guarded (fn [] (term/with-restore! kill-workers (if keys? #(term/with-raw-mode! go) go)))]
+        guarded (fn [] (if keys?
+                         (term/with-raw-mode! go pool/kill-descendants!)
+                         (term/with-restore! pool/kill-descendants! go)))]
     (if live? (term/with-hidden-cursor! guarded) (guarded))))
