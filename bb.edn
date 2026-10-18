@@ -6,5 +6,9 @@
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
         :requires ([brisk.test-bootstrap :as bootstrap])
         :task (bootstrap/run-tests! *command-line-args*)}
+  demo {:doc "Replay a scripted run through the live view (--ci, --speed N, --no-color)"
+        :extra-paths ["dev"]
+        :requires ([demo])
+        :task (demo/-main *command-line-args*)}
   lint {:doc "Lint src and test with clj-kondo"
         :task (shell "clj-kondo --lint src test")}}}
