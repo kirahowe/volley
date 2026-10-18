@@ -195,22 +195,34 @@
 (defn- print-effect [lines]
   (when (seq lines) [{:effect :print :lines (vec lines) :stream :out}]))
 
+(defn- show*
+  "Append-only output for what finished since `prev`."
+  [state prev run ropts]
+  [(assoc state :shown run)
+   (print-effect (if (= :documentation (mode state))
+                   (render/documentation-lines prev run ropts)
+                   (render/ci-lines prev run ropts)))])
+
 (defn- show
   "Effects that bring the screen up to date with the run state, and the
-  state with `:shown` advanced. `tick?` is true for timer inputs, the only
-  time the live view redraws."
-  [state tick?]
+  state with `:shown` advanced. The live view redraws on ticks only; the
+  append-only reporters print when a namespace has finished, which only
+  an `:ns/end` (real or synthetic) can cause."
+  [state {:keys [event]}]
   (let [prev (:shown state)
         run (:run state)
-        ropts (render-opts state false)]
+        ropts (render-opts state false)
+        tick? (= :tick event)]
     (case (mode state)
       :result [state []]
+      (:documentation :ci) (if (contains? #{:ns/end :worker/exit} event)
+                             (show* state prev run ropts)
+                             [state []])
       :live (if tick?
               [(assoc state :shown run)
                [{:effect :redraw :frame (render/live-frame prev run ropts)}]]
               [state []])
-      :documentation [(assoc state :shown run) (print-effect (render/documentation-lines prev run ropts))]
-      [(assoc state :shown run) (print-effect (render/ci-lines prev run ropts))])))
+      [state []])))
 
 (defn- final-output
   "Everything printed once the run is over."
@@ -312,7 +324,7 @@
                   tick? (update :run rs/apply-event {:event :tick :at at})
                   (not tick?) (fold-event input))
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
-          [state e2] (show state tick?)
+          [state e2] (show state input)
           [state e3] (if (and (= :running (:phase state)) (sched/done? (:sched state)))
                        (begin-drain state)
                        [state []])

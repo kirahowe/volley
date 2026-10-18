@@ -663,6 +663,20 @@
                        (qualified (:ns %) (:var %)))
                  tests)))))
 
+(defn- join-fitting
+  "Joins `parts` with `sep` into as few lines of at most `width` columns as
+  possible, breaking only between parts, so a summary is wrapped rather
+  than cut."
+  [parts sep width]
+  (reduce (fn [lines part]
+            (let [cur (peek lines)
+                  candidate (str cur sep part)]
+              (if (or (nil? cur) (> (visible-width candidate) width))
+                (conj lines part)
+                (conj (pop lines) candidate))))
+          []
+          parts))
+
 (def ^:private not-run-reasons
   {:fail-fast  "stopped by fail-fast"
    :no-workers "no worker process could be started"
@@ -702,23 +716,23 @@
 (defn summary
   "Final block: the counts line, namespaces that never ran, the five slowest
   tests, and a command to rerun the failures. The counts line has the shape
-  `N tests | P passed | F failed | E errors | S skipped (2.31s)`. The time
+  `N tests | P passed | F failed | E errors | S skipped (A assertions, 2.31s)`. The time
   is the span of the events in `state`, so it does not depend on a clock."
   [state opts]
-  (let [{:keys [vars namespaces wall-ms]} (rs/summary state (or (:now state) (:now opts)))
+  (let [{:keys [vars namespaces assertions wall-ms]} (rs/summary state (or (:now state) (:now opts)))
         ok?   (zero? (rs/exit-code state))
         style (if ok? :green :red)
         ids   (focus-ids state)
-        line  (str (:total vars) " tests | " (:passed vars) " passed | "
-                   (:failed vars) " failed | " (:errored vars) " errors | "
-                   (:skipped vars) " skipped"
-                   (when (pos? (:errored namespaces))
-                     (str " | " (:errored namespaces) " ns failed to run"))
-                   (when (pos? (:pending namespaces))
-                     (str " | " (:pending namespaces) " ns not run"))
-                   " (" (fmt-ms wall-ms) ")")]
-    (->> (concat [""
-                  (paint opts style line)]
+        parts (cond-> [(str (:total vars) " tests") (str (:passed vars) " passed")
+                       (str (:failed vars) " failed") (str (:errored vars) " errors")
+                       (str (:skipped vars) " skipped")]
+                (pos? (:errored namespaces)) (conj (str (:errored namespaces) " ns failed to run"))
+                (pos? (:pending namespaces)) (conj (str (:pending namespaces) " ns not run")))
+        parts (update parts (dec (count parts)) str
+                      " (" (plural (:total assertions) "assertion") ", " (fmt-ms wall-ms) ")")
+        lines (join-fitting parts " | " (:width opts default-width))]
+    (->> (concat [""]
+                 (map #(paint opts style %) lines)
                  (when-let [s (seq (not-run-lines opts state))] (cons "" s))
                  (when-let [s (seq (slowest-lines opts state))] (cons "" s))
                  (when (seq ids) (cons "" (rerun-lines opts ids))))

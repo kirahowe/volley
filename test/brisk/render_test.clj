@@ -254,7 +254,8 @@
     (is (= (str/join
             "\n"
             [""
-             "3 tests | 2 passed | 1 failed | 0 errors | 0 skipped | 1 ns not run (1.00s)"
+             "3 tests | 2 passed | 1 failed | 0 errors | 0 skipped"
+             "1 ns not run (4 assertions, 1.00s)"
              ""
              "Slowest tests:"
              "  900ms  other-test/slow-test"
