@@ -20,7 +20,8 @@
   with `:kaocha.testable/skip` skips a var) and `wrap-run` (the wrapped
   run function). `:brisk/worker-setup` fns take no arguments."
   (:require
-   [brisk.hooks :as hooks]))
+   [brisk.hooks :as hooks]
+   [clojure.test :as t]))
 
 (set! *warn-on-reflection* true)
 
@@ -31,6 +32,20 @@
         (throw (ex-info (str "hook " entry " does not exist") {:hook entry})))
     (seq? entry) (eval entry)
     :else (throw (ex-info (str "hook " (pr-str entry) " is not a symbol or a form") {:hook entry}))))
+
+(defn- resolve-reporter
+  "A reporter symbol as Kaocha's `kaocha.config/resolve-reporter` resolves
+  it: a var holding a function, or a collection of reporters to call in
+  turn."
+  [sym]
+  (let [v (try (requiring-resolve sym) (catch Exception _ nil))
+        r (some-> v deref)]
+    (cond
+      (nil? v) (throw (ex-info (str "Failed to resolve reporter var: " sym) {:reporter sym}))
+      (symbol? r) (resolve-reporter r)
+      (and (sequential? r) (not (fn? r))) (let [rs (mapv #(if (symbol? %) (resolve-reporter %) %) r)]
+                                            (fn [m] (run! #(% m) rs)))
+      :else r)))
 
 (defn- resolve-all [m]
   (update-vals m #(mapv resolve-hook %)))
@@ -144,6 +159,7 @@
 (defn- start [hs]
   (let [{:keys [hooks worker-setup suites]} (:msg hs)
         fns {:hooks (resolve-all hooks)
+             :reporters (mapv resolve-reporter (:reporters (:msg hs)))
              :worker-setup (mapv resolve-hook worker-setup)
              :suites (update-vals suites (fn [s] {:hooks (resolve-all (:hooks s))
                                                   :worker-setup (mapv resolve-hook (:worker-setup s))}))}
@@ -256,19 +272,40 @@
           (do (test!)
               (run-chain :post-test (top hs :post-test) (hooks/with-result t (counts)) p)))))))
 
+(defn- call-reporters
+  "Call the project's reporters with event `m`, as Kaocha calls its
+  reporter with every clojure.test event. They print to `*test-out*` (the
+  worker's stray output), not into a test's captured output. A reporter
+  that throws is reported on stderr, as Kaocha's `Error in reporter`."
+  [reporters m]
+  (binding [*out* t/*test-out*]
+    (doseq [r reporters]
+      (try (r m)
+           (catch ^:sci/error Throwable e
+             (binding [*out* *err*]
+               (println "Error in reporter:" (.getName (class (unwrap e))) (message (unwrap e)))))))
+    (flush)))
+
 (defn report-fn
   "`report` with the `pre-report` hooks in front: each event goes through
   them first. A hook that throws is reported on stderr and the event is
-  counted unchanged."
+  counted unchanged. The project's reporters then get the event."
   [hs report]
-  (let [[fs entries] (top hs :pre-report)]
-    (if (empty? fs)
-      report
-      (fn [m]
-        (report (try (chain :pre-report fs entries m)
+  (let [[fs entries] (top hs :pre-report)
+        reporters (get-in hs [:fns :reporters])
+        pre (if (empty? fs)
+              identity
+              (fn [m]
+                (try (chain :pre-report fs entries m)
                      (catch ^:sci/error Throwable e
                        (binding [*out* *err*] (println (ex-message e)))
-                       m)))))))
+                       m))))]
+    (if (and (empty? fs) (empty? reporters))
+      report
+      (fn [m]
+        (let [m (pre m)]
+          (report m)
+          (when (seq reporters) (call-reporters reporters m)))))))
 
 (defn shutdown
   "When the worker is shut down cleanly: `post-test` with each suite

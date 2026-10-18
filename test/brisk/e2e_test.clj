@@ -191,10 +191,26 @@
       (is (str/includes? out "acme.math-test"))
       (is (re-find #"(?m)^  ✓ adds \d+ms$" out))
       (is (re-find #"(?m)^  ✗ wrong \d+ms$" out))))
-  (testing "--reporter dots maps to the CI output and warns"
-    (let [{:keys [out err]} (run "default" ["--reporter" "dots"])]
-      (is (str/includes? err "kaocha.report/dots"))
-      (is (some? (e2e/summary-line out))))))
+  (testing "--reporter dots and progress map to the CI output without a warning"
+    (doseq [r ["dots" "kaocha.report.progress/report"]]
+      (let [{:keys [out err]} (run "default" ["--reporter" r])]
+        (is (not (str/includes? err "reporter")))
+        (is (some? (e2e/summary-line out)))))))
+
+(deftest a-project-reporter-gets-every-event
+  (testing "a reporter fn, and a var holding a vector of them, run in the workers"
+    (doseq [r ["rp.reporter/report" "rp.reporter/both"]]
+      (let [{:keys [exit out]} (run "reporters" ["--reporter" r])]
+        (is (= 0 exit))
+        (is (str/includes? out "REPORTED one"))
+        (is (str/includes? out "REPORTED two")))))
+  (testing ":kaocha/reporter in tests.edn"
+    (let [{:keys [out]} (run "reporters" [] {"tests.edn" "#kaocha/v1 {:reporter [rp.reporter/report]}"})]
+      (is (str/includes? out "REPORTED one"))))
+  (testing "kaocha.api/resolve-reporter: a reporter that does not resolve exits -2"
+    (let [{:keys [exit err]} (run "reporters" ["--reporter" "rp.reporter/nope"])]
+      (is (= 254 exit))
+      (is (str/includes? err "Failed to resolve reporter var: rp.reporter/nope")))))
 
 (deftest timings-are-remembered
   (let [dir (e2e/copy-project "serial")]

@@ -174,7 +174,10 @@
 
 (defn configure-message
   "The `{:op :configure}` message every worker gets before its first run,
-  or nil when no hook or worker setup is configured."
+  or nil when no hook, worker setup or custom reporter is configured.
+  `:reporters` are the project's own reporter symbols (`--reporter`,
+  `:kaocha/reporter`), which the workers call with each clojure.test
+  event."
   [config]
   (let [suites (into {}
                      (keep (fn [s]
@@ -182,9 +185,10 @@
                                [(:id s) (select-keys s [:hooks :worker-setup])])))
                      (:tests config))
         worker-hooks (dissoc (:hooks config) :post-summary)]
-    (when (or (seq worker-hooks) (seq (:worker-setup config)) (seq suites))
+    (when (or (seq worker-hooks) (seq (:worker-setup config)) (seq suites) (seq (:reporters config)))
       {:op :configure
        :hooks worker-hooks
+       :reporters (vec (:reporters config))
        :worker-setup (vec (:worker-setup config))
        :suites suites
        :testables (into {} (map (fn [s] [(:id s) (suite-testable s)])) (:tests config))

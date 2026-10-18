@@ -350,8 +350,8 @@
     ;; unqualified leftovers that kaocha-normalize copies through
     :capture-output? :diff-style :bindings :kaocha/bindings
     ;; brisk's own shape, so a normalized config can be normalized again
-    :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
-    :junit-xml
+    :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :reporters
+    :hooks :worker-setup :junit-xml
     ;; read by brisk.hooks
     :brisk/worker-setup})
 
@@ -435,29 +435,39 @@
     (seq hooks) (assoc :hooks hooks)
     (seq worker-setup) (assoc :worker-setup worker-setup)))
 
-(defn- reporter-name [sym]
-  (when (symbol? sym) [(namespace sym) (name sym)]))
+(def ^:private builtin-reporters
+  "Kaocha's own reporters and the brisk output each stands for. brisk
+  prints its own output for them without a word: a run under brisk never
+  looks like Kaocha's anyway."
+  {'kaocha.report/documentation :documentation
+   'kaocha.report/dots :live
+   'kaocha.report/result :live
+   'kaocha.report.progress/report :live
+   'kaocha.report/report :live
+   'clojure.test/report :live})
+
+(def ^:private unsupported-reporters
+  "Kaocha reporters with no brisk equivalent: a warning, then brisk's
+  output."
+  #{'kaocha.report/tap 'kaocha.report/debug})
 
 (defn- brisk-reporter
-  "Map explicitly requested Kaocha reporter symbols to the closest brisk
-  reporter keyword. Returns `[reporter warnings]`. `kaocha.report/documentation`
-  has a brisk equivalent; every other reporter (dots, progress, custom ones)
-  becomes `:live`, which the shell turns into `:ci` when stdout is not a
-  terminal, with a warning. nil (nothing requested) is `:live` silently."
+  "Map explicitly requested Kaocha reporter symbols to brisk's output.
+  Returns `[reporter warnings custom]`: the brisk reporter keyword
+  (`:documentation` for `kaocha.report/documentation`, else `:live`, which
+  the shell turns into `:ci` when stdout is not a terminal), warnings for
+  Kaocha reporters brisk has no equivalent for, and every other symbol, a
+  reporter of the project's own that the workers call with each
+  clojure.test event. nil (nothing requested) is `:live`."
   [reporter]
   (if (or (nil? reporter) (keyword? reporter))
-    [(or reporter :live) []]
+    [(or reporter :live) [] []]
     (let [syms (->vec reporter)
-          mapped (map (fn [r]
-                        (let [[ns n] (reporter-name r)]
-                          (cond
-                            (and (= ns "kaocha.report") (= n "documentation")) [:documentation nil]
-                            (contains? #{"kaocha.report" "kaocha.report.progress" "clojure.test"} ns)
-                            [:live (str "reporter " (pr-str r) " has no brisk equivalent, using brisk's live/CI output")]
-                            :else [:live (str "reporter " (pr-str r) " is not supported, using brisk's live/CI output")])))
-                      syms)]
-      [(or (first (remove #{:live} (map first mapped))) :live)
-       (vec (keep second mapped))])))
+          builtin (keep builtin-reporters syms)
+          unsupported (filter unsupported-reporters syms)]
+      [(or (first (remove #{:live} builtin)) :live)
+       (mapv #(str "reporter " (pr-str %) " has no brisk equivalent, using brisk's own output") unsupported)
+       (vec (remove #(or (contains? builtin-reporters %) (unsupported-reporters %)) syms))])))
 
 (defn- cli-filters [options]
   (into {}
@@ -543,7 +553,7 @@
                            ::error (str "invalid configuration: " (ex-message e)))))
          plugins (->> (concat (->vec (:kaocha/plugins cfg)) (:plugin cli-options))
                       (map normalize-plugin) (remove nil?) distinct vec)
-         [reporter reporter-warnings]
+         [reporter reporter-warnings custom-reporters]
          (brisk-reporter (pick (when (seq (:reporter cli-options)) (:reporter cli-options))
                                (:reporter raw)
                                (:kaocha/reporter raw)))
@@ -600,5 +610,8 @@
               (cli-warnings cli-options)
               (cli/plugin-flag-warnings cli-options supported-plugins))))}
        junit (assoc :junit-xml junit)
+       ;; (:reporters raw): a normalized config normalized again keeps them
+       (seq (concat custom-reporters (:reporters raw)))
+       (assoc :reporters (vec (distinct (concat custom-reporters (:reporters raw)))))
        (map? (:kaocha/bindings cfg)) (assoc :bindings (:kaocha/bindings cfg)))
       top-hooks))))

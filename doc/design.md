@@ -117,6 +117,7 @@ then in code.
  :color?           true
  :capture-output?  true
  :reporter         :live                            ; brisk reporter keyword
+ :reporters        [my.ns/report]                   ; the project's own reporters, called in the workers
  :watch?           false
  :workers          8                                ; brisk-only; default depends on :runtime
  :isolate?         false                            ; brisk-only: fresh process per ns
@@ -185,8 +186,9 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
  :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
-{:op :configure                               ; right after spawn, only when hooks or setup exist
+{:op :configure                               ; right after spawn, only when hooks, setup or reporters exist
  :hooks {:pre-load [entry] ...}               ; top-level hooks that run in workers
+ :reporters [sym]                             ; the project's reporters, see below
  :worker-setup [entry]
  :suites {:unit {:hooks {...} :worker-setup [...]}}
  :testables {:unit suite-testable}            ; brisk.hooks/suite-testable per suite
@@ -534,6 +536,31 @@ In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker killed by
 fail-fast or a watch cancel runs no shutdown hooks.
 
+## Reporters
+
+brisk always prints its own output. `--reporter` and `:kaocha/reporter`
+choose between its forms and add the project's reporters
+(`brisk.config/brisk-reporter`):
+
+- `kaocha.report/documentation` selects the documentation layout.
+- Kaocha's other reporters (`dots`, `kaocha.report.progress/report`,
+  `kaocha.report/report`, `clojure.test/report`) select the live view (CI
+  lines when stdout is not a terminal), without a warning.
+- `kaocha.report/tap` and `kaocha.report/debug` have no equivalent; they
+  get a warning and the live view.
+- Any other symbol is a reporter of the project's own, kept in
+  `:reporters`. Kaocha calls its reporter with every clojure.test event;
+  brisk's workers do the same, after the `pre-report` hooks
+  (`brisk.shell.hooks/report-fn`), with `*out*` bound to the worker's
+  stray output, so what a reporter prints shows like uncaptured test
+  output. A var may hold a function or a vector of reporter symbols, as
+  in `kaocha.config/resolve-reporter`. A reporter that throws is printed
+  as `Error in reporter: ...` and the run goes on. When the workers run on
+  the parent's runtime, the parent resolves each reporter before the run
+  (with the test and source paths on its classpath on babashka) and exits
+  254 with `Failed to resolve reporter var: ...`, as Kaocha does;
+  otherwise a worker that cannot resolve one fails its setup.
+
 ## Watch mode
 
 `brisk.shell.watch` runs a single loop on one thread. Each pass it waits up
@@ -705,8 +732,7 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   run, then stays running. See "Watch mode" below.
 - **CLI.** Kaocha's: `[suite-id ...]`, `--focus`, `--skip`, `--focus-meta`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
-  `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
-  closest brisk reporter), `--plugin`, `--profile`, `--diff-style`,
+  `--[no-]capture-output`, `--reporter` (see "Reporters" below), `--plugin`, `--profile`, `--diff-style`,
   `--print-config`, `--print-test-plan`, `--print-result`, `--[no-]profiling`
   and the junit-xml flags. `--[no-]randomize` and `--seed` are accepted and
   ignored. brisk's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,

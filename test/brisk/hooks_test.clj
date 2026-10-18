@@ -15,6 +15,7 @@
           msg (hooks/configure-message c)
           worker-side? (or (seq (dissoc (:hooks c) :post-summary))
                            (seq (:worker-setup c))
+                           (seq (:reporters c))
                            (some #(or (seq (:hooks %)) (seq (:worker-setup %))) (:tests c)))]
       (and (= (boolean worker-side?) (some? msg))
            (or (nil? msg)

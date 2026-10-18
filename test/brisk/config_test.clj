@@ -226,17 +226,22 @@
                                               {:reporter ['kaocha.report/dots]})))))
   (testing "the implicit default does not warn"
     (is (not-any? #(str/includes? % "reporter") (:warnings (config/normalize nil {})))))
-  (testing "an explicit Kaocha reporter maps to the closest brisk one and warns"
-    (doseq [r ['kaocha.report/dots 'kaocha.report.progress/report 'kaocha.report/report]]
+  (testing "Kaocha's own reporters map to brisk's output without a warning"
+    (doseq [r ['kaocha.report/dots 'kaocha.report.progress/report 'kaocha.report/report 'clojure.test/report]]
       (let [c (config/normalize nil {:reporter [r]})]
         (is (= :live (:reporter c)))
-        (is (some #(str/includes? % (str r)) (:warnings c)) (str r))))
-    (is (some #(str/includes? % "kaocha.report/dots")
-              (:warnings (config/normalize {:kaocha/reporter ['kaocha.report/dots]} {})))))
-  (testing "custom reporters fall back to :live with a warning"
-    (let [c (config/normalize {:reporter ['my.ns/reporter]} {})]
-      (is (= :live (:reporter c)))
-      (is (some #(str/includes? % "my.ns/reporter") (:warnings c))))))
+        (is (not-any? #(str/includes? % "reporter") (:warnings c)) (str r))
+        (is (nil? (:reporters c)))))
+    (is (empty? (:warnings (config/normalize {:kaocha/reporter ['kaocha.report/dots]} {})))))
+  (testing "Kaocha reporters with no brisk equivalent warn"
+    (is (some #(str/includes? % "kaocha.report/tap")
+              (:warnings (config/normalize nil {:reporter ['kaocha.report/tap]})))))
+  (testing "the project's own reporters are kept for the workers, beside brisk's output"
+    (let [c (config/normalize {:reporter ['my.ns/reporter 'kaocha.report/documentation]} {})]
+      (is (= :documentation (:reporter c)))
+      (is (= ['my.ns/reporter] (:reporters c)))
+      (is (empty? (:warnings c)))
+      (is (= ['my.ns/reporter] (:reporters (config/normalize c {}))) "normalizing again keeps them"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Reading: Aero and Kaocha tags

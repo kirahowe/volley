@@ -599,6 +599,8 @@
     (System/setOut stray)
     (alter-var-root #'*out* (constantly stray-writer))
     (alter-var-root #'*err* (constantly stray-writer))
+    ;; the project's reporters print here (`brisk.shell.hooks/report-fn`)
+    (alter-var-root #'t/*test-out* (constantly stray-writer))
     (emit! {:event :worker/ready})
     (let [hs (loop [hs (hooks/init nil)]
                (if-let [line (.readLine in)]

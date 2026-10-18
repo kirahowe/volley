@@ -105,7 +105,19 @@
   [paths]
   (when-let [add (try (requiring-resolve 'babashka.classpath/add-classpath)
                       (catch Exception _ nil))]
-    (doseq [p paths] (add p))))
+    (doseq [p (flatten paths)] (add p))))
+
+(defn- unresolved-reporter
+  "The first of the project's reporter symbols that does not resolve in
+  this process, as Kaocha resolves its reporter before running anything.
+  Checked only when the workers run on this process's runtime; otherwise
+  a worker that cannot resolve one fails its setup."
+  [config]
+  (when (and (seq (:reporters config))
+             (= (:runtime config) (if (runtime/bb?) :bb :jvm)))
+    (add-test-paths! (mapcat (juxt :test-paths :source-paths) (:tests config)))
+    (some (fn [sym] (when-not (try (requiring-resolve sym) (catch Throwable _ nil)) sym))
+          (:reporters config))))
 
 (defn- post-summary!
   "Run the parent's `post-summary` hooks; a failure is printed, not fatal."
@@ -281,9 +293,15 @@
                     (when-let [jx (:junit-xml config)]
                       {:junit-xml (assoc jx :timestamp (local-timestamp) :cwd (System/getProperty "user.dir"))})
                     (hooks/engine-opts config))
-              _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))]
+              _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))
+              bad-reporter (when-not error (unresolved-reporter config))]
           (cond
             error (do (print-lines! {:lines [(str "brisk: " error)] :stream :err}) 250)
+            bad-reporter
+            ;; kaocha.api/resolve-reporter: an early exit with -2
+            (do (print-lines! {:lines [(str "ERROR: Failed to resolve reporter var: " bad-reporter)]
+                               :stream :err})
+                254)
             (:watch? config) (watch-tests! command config loaded opts #(reload-config args env)
                                            #(runtime/worker-command % (:aliases (:options cli))))
             :else (run-tests! plan command opts))))))
