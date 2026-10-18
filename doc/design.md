@@ -465,6 +465,7 @@ replaces the width the live view renders to. Effects:
 {:effect :kill :worker id}          ; 5s after the run, for workers still alive
 {:effect :print :lines [str] :stream :out|:err}
 {:effect :print-data :value v :pretty? bool}   ; EDN on stdout: --print-config, --print-test-plan, --print-result
+                                                ;   in Kaocha's shapes (see the divergences)
 {:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
 {:effect :save-timings :timings {ns ms}}
 {:effect :write-file :path str :text str}   ; the junit-xml report, after the summary
@@ -891,6 +892,23 @@ difference:
   skipped..." and exit 0. Kaocha counts every testable it skipped
   (suites, namespaces and vars) and stops before running; brisk counts
   the vars of the namespaces it ran and prints its summary too.
+- **`--print-config`, `--print-test-plan`, `--print-result`.** They print
+  Kaocha's shapes: the normalized config (`:kaocha/tests` with suite
+  testables and their `:kaocha.filter/*` keys, `:kaocha/plugins`,
+  `:kaocha/fail-fast?`, `:kaocha/color?`, `:kaocha/watch?`), the test plan
+  (`:kaocha.test-plan/tests`: suites holding namespaces holding vars, a
+  filtered var with `:kaocha.testable/skip`), and the result
+  (`:kaocha.result/tests` with `:kaocha.result/count`, `pass`, `fail`,
+  `error` and `pending` per var). What differs: brisk's own settings and
+  plan details sit under `:brisk/*` keys; there is no
+  `:kaocha/cli-options` and no `:kaocha/reporter` unless the project
+  names its own reporters; the test plan comes from the parser, so it has
+  no `:kaocha.ns/ns` or `:kaocha.var/var` objects, carries only literal
+  metadata and lacks tests a macro defines; the result has no
+  `:kaocha.testable/events`, durations or `:kaocha.testable/wrap`, and a
+  filtered var keeps no metadata; `--print-result` prints one line rather
+  than a pretty-printed map, with `brisk.run-state/result` (per-var
+  status, `:totals`, the exit code) under `:brisk/result`.
 - **A var without assertions in the junit-xml report.** Both count it as a
   failure in the testsuite's `failures`. kaocha-junit-xml writes its
   testcase with no `<failure>` child; brisk adds one with Kaocha's

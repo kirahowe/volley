@@ -305,6 +305,7 @@
                                    (not= "tests.edn" (:config-file loaded))
                                    (str " --config-file " (:config-file loaded)))
                      :bindings (:bindings config)
+                     :config config
                      :capture-output? (:capture-output? config)
                      :reporter mode
                      :width (if (= :live mode) (term/width) 1000)

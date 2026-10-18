@@ -27,6 +27,7 @@
   config and CLI errors, printing the config or plan, and \"no tests found\",
   each with Kaocha's exit code."
   (:require
+   [brisk.config :as config]
    [brisk.hooks :as hooks]
    [brisk.junit :as junit]
    [brisk.render :as render]
@@ -122,10 +123,10 @@
        [(out [version]) (exit 0)]
 
        (:print-config options)
-       [{:effect :print-data :value (dissoc config :warnings :errors) :pretty? true} (exit 0)]
+       [{:effect :print-data :value (config/kaocha-shaped config) :pretty? true} (exit 0)]
 
        (:print-test-plan options)
-       [{:effect :print-data :value plan :pretty? true} (exit 0)]
+       [{:effect :print-data :value (hooks/kaocha-test-plan config plan) :pretty? true} (exit 0)]
 
        (seq (:errors plan))
        [(out (:errors plan)) (exit (:unknown-suite exit-codes))]
@@ -176,7 +177,8 @@
   parent after the summary. `:junit-xml` is the config's `:junit-xml` plus
   `:timestamp` and `:cwd`: the report is written after the summary.
   `:bindings` (`{var-sym value}`, Kaocha's `:kaocha/bindings`) goes to the
-  workers with every run message.
+  workers with every run message. `:config` is the normalized config, for
+  the Kaocha-shaped result `--print-result` prints.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -395,7 +397,11 @@
         nonblank (fn [s] (when-not (str/blank? s) [s]))
         summary (render/summary run ropts)]
     (case (mode state)
-      :result [{:effect :print-data :value (rs/result run)}]
+      :result [{:effect :print-data
+                :value (assoc (hooks/kaocha-result (get-in state [:opts :config])
+                                                   (fn [ns] (get-in state [:nses ns :suite]))
+                                                   run)
+                              :brisk/result (rs/result run))}]
       :live (concat [{:effect :redraw :frame (second (with-notices state (render/live-frame prev run ropts)))}]
                     (print-effect (concat (nonblank (render/failure-report run ropts)) [summary])))
       ;; Each namespace block ends with a blank line, so the summary's own

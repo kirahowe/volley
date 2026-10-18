@@ -27,7 +27,7 @@
 (defn- brisk
   [project args]
   (let [{:keys [exit out err]} (e2e/brisk (e2e/copy-project project) (conj (vec args) "--print-result"))]
-    [exit (or (e2e/last-edn-line out "{:vars")
+    [exit (or (e2e/print-result out)
               (throw (ex-info "brisk printed no result" {:out out :err err})))]))
 
 (defn- comparable

@@ -71,7 +71,7 @@
                                         "--runtime" "bb" "--print-result"]
                                    {:timeout-ms 180000})]
     (is (= 0 exit))
-    (is (map? (e2e/last-edn-line out "{:vars"))))
+    (is (map? (e2e/print-result out))))
 )
 
 (deftest error-traces-name-the-user-frames-on-both-runtimes

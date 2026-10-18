@@ -185,10 +185,12 @@
 (defn- plan-suite
   "The plan entry of one suite: `filtered` is the suite as Kaocha's
   filters leave it when every focus-meta key is carried by some test.
-  Dropping a key no test carries can only narrow what a suite keeps, so
-  the namespaces kept here are the most any outcome needs. With
-  `unresolved` keys each spec carries them and the `:pass-inputs`
-  (`resolve-focus-meta`) a worker rebuilds its passes from."
+  Dropping a key no test carries never brings back a namespace this
+  leaves out, so the namespaces kept here are the most any outcome needs.
+  With `unresolved` keys each spec carries them and the `:pass-inputs`
+  (`resolve-focus-meta`) a worker rebuilds its passes from. Each entry
+  also keeps the namespace's static metadata and test vars (`:meta`,
+  `:vars`) for `--print-test-plan`."
   [suite infos filtered global unresolved]
   (let [kept (kept-namespaces filtered)
         keys* (relevant-meta-keys (:passes filtered))]
@@ -200,6 +202,8 @@
                      {:ns (:ns info)
                       :file (:file info)
                       :serial? (serial? info)
+                      :meta (:meta info)
+                      :vars (:vars info)
                       :select (cond-> {:passes (:passes filtered)
                                        :ns-meta (select-keys (:meta info) keys*)}
                                 (seq unresolved)

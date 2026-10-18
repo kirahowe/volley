@@ -10,6 +10,7 @@
   the result). Hooks are resolved and called by `brisk.shell.worker` and,
   for `post-summary`, `brisk.main`."
   (:require
+   [brisk.filters :as filters]
    [brisk.run-state :as rs]
    [brisk.testable :as testable]))
 
@@ -112,14 +113,19 @@
 ;; Kaocha-shaped values
 
 (defn suite-testable
-  "The Kaocha testable of normalized suite `suite`, as hooks see it."
-  [{:keys [id type test-paths source-paths ns-patterns]}]
-  {:kaocha.testable/type (or type :kaocha.type/clojure.test)
-   :kaocha.testable/id id
-   :kaocha.testable/desc (str (name id) " (clojure.test)")
-   :kaocha/test-paths test-paths
-   :kaocha/source-paths source-paths
-   :kaocha/ns-patterns ns-patterns})
+  "The Kaocha testable of normalized suite `suite`, as hooks see it, with
+  the suite's own filters under Kaocha's `:kaocha.filter/*` keys."
+  [{:keys [id type test-paths source-paths ns-patterns focus skip focus-meta skip-meta]}]
+  (cond-> {:kaocha.testable/type (or type :kaocha.type/clojure.test)
+           :kaocha.testable/id id
+           :kaocha.testable/desc (str (name id) " (clojure.test)")
+           :kaocha/test-paths test-paths
+           :kaocha/source-paths source-paths
+           :kaocha/ns-patterns ns-patterns}
+    (seq focus) (assoc :kaocha.filter/focus focus)
+    (seq skip) (assoc :kaocha.filter/skip skip)
+    (seq focus-meta) (assoc :kaocha.filter/focus-meta focus-meta)
+    (seq skip-meta) (assoc :kaocha.filter/skip-meta skip-meta)))
 
 (defn- kaocha-hook-keys [hooks]
   (into {} (map (fn [[k v]] [(keyword "kaocha.hooks" (name k)) v])) hooks))
@@ -156,6 +162,33 @@
        :suites suites
        :testables (into {} (map (fn [s] [(:id s) (suite-testable s)])) (:tests config))
        :config (kaocha-config config)})))
+
+(defn kaocha-test-plan
+  "`--print-test-plan`: Kaocha's test plan shape (`kaocha.api/test-plan`)
+  for normalized `config` and `plan` (`brisk.select/plan`), suites holding
+  the planned namespaces holding the test vars the parser saw. A var the
+  filters skip carries `:kaocha.testable/skip`, as in Kaocha; tests a
+  macro defines appear only once loaded, so not here. brisk's own part of
+  the plan is under `:brisk/*` keys: each suite's filter passes once, each
+  namespace's `:brisk/serial?`, and the namespaces workers preload."
+  [config plan]
+  (let [by-id (into {} (map (juxt :id identity)) (:tests config))
+        var-t (fn [{:keys [ns select]} [v m]]
+                (cond-> (testable/var-testable ns v m)
+                  (not (#{:selected :pending} (:reason (filters/decide select ns v m))))
+                  (assoc :kaocha.testable/skip true)))
+        ns-t (fn [{:keys [ns meta vars serial?] :as entry}]
+               (cond-> (assoc (testable/ns-testable ns)
+                              :kaocha.testable/meta meta
+                              :kaocha.test-plan/tests (mapv #(var-t entry %) (sort-by (comp str key) vars)))
+                 serial? (assoc :brisk/serial? true)))]
+    (cond-> (testable/test-plan
+             (kaocha-config config)
+             (for [{:keys [id namespaces]} (:suites plan)]
+               (cond-> (assoc (suite-testable (by-id id))
+                              :kaocha.test-plan/tests (mapv ns-t namespaces))
+                 (seq namespaces) (assoc :brisk/passes (get-in (first namespaces) [:select :passes])))))
+      (seq (:preload plan)) (assoc :brisk/preload (:preload plan)))))
 
 (defn kaocha-result
   "The test result `post-summary` hooks get: Kaocha's shape

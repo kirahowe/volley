@@ -16,7 +16,7 @@
   "`--print-result` of a run: `[exit result-map]`."
   [project args]
   (let [{:keys [exit out]} (run project (conj (vec args) "--print-result"))]
-    [exit (e2e/last-edn-line out "{:vars")]))
+    [exit (e2e/print-result out)]))
 
 (defn- executed
   "Vars that ran, with their status."
@@ -172,14 +172,26 @@
 (deftest informational-flags
   (is (= 0 (:exit (run "default" ["--help"]))))
   (is (str/starts-with? (:out (run "default" ["--version"])) "brisk "))
-  (let [{:keys [exit out]} (run "suites" ["--print-config"])
-        cfg (edn/read-string out)]
-    (is (= 0 exit))
-    (is (= [:unit :integration] (map :id (:tests cfg)))))
-  (let [{:keys [exit out]} (run "suites" ["--print-test-plan" "unit"])
-        plan (edn/read-string out)]
-    (is (= 0 exit))
-    (is (= '[app.parse-test] (map :ns (mapcat :namespaces (:suites plan)))))))
+  (testing "--print-config: Kaocha's config shape, brisk's own settings under :brisk/*"
+    (let [{:keys [exit out]} (run "suites" ["--print-config"])
+          cfg (edn/read-string out)]
+      (is (= 0 exit))
+      (is (= [:unit :integration] (map :kaocha.testable/id (:kaocha/tests cfg))))
+      (is (pos-int? (:brisk/workers cfg)))))
+  (testing "--print-test-plan: kaocha.api/test-plan's shape, suites > namespaces > vars"
+    (let [{:keys [exit out]} (run "suites" ["--print-test-plan" "unit"])
+          plan (edn/read-string out)
+          nses (mapcat :kaocha.test-plan/tests (:kaocha.test-plan/tests plan))]
+      (is (= 0 exit))
+      (is (= [:unit] (map :kaocha.testable/id (:kaocha.test-plan/tests plan))))
+      (is (= '[app.parse-test] (map :kaocha.ns/name nses)))
+      (is (= [:app.parse-test/parses-ints :app.parse-test/parses-nil]
+             (map :kaocha.testable/id (mapcat :kaocha.test-plan/tests nses))))))
+  (testing "--print-result: Kaocha's result shape with brisk's result under :brisk/result"
+    (let [{:keys [out]} (run "suites" ["--print-result" "unit"])
+          res (e2e/last-edn-line out "{:kaocha")]
+      (is (= 2 (count (mapcat :kaocha.result/tests (mapcat :kaocha.result/tests (:kaocha.result/tests res))))))
+      (is (= 0 (get-in res [:brisk/result :exit-code]))))))
 
 (deftest colour-and-reporters
   (testing "--color forces colour, NO_COLOR wins over it"
@@ -369,7 +381,7 @@
   (testing "--watch with --print-result prints one result and exits"
     (let [{:keys [exit out]} (run "default" ["--watch" "--print-result"])]
       (is (= 1 exit))
-      (is (some? (e2e/last-edn-line out "{:vars"))))))
+      (is (some? (e2e/print-result out))))))
 
 (deftest the-rerun-hint-keeps-the-config-file
   (let [{:keys [out]} (run "default" ["--config-file" "other.edn"] {"other.edn" "#kaocha/v1 {}"})]

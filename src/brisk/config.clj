@@ -472,6 +472,25 @@
       [(str "hooks " (str/join ", " (map pr-str ks)) " ignored: "
             (pr-str hooks/plugin) " is not in :plugins")])))
 
+(defn kaocha-shaped
+  "`--print-config`: normalized `config` in Kaocha's shape
+  (`kaocha.config/normalize`, as `brisk.hooks/kaocha-config` builds it
+  for hooks) with Kaocha's top-level settings, and brisk's own settings
+  under `:brisk/*` keys."
+  [config]
+  (cond-> (merge (hooks/kaocha-config config)
+                 {:kaocha/watch? (boolean (:watch? config))
+                  :brisk/reporter (:reporter config)
+                  :brisk/workers (:workers config)
+                  :brisk/isolate? (boolean (:isolate? config))
+                  :brisk/preload? (boolean (:preload? config))
+                  :brisk/runtime (:runtime config)})
+    (seq (remove empty? (vals (:filters config)))) (assoc :brisk/filters (:filters config))
+    (seq (:bindings config)) (assoc :kaocha/bindings (:bindings config))
+    (seq (:reporters config)) (assoc :kaocha/reporter (:reporters config))
+    (seq (:worker-setup config)) (assoc :brisk/worker-setup (:worker-setup config))
+    (:junit-xml config) (assoc :brisk/junit-xml (:junit-xml config))))
+
 (defn- with-hook-config
   "Add `:hooks` and `:worker-setup` to `m` when they are not empty."
   [m {:keys [hooks worker-setup]}]

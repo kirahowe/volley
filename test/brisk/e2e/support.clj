@@ -75,3 +75,10 @@
   "The `N tests | ...` line of brisk's CI output."
   [out]
   (first (filter #(re-find #"^\d+ tests? \|" %) (str/split-lines out))))
+
+(defn print-result
+  "brisk's own result (`brisk.run-state/result`) from the output of a run
+  with `--print-result`, which prints Kaocha's result shape with it under
+  `:brisk/result`."
+  [out]
+  (:brisk/result (last-edn-line out "{:kaocha")))
