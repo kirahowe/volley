@@ -4,3 +4,4 @@
 .brisk/
 .nrepl-port
 target/
+.claude/
