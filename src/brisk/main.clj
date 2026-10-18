@@ -241,6 +241,7 @@
                      :fail-fast? (:fail-fast? config)
                      :isolate? (:isolate? config)
                      :preload? (:preload? config)
+                     :bindings (:bindings config)
                      :capture-output? (:capture-output? config)
                      :reporter mode
                      :width (if (= :live mode) (term/width) 1000)

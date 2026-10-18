@@ -119,6 +119,7 @@ then in code.
  :workers          8                                ; brisk-only; default depends on :runtime
  :isolate?         false                            ; brisk-only: fresh process per ns
  :preload?         false                            ; brisk-only: each worker requires every planned ns first
+ :bindings         {my.ns/*var* value}              ; Kaocha's :kaocha/bindings, bound in the workers
  :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
  :hooks            {:pre-load [my.hooks/load!] ...}  ; only with :kaocha.plugin/hooks; see "Hooks"
  :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
@@ -179,6 +180,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
           :variants {[k ...] passes-or-:excluded}}  ; visible statically (see below)
  :preload [ns ...]          ; only then (or with --preload): require these first
+ :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
 {:op :configure                               ; right after spawn, only when hooks or setup exist

@@ -313,3 +313,12 @@
     (let [[exit res] (result "load-order" ["--workers" "2" "--isolate"])]
       (is (= 1 exit))
       (is (= :error (get-in res [:namespaces 'lo.b-test])) "roughly= does not resolve"))))
+
+(deftest kaocha-bindings-reach-the-tests
+  (let [[exit res] (result "bindings" [])]
+    (is (= 0 exit))
+    (is (= '{bd.a-test/sees-the-binding :passed} (executed res))))
+  (testing "a var that does not exist stops the namespace, as Kaocha fails the run"
+    (let [{:keys [exit out]} (run "bindings" [] {"tests.edn" "#kaocha/v1 {:bindings {bd.config/*nope* 1}}"})]
+      (is (= 1 exit))
+      (is (str/includes? out ":kaocha/bindings: no such var bd.config/*nope*")))))

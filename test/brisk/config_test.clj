@@ -194,9 +194,13 @@
             "unsupported plugin :my.plugin/thing ignored"]
            (:warnings (config/normalize {:plugins [:notifier :my.plugin/thing]} {})))))
   (testing "unsupported options warn rather than vanish"
-    (let [w (:warnings (config/normalize {:bindings {'a/b 1} :kaocha.hooks/pre-load 'x/y} {}))]
-      (is (some #(str/includes? % ":kaocha/bindings") w))
+    (let [w (:warnings (config/normalize {:kaocha/nonsense 1 :kaocha.hooks/pre-load 'x/y} {}))]
+      (is (some #(str/includes? % ":kaocha/nonsense") w))
       (is (some #(str/includes? % ":kaocha.hooks/pre-load") w))))
+  (testing ":kaocha/bindings are supported, under either key"
+    (is (= {'a/b 1} (:bindings (config/normalize {:bindings {'a/b 1}} {}))))
+    (is (= {'a/b 1} (:bindings (config/normalize {:kaocha/bindings {'a/b 1}} {}))))
+    (is (empty? (:warnings (config/normalize {:bindings {'a/b 1}} {})))))
   (testing "suites of other types are kept but flagged"
     (let [c (config/normalize {:tests [{:id :cljs :type :kaocha.type/cljs}]} {})]
       (is (= [:cljs] (mapv :id (:tests c))))

@@ -114,6 +114,9 @@ other than `kaocha.report/documentation`. The other reporters fall back to
 brisk's own output. Flags of a listed plugin that brisk does not run, such
 as cloverage's `--cov-output`, are accepted with a warning.
 
+`:kaocha/bindings` (or `:bindings`) in `tests.edn` are bound in every
+worker around loading and running each namespace.
+
 `kaocha.plugin/junit-xml` is built in: with the plugin in `:plugins` (or
 `--plugin kaocha.plugin/junit-xml`), `--junit-xml-file FILE` or
 `:kaocha.plugin.junit-xml/target-file` writes the same report as

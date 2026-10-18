@@ -159,6 +159,8 @@
   is `{:hooks [entry] :config normalized-config}`: the hooks to run in the
   parent after the summary. `:junit-xml` is the config's `:junit-xml` plus
   `:timestamp` and `:cwd`: the report is written after the summary.
+  `:bindings` (`{var-sym value}`, Kaocha's `:kaocha/bindings`) goes to the
+  workers with every run message.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -209,6 +211,7 @@
              :capture-output? (boolean (:capture-output? opts true))}
       suite (assoc :suite suite)
       (seq preload) (assoc :preload preload)
+      (seq (:bindings opts)) (assoc :bindings (:bindings opts))
       (:fail-fast? opts) (assoc :fail-fast? true))))
 
 (defn- decide

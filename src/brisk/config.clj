@@ -348,7 +348,7 @@
   #{:kaocha/tests :kaocha/plugins :kaocha/reporter :kaocha/color? :kaocha/fail-fast?
     :kaocha/watch? :kaocha/cli-options :kaocha/cli-args
     ;; unqualified leftovers that kaocha-normalize copies through
-    :capture-output? :diff-style :bindings
+    :capture-output? :diff-style :bindings :kaocha/bindings
     ;; brisk's own shape, so a normalized config can be normalized again
     :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
     :junit-xml
@@ -583,5 +583,6 @@
               reporter-warnings
               (cli-warnings cli-options)
               (cli/plugin-flag-warnings cli-options supported-plugins))))}
-       junit (assoc :junit-xml junit))
+       junit (assoc :junit-xml junit)
+       (map? (:kaocha/bindings cfg)) (assoc :bindings (:kaocha/bindings cfg)))
       top-hooks))))

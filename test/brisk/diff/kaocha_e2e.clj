@@ -55,6 +55,7 @@
                           ["suites" ["unit"]]
                           ["suites" [":integration"]]
                           ["skipped-suite" []]
+                          ["bindings" []]
                           ["filters" []]
                           ["filters" ["--focus" "filters.core-test/plain"]]
                           ["filters" ["--focus" "filters.other-test"]]

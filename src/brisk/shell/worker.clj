@@ -414,6 +414,38 @@
                                        run)]
             [hs e :run pass]))))))
 
+(defn- binding-map
+  "Kaocha's `:kaocha/bindings` (`{var-sym value}`) as a var -> value map for
+  `with-bindings`, loading each var's namespace as `kaocha.config/binding-map`
+  does. Throws when a var does not exist, which makes the namespace a setup
+  error, as Kaocha fails the run then."
+  [bindings]
+  (into {} (map (fn [[sym v]]
+                  [(or (requiring-resolve sym)
+                       (throw (ex-info (str ":kaocha/bindings: no such var " sym) {:var sym})))
+                   v]))
+        bindings))
+
+(defn- run-bound
+  "The part of `run-assignment!` inside `:kaocha/bindings`: setup, load,
+  run, and the namespace's terminal events. `bind-error` is why the
+  bindings could not be made, which stops the namespace like a failed
+  setup."
+  [emit! decide hs {:keys [ns run-id suite] :as cmd} t0 bind-error]
+  (let [hs (hooks/setup hs suite)
+        [hs error phase pass] (cond
+                                bind-error [hs bind-error :setup]
+                                (hooks/setup-error hs) [hs (hooks/setup-error hs) :setup]
+                                :else (let [hs (preload! hs (:preload cmd))
+                                            [hs e] (load-ns hs suite ns)]
+                                        (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
+    (when error
+      (emit! (error-event ns run-id phase error)))
+    (emit! (cond-> {:event :ns/end :ns ns :run-id run-id
+                    :duration-ms (duration-ms t0 (System/nanoTime))}
+             (and pass (pos? pass)) (assoc :pass pass)))
+    hs))
+
 (defn run-assignment!
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
   `(fn [select ns-sym ns-meta var-sym var-meta] {:run? bool :reason kw})`,
@@ -426,21 +458,13 @@
   `:ns/end`. With `:fail-fast?` the vars after the first failing one are
   not run and get no events. Does not exit the JVM and does not throw."
   ([emit! decide cmd] (run-assignment! emit! decide (hooks/init nil) cmd))
-  ([emit! decide hs {:keys [ns run-id suite] :as cmd}]
+  ([emit! decide hs {:keys [ns run-id] :as cmd}]
    (let [t0 (System/nanoTime)]
      (emit! {:event :ns/start :ns ns :run-id run-id})
-     (let [hs (hooks/setup hs suite)
-           [hs error phase pass] (if-let [e (hooks/setup-error hs)]
-                              [hs e :setup]
-                              (let [hs (preload! hs (:preload cmd))
-                                    [hs e] (load-ns hs suite ns)]
-                                (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
-       (when error
-         (emit! (error-event ns run-id phase error)))
-       (emit! (cond-> {:event :ns/end :ns ns :run-id run-id
-                       :duration-ms (duration-ms t0 (System/nanoTime))}
-                (and pass (pos? pass)) (assoc :pass pass)))
-       hs))))
+     (let [[bmap bind-error] (try [(binding-map (:bindings cmd)) nil]
+                                  (catch Throwable e [nil e]))]
+       (with-bindings* (or bmap {})
+         #(run-bound emit! decide hs cmd t0 bind-error))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Process entry point

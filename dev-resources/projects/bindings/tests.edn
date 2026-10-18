@@ -1,0 +1,1 @@
+#kaocha/v1 {:bindings {bd.config/*mode* :configured}}
