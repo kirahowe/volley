@@ -3,6 +3,7 @@
    [brisk.discover :as discover]
    [brisk.gen.compat :as g]
    [clojure.test :refer [deftest is testing]]
+   [clojure.test.check :as tc]
    [clojure.test.check.clojure-test :refer [defspec]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.properties :as prop]))
@@ -20,13 +21,26 @@
                  cut gen/nat]
     (map? (discover/ns-info "t.clj" (subs text 0 (min cut (count text)))))))
 
-(defspec ns-form-round-trips 300
+(def ^:private round-trip
   (prop/for-all [{:keys [text] :as expected} g/ns-file]
     (let [info (discover/ns-info "test/x_test.clj" text)]
       (and (nil? (:error info))
            (nil? (:scan-error info))
            (= (select-keys expected [:ns :requires :as-alias-only :meta :vars])
               (select-keys info [:ns :requires :as-alias-only :meta :vars]))))))
+
+(defspec ns-form-round-trips 300 round-trip)
+
+(deftest ns-form-round-trips-at-a-seed-that-generated-nil
+  ;; Seed 9 once generated `(deftest nil ...)`: the generator expected a var
+  ;; named by the symbol `nil`, which reads back as the literal nil.
+  (is (:pass? (tc/quick-check 300 round-trip :seed 9 :max-size 200))))
+
+(deftest a-var-or-lib-named-nil-is-not-a-symbol
+  (let [info (discover/ns-info "x.clj" "(ns a (:require [nil :as-alias l] [true :as t]))\n(deftest nil (is true))")]
+    (is (= {} (:vars info)))
+    (is (= #{} (:as-alias-only info)))
+    (is (not (contains? (:requires info) nil)))))
 
 (defspec as-alias-only-never-overlaps-requires 200
   (prop/for-all [{:keys [text]} g/ns-file]

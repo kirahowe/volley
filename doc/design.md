@@ -214,7 +214,17 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
 - The worker calls the 5-arity `brisk.select/decide` with the loaded
   namespace's real metadata (merged over the static `:ns-meta` copy).
 - `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
-  error is in `:error`. Values are cut at 100 items, 8 levels and 10000
+  error is in `:error`.
+- A `:fail` whose actual value is a failed `clojure.test.check/quick-check`
+  result (what a failing `defspec` reports) also carries `:check {:seed n
+  :num-tests n :failing-size n :smallest value :fail value :result value}`
+  (`brisk.protocol/encode-check`; `:result` only when the property returned
+  something other than false). `brisk.render` shows the seed, the count, the
+  shrunk input and a rerun call instead of the raw result map.
+- `:file` and `:line` of a `:fail` are the reported ones only when the file
+  belongs to the project (`brisk.shell.worker/project-file?`). Otherwise,
+  for example an interpreter file that test.check found by walking the
+  stack on babashka, they are the test var's own. Values are cut at 100 items, 8 levels and 10000
   characters; a cut value has no `:edn`.
 
 Values (`:expected`, `:actual`) are sent as

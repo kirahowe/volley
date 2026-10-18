@@ -6,6 +6,7 @@
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [clojure.test.check.clojure-test :refer [defspec]]
+   [clojure.test.check.generators :as gen]
    [clojure.test.check.properties :as prop]))
 
 (defspec event-round-trips 200
@@ -111,3 +112,19 @@
     (is (= "java.lang.IllegalStateException" (:class (:cause err))))
     (is (nil? (:data (:cause err))))
     (is (every? string? (:trace (:cause err))))))
+
+(defspec encode-check-keeps-seed-count-and-smallest-input 200
+  (prop/for-all [seed gen/large-integer
+                 n gen/nat
+                 smallest (gen/vector gen/small-integer 0 3)]
+    (let [m {:pass? false :result false :seed seed :num-tests n :failing-size 1
+             :fail smallest :shrunk {:smallest smallest}}
+          c (protocol/encode-check m)]
+      (and (= seed (:seed c)) (= n (:num-tests c))
+           (= smallest (get-in c [:smallest :edn]))
+           (not (contains? c :result))))))
+
+(defspec encode-check-is-nil-for-anything-else 200
+  (prop/for-all [v (gen/one-of [gen/any-equatable
+                                (gen/return {:pass? true :seed 1 :num-tests 1 :shrunk {}})])]
+    (nil? (protocol/encode-check v))))

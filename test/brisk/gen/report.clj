@@ -75,16 +75,30 @@
 (defn- ns-sym [i] (symbol (str "gen.ns" i "-test")))
 (defn- var-sym [j] (symbol (str "t" j)))
 
+(def check
+  "The `:check` of a failed test.check property, as `brisk.protocol/encode-check`
+  builds it."
+  (gen/let [seed gen/large-integer
+            num-tests gen/nat
+            size gen/nat
+            [smallest] comparison
+            result (gen/one-of [(gen/return nil) (gen/fmap (fn [[v]] v) comparison)])]
+    (cond-> {:seed seed :num-tests num-tests :failing-size size
+             :smallest smallest :fail smallest}
+      result (assoc :result result))))
+
 (defn- assertion-event [ns var type]
   (gen/let [[expected actual] comparison
             message maybe-text
             contexts (gen/vector hostile-text 0 3)
             line gen/nat
-            err error]
+            err error
+            chk (gen/frequency [[4 (gen/return nil)] [1 check]])]
     (cond-> {:event :assertion :ns ns :var var :type type :message message
              :contexts contexts :file "test/gen_test.clj" :line (inc line)
              :expected expected :actual actual}
-      (= :error type) (assoc :error err))))
+      (= :error type) (assoc :error err)
+      (and chk (= :fail type)) (assoc :check chk))))
 
 (defn- var-script [ns j]
   (let [var (var-sym j)]

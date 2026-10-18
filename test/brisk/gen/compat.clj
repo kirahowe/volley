@@ -8,11 +8,19 @@
 ;; ---------------------------------------------------------------------------
 ;; Names
 
+(def reserved-segments
+  "Segments that read back as literals rather than symbols: a symbol named
+  `nil` prints as `nil`, which the reader turns into nil."
+  #{"nil" "true" "false"})
+
 (def segment
-  "A lowercase identifier segment such as `core` or `a2-b`."
-  (gen/fmap (fn [[c rest]] (apply str c rest))
-            (gen/tuple (gen/elements (seq "abcdefghijklmnopqrstuvwxyz"))
-                       (gen/vector (gen/elements (seq "abcdefghijklmnopqrstuvwxyz0123456789-")) 0 5))))
+  "A lowercase identifier segment such as `core` or `a2-b`. Never one of
+  `reserved-segments`."
+  (gen/such-that (complement reserved-segments)
+                 (gen/fmap (fn [[c rest]] (apply str c rest))
+                           (gen/tuple (gen/elements (seq "abcdefghijklmnopqrstuvwxyz"))
+                                      (gen/vector (gen/elements (seq "abcdefghijklmnopqrstuvwxyz0123456789-")) 0 5)))
+                 100))
 
 (def ns-sym
   "A namespace symbol like `app.core`."

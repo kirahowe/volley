@@ -5,6 +5,7 @@
    [brisk.run-state :as rs]
    [brisk.select :as select]
    [brisk.shell.worker :as worker]
+   [clojure.string :as str]
    [clojure.test :as t :refer [deftest is testing]]))
 
 (defn- run-events
@@ -168,3 +169,26 @@
     (let [events (run-events 'exec.ns-pending-test {:decide select/decide :select (skip-spec {})})]
       (is (= [{:event :var/skipped :ns 'exec.ns-pending-test :var 'whole-ns-is-pending :reason :pending}]
              (filter #(= :var/skipped (:event %)) events))))))
+
+(deftest a-failing-defspec-reports-its-check-at-the-var
+  (let [events (run-events 'exec.property-test)
+        a (first (filter #(= :assertion (:event %)) events))]
+    (is (= :fail (:type a)))
+    (is (= 42 (get-in a [:check :seed])))
+    (is (= [3] (get-in a [:check :smallest :edn])) "the shrunk input")
+    (is (pos-int? (get-in a [:check :num-tests])))
+    (testing "the location is the var's file, never an interpreter file"
+      ;; bb gives the path from the project root, the JVM from the classpath root.
+      (is (str/ends-with? (:file a) "exec/property_test.clj"))
+      (is (= 6 (:line a))))))
+
+(deftest project-file-accepts-only-files-of-the-project
+  (let [dir (System/getProperty "user.dir")]
+    (is (worker/project-file? dir true "src/brisk/main.clj"))
+    (is (worker/project-file? dir true (str dir "/src/brisk/main.clj")))
+    (is (not (worker/project-file? dir true "reflector.cljc")))
+    (is (not (worker/project-file? dir true "sci/impl/reflector.cljc")))
+    (is (not (worker/project-file? dir true "/etc/hosts")))
+    (is (not (worker/project-file? dir true "NO_SOURCE_PATH")))
+    (testing "a bare name from a JVM stack frame is trusted"
+      (is (worker/project-file? dir false "helper.clj")))))

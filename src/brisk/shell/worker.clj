@@ -51,6 +51,8 @@
 
 (defn- throwable? [x] (instance? Throwable x))
 
+(defn- bb? [] (some? (System/getProperty "babashka.version")))
+
 (defn- same-file?
   "True when report file `rf` (often just a base name, or `NO_SOURCE_PATH`
   on babashka) can be trusted to mean the var's file `vf`."
@@ -58,15 +60,38 @@
   (and (string? rf) (string? vf)
        (or (.endsWith ^String vf ^String rf) (.endsWith ^String rf ^String vf))))
 
+(defn- bare-name? [^String f]
+  (not (or (.contains f "/") (.contains f java.io.File/separator))))
+
+(defn project-file?
+  "True when report file `rf` can be shown as the place of a failure: a
+  file under directory `dir` (relative to it or absolute), or, on the JVM
+  (`bb?` false), a bare file name from a stack frame of compiled code. On
+  babashka a bare name or a path outside the project comes from the
+  interpreter (a file such as `reflector.cljc` that a stack-walking
+  assertion like test.check's picked up), not from the user's code."
+  [dir bb? rf]
+  (and (string? rf)
+       (not= "NO_SOURCE_PATH" rf)
+       (let [f (java.io.File. ^String rf)
+             abs (if (.isAbsolute f) f (java.io.File. ^String dir ^String rf))]
+         (or (and (.isFile abs)
+                  (.startsWith (.getCanonicalPath abs)
+                               (str (.getCanonicalPath (java.io.File. ^String dir)) java.io.File/separator)))
+             (and (not bb?) (bare-name? rf))))))
+
 (defn- location
   "Where an assertion happened. A `:fail` report carries the `is` call site
-  (`NO_SOURCE_PATH` on babashka). An `:error` report on the JVM carries the
-  throw site, possibly inside the JDK, so fall back to the var's own."
+  (`NO_SOURCE_PATH` on babashka; on either runtime, test.check reports the
+  first stack frame it finds, which on babashka is an interpreter file). An
+  `:error` report on the JVM carries the throw site, possibly inside the
+  JDK. Whenever the reported file is not the project's, fall back to the
+  var's own file and line."
   [m vm]
   (let [rf (:file m)]
     (cond
       (same-file? rf (:file vm)) {:file (:file vm) :line (or (:line m) (:line vm))}
-      (and (= :fail (:type m)) (string? rf) (not= "NO_SOURCE_PATH" rf))
+      (and (= :fail (:type m)) (project-file? (System/getProperty "user.dir") (bb?) rf))
       {:file rf :line (:line m)}
       (and (= :fail (:type m)) (= "NO_SOURCE_PATH" rf))
       {:file (:file vm) :line (or (:line m) (:line vm))}
@@ -88,20 +113,22 @@
   [ns-sym v contexts m]
   (let [actual (:actual m)
         loc (location m (meta v))
-        error? (and (= :error (:type m)) (throwable? actual))]
-    {:event :assertion
-     :ns ns-sym
-     :var (some-> v meta :name)
-     :type (:type m)
-     :message (some-> (:message m) str)
-     :contexts (vec (map str contexts))
-     :expected (protocol/encode-value (:expected m))
-     :actual (if error?
-               {:str (str (.getName (class actual)) ": " (ex-message actual))}
-               (protocol/encode-value actual))
-     :file (rel (:file loc))
-     :line (:line loc)
-     :error (when error? (protocol/encode-error (Throwable->map actual)))}))
+        error? (and (= :error (:type m)) (throwable? actual))
+        check (when (= :fail (:type m)) (protocol/encode-check actual))]
+    (cond-> {:event :assertion
+             :ns ns-sym
+             :var (some-> v meta :name)
+             :type (:type m)
+             :message (some-> (:message m) str)
+             :contexts (vec (map str contexts))
+             :expected (protocol/encode-value (:expected m))
+             :actual (if error?
+                       {:str (str (.getName (class actual)) ": " (ex-message actual))}
+                       (protocol/encode-value actual))
+             :file (rel (:file loc))
+             :line (:line loc)
+             :error (when error? (protocol/encode-error (Throwable->map actual)))}
+      check (assoc :check check))))
 
 ;; ---------------------------------------------------------------------------
 ;; Running a namespace

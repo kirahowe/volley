@@ -339,3 +339,22 @@
       (is (str/includes? report "expected: (empty? xs)"))
       (is (str/includes? report "actual:   (not (empty? [1]))"))
       (is (not (str/includes? report "diff (- expected"))))))
+
+(deftest a-failed-property-shows-seed-size-input-and-rerun
+  (let [state (reduce rs/apply-event (rs/init {:namespaces '[p.prop-test]})
+                      [{:event :ns/start :ns 'p.prop-test :worker 1 :at 0}
+                       {:event :var/start :ns 'p.prop-test :var 'small :worker 1 :at 1
+                        :file "test/p/prop_test.clj" :line 6}
+                       {:event :assertion :ns 'p.prop-test :var 'small :type :fail
+                        :file "test/p/prop_test.clj" :line 6 :at 2
+                        :expected {:str "{:result true}" :edn {:result true}}
+                        :actual {:str "{:shrunk ... huge map ...}"}
+                        :check {:seed 42 :num-tests 7 :failing-size 6
+                                :smallest {:str "[3]" :edn [3]} :fail {:str "[5]" :edn [5]}}}
+                       {:event :var/end :ns 'p.prop-test :var 'small :worker 1 :at 3 :pass 0}
+                       {:event :ns/end :ns 'p.prop-test :worker 1 :at 4}])
+        report (render/failure-report state {:width 120 :color? false})]
+    (is (str/includes? report "property failed after 7 tests (seed 42, size 6)"))
+    (is (str/includes? report "smallest failing input: [3]"))
+    (is (str/includes? report "rerun: (p.prop-test/small 7 :seed 42)"))
+    (is (not (str/includes? report "huge map")) "the raw result map is not printed")))

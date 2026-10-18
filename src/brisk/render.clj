@@ -420,10 +420,24 @@
           (map #(paint opts :gray (str "  | " %))
                (limit-lines (split-text output) 30)))))
 
+(defn- check-lines
+  "A failed test.check property: how it failed, the shrunk input, and how
+  to replay it with the same seed."
+  [opts {:keys [ns var check]}]
+  (let [{:keys [seed num-tests failing-size smallest result]} check
+        first-line (fn [v] (first (split-text (value-str (normalize-value v)))))]
+    (concat
+     [(str "property failed after " (plural num-tests "test")
+           " (seed " seed (when failing-size (str ", size " failing-size)) ")")]
+     [(str "smallest failing input: " (paint opts :red (first-line smallest)))]
+     (when result [(str "result: " (paint opts :red (first-line result)))])
+     (when (and ns var)
+       [(paint opts :gray (str "rerun: (" (qualified ns var) " " num-tests " :seed " seed ")"))]))))
+
 (defn- failure-lines
   "Lines for one failure. Captured output is added when `output?` is true."
-  [opts {:keys [kind contexts message error] :as f} output?]
-  (let [{:keys [expected actual pair]} (when (#{:fail :error} kind) (comparison f))
+  [opts {:keys [kind contexts message error check] :as f} output?]
+  (let [{:keys [expected actual pair]} (when (and (#{:fail :error} kind) (not check)) (comparison f))
         loc (location f)]
     (concat
      [(str (kind-label opts kind) " " (header-text f)
@@ -438,6 +452,7 @@
        (when expected [(str "expected: " (paint opts :green (first (split-text expected))))])
        (when actual [(str "actual:   " (paint opts :red (first (split-text actual))))])
        (when pair (diff-section opts pair))
+       (when check (check-lines opts f))
        (when (#{:error :ns-error} kind) (error-lines opts error 0))
        (when output? (output-section opts (:output f))))))))
 

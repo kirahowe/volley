@@ -180,6 +180,37 @@
        {:str (str "#<unprintable " (or (ex-message e) (str (class e))) ">")}))))
 
 ;; ---------------------------------------------------------------------------
+;; test.check results
+
+(defn check-result?
+  "True when `v` looks like the result map of `clojure.test.check/quick-check`
+  for a failed property, which is what a failing `defspec` reports as its
+  `:actual`."
+  [v]
+  (and (map? v)
+       (false? (:pass? v))
+       (contains? v :seed)
+       (contains? v :num-tests)
+       (contains? v :shrunk)))
+
+(defn encode-check
+  "The parts of a failed quick-check result worth showing:
+  `{:seed n :num-tests n :failing-size n :smallest value :fail value
+  :result value}`, values encoded as by `encode-value`. `:result` is left
+  out when the property simply returned false. nil when `v` is not a failed
+  check result."
+  ([v] (encode-check v nil))
+  ([v opts]
+   (when (check-result? v)
+     (let [{:keys [seed num-tests failing-size shrunk fail result]} v]
+       (cond-> {:seed seed
+                :num-tests num-tests
+                :failing-size failing-size
+                :smallest (encode-value (:smallest shrunk (:fail v)) opts)
+                :fail (encode-value fail opts)}
+         (not (false? result)) (assoc :result (encode-value result opts)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Errors
 
 (def default-runner-prefixes

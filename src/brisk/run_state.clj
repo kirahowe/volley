@@ -102,7 +102,7 @@
       (set-worker worker {:ns ns :var var :var-at at})))
 
 (def ^:private assertion-keys
-  [:type :message :contexts :expected :actual :file :line :error :at])
+  [:type :message :contexts :expected :actual :file :line :error :check :at])
 
 (defn- on-assertion [state e]
   (update-in state (var-path e)
