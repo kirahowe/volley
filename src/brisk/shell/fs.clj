@@ -48,13 +48,14 @@
 
 (defn environment
   "Environment the config reader may consult: env vars, system properties,
-  host and user names, CPU count."
+  host and user names, CPU count, and whether this is babashka."
   []
   {:env (into {} (System/getenv))
    :props (into {} (map (fn [[k v]] [(str k) (str v)])) (System/getProperties))
    :hostname (try (.getHostName (java.net.InetAddress/getLocalHost)) (catch Exception _ nil))
    :user (System/getProperty "user.name")
-   :cpus (.availableProcessors (Runtime/getRuntime))})
+   :cpus (.availableProcessors (Runtime/getRuntime))
+   :bb? (some? (System/getProperty "babashka.version"))})
 
 (defn read-timings
   "Durations saved by the last run, `{ns-sym millis}`; empty when absent or

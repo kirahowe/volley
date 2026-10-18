@@ -12,6 +12,7 @@
   `apply-cli-opts` (see the docstrings of the private helpers for the Kaocha
   function each one mirrors)."
   (:require
+   [brisk.runtime :as runtime]
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
@@ -445,8 +446,6 @@
   [& xs]
   (first (filter some? xs)))
 
-(defn- default-workers [{:keys [cpus]}]
-  (-> (or cpus 4) (min 8) (max 1)))
 
 (defn normalize
   "Normalize raw `tests.edn` data (from `read-config`, or nil when the file is
@@ -457,7 +456,8 @@
   overrides of `kaocha.config/apply-cli-opts`; the CLI always wins. Accepts
   both `:test-paths` and `:kaocha/test-paths` style keys. Unsupported plugins
   and options become `:warnings` entries. `env` may carry `:cpus` for the
-  default worker count.
+  default worker count and `:bb?` (default true) for the runtime of the
+  parent, which is also the default worker runtime.
 
   Total: input Kaocha would reject (where it exits with an error, such as a
   string for `:test-paths`) yields the defaults and a message in `:errors`,
@@ -479,7 +479,9 @@
                                (:reporter raw)
                                (:kaocha/reporter raw)))
          suites (->vec (:kaocha/tests cfg))
-         tests (mapv suite-view suites)]
+         tests (mapv suite-view suites)
+         runtime (runtime/resolve-runtime (pick (:runtime cli-options) (:runtime raw))
+                                          (get env :bb? true))]
      {:tests tests
       :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
       :filters (config-filters cfg cli-options)
@@ -491,14 +493,16 @@
                                       true))
       :reporter reporter
       :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
-      :workers (pick (:workers cli-options) (:workers raw) (default-workers env))
+      :workers (pick (:workers cli-options) (:workers raw) (runtime/default-workers runtime (:cpus env)))
       :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
-      :runtime (pick (:runtime cli-options) (:runtime raw) :bb)
+      :runtime runtime
       :warnings
       (vec (distinct
             (concat
              (when bad? ["tests.edn did not contain a map, using defaults"])
              (->vec (:warnings raw))
+             (when (and (= :jvm runtime) (pick (:isolate cli-options) (:isolate? raw)))
+               ["--isolate starts a new JVM for every namespace, which is slow"])
              (for [p plugins :when (not (contains? supported-plugins p))]
                (str "unsupported plugin " (pr-str p) " ignored"))
              (for [k (sort-by str (keys cfg))

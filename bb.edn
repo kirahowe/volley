@@ -6,6 +6,9 @@
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
         :requires ([brisk.main :as main])
         :task (System/exit (main/run *command-line-args*))}
+  test:jvm {:doc "Run brisk's own test suite with the parent on the JVM (clojure -M:test); takes brisk's flags"
+            :task (System/exit (:exit (apply shell {:continue true} "clojure" "-M:test" "-m" "brisk.main"
+                                             *command-line-args*)))}
   test:bootstrap {:doc "Run brisk's own test suite with plain clojure.test"
                   :extra-paths ["test" "dev-resources"]
                   :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}

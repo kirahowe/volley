@@ -1,7 +1,7 @@
 # brisk design
 
-brisk is a test runner for `clojure.test` that runs on babashka (and later
-the JVM). It runs test namespaces in parallel worker processes, shows results
+brisk is a test runner for `clojure.test` that runs on babashka and on the
+JVM. It runs test namespaces in parallel worker processes, shows results
 live as they happen, and has a watch mode with vitest-style keys. Moving from
 Kaocha takes one binstub change: brisk reads `tests.edn` and accepts
 Kaocha's CLI flags.
@@ -29,7 +29,7 @@ other than `clojure.test`, ClojureScript, coverage.
 ## Architecture
 
 ```
-            ┌──────────────── parent process (bb) ────────────────┐
+            ┌─────────────── parent process (bb or JVM) ──────────┐
  argv ──▶   │ cli ─▶ config ─▶ discover ─▶ select ─▶ schedule     │
  tests.edn  │                                  ▲         │        │
             │                     run-state ◀──┴─ events │        │
@@ -73,6 +73,7 @@ Pure core:
 | `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
 | `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
 | `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
+| `brisk.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
 
@@ -81,6 +82,8 @@ Shell:
 | `brisk.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
 | `brisk.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
 | `brisk.shell.fs` | Glob test paths, read files, snapshot modification times. |
+| `brisk.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
+| `brisk.shell.jvm` | The one JVM-only call (`RuntimeMXBean` input arguments), loaded through `requiring-resolve` because babashka lacks `java.lang.management`. |
 | `brisk.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
 | `brisk.shell.watch` | The watch loop: polls mtimes and keys, drives `brisk.watch` and one engine run at a time. |
 | `brisk.main` | `-main`: wire everything together and run the event loop (or hand over to `brisk.shell.watch`). |
@@ -107,9 +110,9 @@ then in code.
  :capture-output?  true
  :reporter         :live                            ; brisk reporter keyword
  :watch?           false
- :workers          8                                ; brisk-only
+ :workers          8                                ; brisk-only; default depends on :runtime
  :isolate?         false                            ; brisk-only: fresh process per ns
- :runtime          :bb                              ; brisk-only: :bb or :jvm
+ :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
  :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]
  :errors           []                               ; config Kaocha would exit on; defaults used
  :plugins          [:kaocha.plugin/filter ...]
@@ -406,6 +409,30 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   or `^:brisk/serial` metadata runs after the parallel batch, alone. This
   needs the namespace's metadata, which `brisk.discover` reads from the `ns`
   form statically.
+- **JVM mode.** Workers run on the runtime the parent runs on, unless
+  `--runtime` (or `:runtime` in tests.edn) says otherwise; a bb parent is
+  detected by the `babashka.version` system property.
+  * A JVM parent starts `java <defaults> <forwarded options> -cp <its
+    classpath + suite test paths> clojure.main -m brisk.shell.worker` with
+    its own `java`. The forwarded options are the parent's
+    `RuntimeMXBean` input arguments minus things that collide with the
+    parent (`brisk.runtime/forward-jvm-args`). `-XX:TieredStopAtLevel=1`
+    comes first so a forwarded setting wins.
+  * `--runtime jvm` from a bb parent computes the classpath with `clojure
+    -Spath -A<aliases>`: `--aliases`, else `:test` if deps.edn defines it,
+    else none. It caches the result in `.brisk/classpath-<key>.txt`, where
+    the key is a SHA-256 of deps.edn and the aliases; a cache whose jars
+    are gone is recomputed. brisk's own source root (found from
+    `brisk/shell/worker.clj` on the parent's classpath) is put in front,
+    and the aliases' `:jvm-opts` are passed to the workers.
+  * Default worker count: CPU count capped at 8 (bb) or 4 (JVM). The JVM
+    cap comes from the benchmark below.
+  * A JVM run costs about half a second more than Kaocha's in-process
+    run (parent JVM plus worker JVM), and each worker loads the project's
+    source again, so the engine already starts every worker at once, workers
+    are kept across namespaces, and a worker loads `clojure.test` and
+    `brisk.select` before it sends `:worker/ready`. `--isolate` is allowed
+    with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.brisk/timings.edn`).
 - **Fail fast.** On the first failure, stop handing out work and shut workers
@@ -416,7 +443,7 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
   closest brisk reporter), `--plugin` (warn), `--print-config`,
-  `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--runtime bb|jvm`.
+  `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions
 
@@ -435,9 +462,40 @@ exactly. Each is the conservative option.
   namespace left in the queue counts as one failure, so a broken
   environment can never exit 0. Fail-fast leftovers are listed but not
   counted.
-- **`--runtime jvm`** is accepted and warns; workers run on babashka.
 - **Watch mode with no tests at startup** exits 0 with Kaocha's "No tests
   were found" warning instead of waiting for tests to appear.
+- **Classpath cache.** The `--runtime jvm` cache key covers deps.edn and
+  the aliases only. Edits to a local dependency's deps.edn or to the
+  user-level deps.edn go unnoticed until the cache file is deleted.
+  Hashing the output of `clojure -Spath` would need running it each time,
+  which is the cost the cache avoids.
+- **Forwarded JVM options.** The parent's options are copied rather than
+  rebuilt from the alias, so `-J` flags and `JAVA_TOOL_OPTIONS` take effect.
+  A debugger, JMX port or socket REPL is not copied, since the parent holds
+  the port. The heap size is copied as is, so N workers can use N times
+  the parent's `-Xmx`.
+
+### JVM benchmark
+
+Wall time in seconds of `clojure -M:test` (Kaocha 1.91.1392) and of
+`clojure -M:test:brisk --workers N` on four copies of real projects, three
+runs each, on a 16-core Mac that was also busy with other work (load
+average 12 to 17), so the spread is wide. Every run had the same executed
+vars, assertion counts and pass/fail per var as Kaocha.
+
+| Project (vars) | Kaocha | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|
+| local-coder (23) | 2.2, 2.2, 2.8 | 2.7 | 2.7 | 2.7 | 2.8 to 2.9 |
+| hosted-clay (70) | 8.9, 12.2, 13.1 | 9.2 to 9.6 | 8.2 | 8.3 to 8.7 | 11.1 to 11.6 |
+| secrets (345) | 110, 112, 127 | | 70 to 71 | 70 to 76 | 72 to 80 |
+| reader (244) | 436, 590, 631 | | | 188, 195, 351 | 234, 380, 490 |
+
+More workers than four never helped: 8 workers were slower than 2 or 4 on
+hosted-clay and no faster on secrets, because each JVM loads the same
+source and the cores were shared. Gains come from overlapping namespaces
+(secrets: the one 62-second test sets the floor; reader: embedded Postgres
+setup overlaps). For a suite of a few seconds Kaocha's single JVM wins by
+the cost of starting a second one.
 
 ### Deliberate divergences from Kaocha
 
@@ -455,6 +513,10 @@ difference:
 - **Fail-fast.** Kaocha stops at the first failing assertion, even inside
   a namespace. brisk stops handing out namespaces; the ones already
   running (with one worker, just the failing one) finish.
+- **Load error class on the JVM.** The JVM wraps a missing-namespace error
+  raised while loading a test namespace in a `CompilerException`; babashka
+  throws the `FileNotFoundException` itself. brisk reports whatever the
+  worker saw, with the cause chain.
 - **A test that calls `System/exit`.** It ends Kaocha's process. In brisk
   it ends one worker; the namespace is reported as a CRASH and the run
   goes on.

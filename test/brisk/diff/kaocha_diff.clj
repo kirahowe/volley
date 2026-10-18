@@ -33,7 +33,7 @@
     (plugin/run-hook* chain :kaocha.hooks/cli-options @#'runner/cli-options)))
 
 (defn- brisk-only? [token]
-  (boolean (re-find #"^--(no-)?(workers|runtime|isolate)" token)))
+  (boolean (re-find #"^--(no-)?(workers|runtime|isolate|aliases)" token)))
 
 (defn- kaocha-parse [argv]
   (let [{:keys [options arguments errors]} (tcli/parse-opts argv kaocha-cli-specs)]

@@ -7,7 +7,6 @@
   event queue, the worker process handles, and the frame height of the
   live view, all local to `run!`."
   (:require
-   [babashka.classpath :as cp]
    [brisk.cli :as cli]
    [brisk.config :as config]
    [brisk.discover :as discover]
@@ -15,6 +14,7 @@
    [brisk.select :as select]
    [brisk.shell.fs :as bfs]
    [brisk.shell.pool :as pool]
+   [brisk.shell.runtime :as runtime]
    [brisk.shell.terminal :as term]
    [brisk.shell.watch :as watch-loop]
    [clojure.string :as str])
@@ -40,10 +40,7 @@
         read (config/read-config text (cond-> (assoc (select-keys env [:env :props :hostname :user])
                                                      :include (bfs/include-resolver file))
                                         (:profile options) (assoc :profile (:profile options))))
-        cfg (config/normalize (:config read) options env)
-        cfg (cond-> cfg
-              (= :jvm (:runtime cfg))
-              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka"))]
+        cfg (config/normalize (:config read) options env)]
     {:cli parsed
      :config (update cfg :warnings into (:warnings read))
      :read-error (:error read)
@@ -57,17 +54,6 @@
        (mapcat :test-paths)
        bfs/clojure-files
        (mapv #(discover/ns-info % (bfs/read-file %)))))
-
-(defn- worker-classpath
-  "The parent's classpath plus every suite's test paths, which Kaocha adds
-  to the classpath when it loads a suite (`kaocha.testable/load`). Source
-  paths are not added: Kaocha only uses them for watching."
-  [cfg]
-  (let [extra (->> (:tests cfg)
-                   (mapcat :test-paths)
-                   (map bfs/absolute))
-        parent (some-> (cp/get-classpath) (str/split (re-pattern java.io.File/pathSeparator)))]
-    (str/join java.io.File/pathSeparator (distinct (concat parent extra)))))
 
 (defn- reporter
   "`:live` needs a terminal; anything else gets the append-only CI output.
@@ -149,9 +135,9 @@
 (defn- run-tests!
   "Start the engine on `plan` and run it to completion. Returns the exit
   code."
-  [plan cfg opts]
+  [plan command opts]
   (let [ctx {:queue (pool/new-queue)
-             :command (pool/bb-command (worker-classpath cfg))
+             :command command
              :handles (volatile! {})
              :height (volatile! 0)}
         kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))
@@ -184,9 +170,9 @@
 (defn- watch-tests!
   "Watch mode: run `brisk.shell.watch` with this namespace's effect carrier.
   `reload` re-reads tests.edn for the loop."
-  [cfg loaded opts reload]
+  [command cfg loaded opts reload]
   (let [ctx {:queue (pool/new-queue)
-             :command (pool/bb-command (worker-classpath cfg))
+             :command command
              :handles (volatile! {})
              :height (volatile! 0)}]
     (watch-loop/watch! {:ctx ctx
@@ -216,6 +202,7 @@
     (or code
         (let [tty? (term/tty?)
               mode (reporter config (:options cli) tty?)
+              {:keys [command error]} (runtime/worker-command config (:aliases (:options cli)))
               opts {:workers (:workers config)
                     :fail-fast? (:fail-fast? config)
                     :isolate? (:isolate? config)
@@ -225,9 +212,10 @@
                     :color? (color? config (:options cli) env tty?)
                     :durations (bfs/read-timings)
                     :started-at (System/currentTimeMillis)}]
-          (if (:watch? config)
-            (watch-tests! config loaded opts #(reload-config args env))
-            (run-tests! plan config opts))))))
+          (cond
+            error (do (print-lines! {:lines [(str "brisk: " error)] :stream :err}) 250)
+            (:watch? config) (watch-tests! command config loaded opts #(reload-config args env))
+            :else (run-tests! plan command opts))))))
 
 (defn -main
   "`bb -m brisk.main [OPTIONS]... [TEST-SUITE]...`"
