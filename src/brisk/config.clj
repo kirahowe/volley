@@ -350,7 +350,7 @@
     ;; unqualified leftovers that kaocha-normalize copies through
     :capture-output? :diff-style :bindings
     ;; brisk's own shape, so a normalized config can be normalized again
-    :workers :isolate? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
+    :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
     :junit-xml
     ;; read by brisk.hooks
     :brisk/worker-setup})
@@ -562,6 +562,7 @@
        :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
        :workers (pick (:workers cli-options) (:workers raw) (runtime/default-workers runtime (:cpus env)))
        :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
+       :preload? (boolean (pick (:preload cli-options) (:preload? raw) false))
        :runtime runtime
        :warnings
        (vec (distinct

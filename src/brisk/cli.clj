@@ -137,6 +137,8 @@
    ;; brisk's own
    {:long "workers" :arg "N" :parse parse-pos-int
     :doc "Number of parallel worker processes."}
+   {:long "preload" :toggle? true
+    :doc "Load every test namespace in each worker before running any, as Kaocha does."}
    {:long "isolate" :toggle? true
     :doc "Run every namespace in a fresh worker process."}
    {:long "runtime" :arg "RUNTIME" :parse parse-runtime

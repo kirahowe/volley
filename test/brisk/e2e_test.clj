@@ -303,3 +303,13 @@
     (let [{:keys [out]} (run "no-capture" [])]
       (is (str/includes? out "printed at load time"))
       (is (not (str/includes? out "debug print from a passing test"))))))
+
+(deftest preload-loads-every-namespace-first-like-kaocha
+  (testing "lo.b-test relies on an assert-expr another test namespace defines"
+    (let [[exit res] (result "load-order" ["--preload" "--workers" "2" "--isolate"])]
+      (is (= 0 exit))
+      (is (= '{lo.a-test/a :passed lo.b-test/b :passed} (executed res)))))
+  (testing "without it, a worker that loads only lo.b-test has no such assertion"
+    (let [[exit res] (result "load-order" ["--workers" "2" "--isolate"])]
+      (is (= 1 exit))
+      (is (= :error (get-in res [:namespaces 'lo.b-test])) "roughly= does not resolve"))))

@@ -147,7 +147,7 @@
   "Initial loop state.
 
   * `plan`  from `brisk.select/plan`
-  * `opts`  `{:workers n :fail-fast? b :isolate? b :capture-output? b
+  * `opts`  `{:workers n :fail-fast? b :isolate? b :preload? b :capture-output? b
               :reporter :live|:ci|:documentation|:result :width n :color? b
               :durations {ns ms} :started-at ms :first-worker-id n}`
 
@@ -178,7 +178,8 @@
                :run run
                :shown nil
                :nses nses
-               :preload (vec (:preload plan))
+               :preload (vec (distinct (concat (:preload plan)
+                                               (when (:preload? opts) (map :ns entries)))))
                :junit-suites (mapv (fn [s] {:id (:id s)
                                             :namespaces (mapv :ns (:namespaces s))
                                             :files (mapv :file (:load-errors s))})

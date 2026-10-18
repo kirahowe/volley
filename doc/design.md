@@ -118,6 +118,7 @@ then in code.
  :watch?           false
  :workers          8                                ; brisk-only; default depends on :runtime
  :isolate?         false                            ; brisk-only: fresh process per ns
+ :preload?         false                            ; brisk-only: each worker requires every planned ns first
  :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
  :hooks            {:pre-load [my.hooks/load!] ...}  ; only with :kaocha.plugin/hooks; see "Hooks"
  :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
@@ -659,7 +660,7 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
   closest brisk reporter), `--plugin` (warn), `--print-config`,
-  `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--runtime bb|jvm`, `--aliases :a:b`.
+  `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--preload`, `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions
 
@@ -750,6 +751,14 @@ difference:
 - **An `:each` fixture that throws.** Kaocha lets the exception end the
   run. brisk reports a namespace error and lists the tests the fixture
   kept from running as skipped (reason `:fixture-failed`).
+- **Load order.** Kaocha loads every test namespace before it runs any,
+  so a test namespace can rely on something another one defines without
+  requiring it (an `assert-expr` method, a spec, a multimethod). brisk
+  loads a namespace in the worker that runs it, so such a dependency holds
+  only when both happen to land in the same worker in the right order.
+  `--preload` (or `:preload? true` in tests.edn) makes each worker require
+  every planned namespace before running any, as Kaocha does, at the cost
+  of loading everything once per worker.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; brisk counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).

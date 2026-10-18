@@ -139,6 +139,10 @@ call `System/exit`), see "Deliberate divergences" in
 - `--workers N`: number of worker processes (default: CPU count, at most 8
   on babashka and at most 4 on the JVM).
 - `--isolate`: start a fresh worker for every namespace.
+- `--preload` (or `:preload? true` in `tests.edn`): each worker loads
+  every test namespace before running any, as Kaocha does. Use it when a
+  test namespace relies on something another one defines without
+  requiring it, such as a custom `assert-expr`.
 - `--runtime bb|jvm`: the worker runtime. Default: the runtime brisk itself
   runs on.
 - `--aliases :a:b`: deps.edn aliases for the classpath of JVM workers
