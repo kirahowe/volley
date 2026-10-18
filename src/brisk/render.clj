@@ -357,18 +357,19 @@
         [(nth inner 1) (nth inner 2)]))))
 
 (defn- comparison
-  "Returns `{:expected str :actual str :pair [e a]}` for an assertion, where
-  :pair is present when both sides have EDN to diff."
+  "Returns `{:expected str :actual str :pair [e a]}` for an assertion. :pair
+  is present only for a failed `(is (= e a))`, the one case where expected
+  and actual are two values to diff (as in Kaocha's
+  `kaocha.report/fail-summary`). Otherwise `:expected` is the asserted form
+  and `:actual` what it evaluated to, and a diff of the two means nothing."
   [{:keys [expected actual]}]
   (let [e (normalize-value expected)
         a (normalize-value actual)
         [x y :as args] (when (contains? a :edn) (not-equal-args (:edn a)))]
-    (cond
-      args {:expected (abbrev x) :actual (abbrev y) :pair [x y]}
-      :else {:expected (some-> e value-str)
-             :actual   (some-> a value-str)
-             :pair     (when (and (contains? e :edn) (contains? a :edn))
-                         [(:edn e) (:edn a)])})))
+    (if args
+      {:expected (abbrev x) :actual (abbrev y) :pair [x y]}
+      {:expected (some-> e value-str)
+       :actual   (some-> a value-str)})))
 
 (defn- diff-section [opts [x y]]
   (when (or (coll? x) (coll? y))

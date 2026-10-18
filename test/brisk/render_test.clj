@@ -326,3 +326,16 @@
           done (filter #(not= :running (rs/ns-result %)) (vals (:namespaces final)))]
       (every? (fn [rec] (= 1 (count (filter #(re-find (re-pattern (str "^" (:ns rec) "( |$)")) %) lines))))
               done))))
+
+(deftest only-equality-failures-get-a-diff
+  (testing "(is (empty? xs)) reports the form and its value; diffing them means nothing"
+    (let [st (reduce rs/apply-event (rs/init {})
+                     [(ev {:event :ns/start :ns 'd-test})
+                      (ev {:event :var/start :ns 'd-test :var 'x})
+                      (ev {:event :assertion :ns 'd-test :var 'x :type :fail
+                           :expected {:str "(empty? xs)" :edn '(empty? xs)}
+                           :actual {:str "(not (empty? [1]))" :edn '(not (empty? [1]))}})])
+          report (render/failure-report st opts)]
+      (is (str/includes? report "expected: (empty? xs)"))
+      (is (str/includes? report "actual:   (not (empty? [1]))"))
+      (is (not (str/includes? report "diff (- expected"))))))
