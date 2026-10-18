@@ -265,9 +265,8 @@
   (`kaocha.testable/run-testable` skips a group whose tests are all
   skipped), so it is neither listed nor counted."
   [{:keys [status vars protocol-error? assertions]}]
-  (boolean
-   (and (= :done status) (not protocol-error?) (empty? assertions)
-        (every? #(and (= :skipped (:phase %)) (contains? filter-reasons (:reason %))) (vals vars)))))
+  (and (= :done status) (not protocol-error?) (empty? assertions)
+       (every? #(and (= :skipped (:phase %)) (contains? filter-reasons (:reason %))) (vals vars))))
 
 (defn- all-vars [state]
   (mapcat (comp vals :vars) (vals (:namespaces state))))

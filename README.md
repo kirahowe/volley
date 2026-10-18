@@ -109,9 +109,16 @@ uses it. `tests.edn` and the flags stay the same: suite ids, `--focus`,
 
 Kaocha options brisk does not support print a warning instead of being
 ignored silently. That includes plugins other than filter, capture-output,
-randomize, print-invocations, profiling and hooks, and reporters other than
-`kaocha.report/documentation`. The other reporters fall back to brisk's
-own output.
+randomize, print-invocations, profiling, hooks and junit-xml, and reporters
+other than `kaocha.report/documentation`. The other reporters fall back to
+brisk's own output. Flags of a listed plugin that brisk does not run, such
+as cloverage's `--cov-output`, are accepted with a warning.
+
+`kaocha.plugin/junit-xml` is built in: with the plugin in `:plugins` (or
+`--plugin kaocha.plugin/junit-xml`), `--junit-xml-file FILE` or
+`:kaocha.plugin.junit-xml/target-file` writes the same report as
+lambdaisland/kaocha-junit-xml, one `<testsuite>` per suite. You do not
+need the plugin's library. Skipped tests also get a `<skipped/>` element.
 
 brisk finds test namespaces by reading their source, so it cannot see
 tests that a macro defines. Filters still reach them, because each worker

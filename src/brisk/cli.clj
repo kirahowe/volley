@@ -99,6 +99,41 @@
    {:long "gc-profiling" :toggle? true :doc "Approximate memory per test (ignored by brisk)."}
    {:long "gc-profiling-individual" :toggle? true
     :doc "Details of individual tests for gc-profiling (ignored by brisk)."}
+   ;; Flags of other plugins, valid only when the plugin is listed
+   ;; (`plugin-flag-errors`), as Kaocha only knows them then.
+   ;; kaocha.plugin/junit-xml, which brisk implements:
+   {:long "junit-xml-file" :arg "FILENAME" :plugin :kaocha.plugin/junit-xml
+    :doc "Save the test results to an Ant JUnit XML file (kaocha.plugin/junit-xml)."}
+   {:long "junit-xml-omit-system-out" :plugin :kaocha.plugin/junit-xml
+    :doc "Do not add captured output to junit.xml (kaocha.plugin/junit-xml)."}
+   {:long "junit-xml-add-location-metadata" :plugin :kaocha.plugin/junit-xml
+    :doc "Add line and file attributes to tests in junit.xml (kaocha.plugin/junit-xml)."}
+   ;; kaocha.plugin/cloverage, which brisk does not run: accepted and ignored.
+   {:long "cov-output" :arg "PATH" :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-text" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-html" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "emma-xml" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "lcov" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "codecov" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "coveralls" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-summary" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-fail-threshold" :arg "PERCENT" :parse parse-int :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-low-watermark" :arg "PERCENT" :parse parse-int :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-high-watermark" :arg "PERCENT" :parse parse-int :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-nop" :toggle? true :plugin :kaocha.plugin/cloverage :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-test-ns-regex" :arg "REGEX" :multi? true :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-ns-regex" :arg "REGEX" :multi? true :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-ns-exclude-regex" :arg "REGEX" :multi? true :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-src-ns-path" :arg "PATH" :multi? true :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
+   {:long "cov-exclude-call" :arg "NAME" :multi? true :plugin :kaocha.plugin/cloverage
+    :doc "Ignored by brisk (cloverage)."}
    ;; brisk's own
    {:long "workers" :arg "N" :parse parse-pos-int
     :doc "Number of parallel worker processes."}
@@ -217,6 +252,31 @@
 
       :else
       (recur (update state :arguments conj token) more))))
+
+(def ^:private plugin-flags
+  "Option key -> the plugin that defines the flag."
+  (into {} (keep (fn [spec] (when (:plugin spec) [(spec-key spec) spec]))) option-specs))
+
+(defn plugin-flag-errors
+  "Kaocha only knows a plugin's flags when the plugin is loaded, and rejects
+  them otherwise (\"Unknown option\", exit -1). `options` are parsed
+  options, `plugins` the normalized plugin keywords of the config. Returns
+  the errors for flags whose plugin is not listed."
+  [options plugins]
+  (let [on (set plugins)]
+    (vec (for [[k _] (sort-by (comp str key) options)
+               :let [spec (get plugin-flags k)]
+               :when (and spec (not (contains? on (:plugin spec))))]
+           (str "Unknown option: \"--" (:long spec) "\" (it needs " (:plugin spec) " in :plugins)")))))
+
+(defn plugin-flag-warnings
+  "Warnings for flags of listed plugins that brisk accepts but does not
+  act on (`supported` is the set of plugins brisk implements)."
+  [options supported]
+  (vec (for [[k _] (sort-by (comp str key) options)
+             :let [spec (get plugin-flags k)]
+             :when (and spec (not (contains? supported (:plugin spec))))]
+         (str "--" (:long spec) " ignored: " (:plugin spec) " is not supported"))))
 
 (defn- format-row [{:keys [short long arg toggle? default doc]}]
   [(str (if short (str short ", ") "    ")

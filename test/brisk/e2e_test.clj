@@ -241,3 +241,28 @@
   (testing "namespaces the focus does not reach are not listed"
     (let [{:keys [out]} (run "generated" ["--focus" "g.plain-test" "--focus" "g.gen-test"])]
       (is (not (str/includes? out "g.only-gen-test"))))))
+
+(deftest junit-xml-reports-like-kaocha-junit-xml
+  (testing "--plugin and --junit-xml-file on the command line"
+    (let [dir (e2e/copy-project "default")
+          {:keys [exit]} (e2e/brisk dir ["--plugin" "kaocha.plugin/junit-xml" "--junit-xml-file" "target/junit.xml"])
+          xml (slurp (str (fs/path dir "target/junit.xml")))]
+      (is (= 1 exit))
+      (is (str/includes? xml "<testsuite name=\"unit\""))
+      (is (str/includes? xml "<testcase name=\"acme.strings-test/wrong\" classname=\"acme.strings-test\""))
+      (is (str/includes? xml "<failure message=\"[:fail] expected:"))))
+  (testing "the plugin and :kaocha.plugin.junit-xml/target-file in tests.edn"
+    (let [dir (e2e/copy-project "default" {"tests.edn" (str "#kaocha/v1 {:plugins [:kaocha.plugin/junit-xml]"
+                                                            " :kaocha.plugin.junit-xml/target-file \"out/j.xml\"}")})
+          {:keys [exit err]} (e2e/brisk dir [])]
+      (is (= 1 exit))
+      (is (not (str/includes? err "junit")) "no warning about the plugin")
+      (is (fs/exists? (fs/path dir "out/j.xml")))))
+  (testing "a plugin's flag without the plugin is an unknown option, as in Kaocha"
+    (let [{:keys [exit out]} (run "default" ["--junit-xml-file" "j.xml"])]
+      (is (= 255 exit))
+      (is (str/includes? out "Unknown option: \"--junit-xml-file\""))))
+  (testing "flags of a listed plugin brisk does not run are accepted with a warning"
+    (let [{:keys [exit err]} (run "default" ["--plugin" "cloverage" "--cov-output" "cov" "--no-cov-html"])]
+      (is (= 1 exit))
+      (is (str/includes? err "--cov-output ignored: :kaocha.plugin/cloverage is not supported")))))

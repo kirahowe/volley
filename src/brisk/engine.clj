@@ -13,6 +13,7 @@
       {:effect :print :lines [str] :stream :out|:err}
       {:effect :redraw :frame {:emit [str] :frame [str]}}
       {:effect :save-timings :timings {ns millis}}
+      {:effect :write-file :path str :text str}   ; the junit-xml report
       {:effect :post-summary :hooks [entry] :result kaocha-result}
       {:effect :exit :code n}
 
@@ -25,6 +26,7 @@
   each with Kaocha's exit code."
   (:require
    [brisk.hooks :as hooks]
+   [brisk.junit :as junit]
    [brisk.render :as render]
    [brisk.run-state :as rs]
    [brisk.schedule :as sched]
@@ -155,7 +157,8 @@
   `:configure` is a `{:op :configure}` message sent to each worker right
   after it is spawned (`brisk.hooks/configure-message`). `:post-summary`
   is `{:hooks [entry] :config normalized-config}`: the hooks to run in the
-  parent after the summary.
+  parent after the summary. `:junit-xml` is the config's `:junit-xml` plus
+  `:timestamp` and `:cwd`: the report is written after the summary.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -176,6 +179,10 @@
                :shown nil
                :nses nses
                :preload (vec (:preload plan))
+               :junit-suites (mapv (fn [s] {:id (:id s)
+                                            :namespaces (mapv :ns (:namespaces s))
+                                            :files (mapv :file (:load-errors s))})
+                                   (:suites plan))
                :warned #{}
                :opts opts
                :durations (or durations {})
@@ -354,9 +361,17 @@
                                    (fn [ns] (get-in nses [ns :suite]))
                                    run)}]))
 
+(defn- junit-xml
+  "The JUnit XML report, when `kaocha.plugin/junit-xml` names a file."
+  [{:keys [opts run junit-suites]}]
+  (when-let [{:keys [target-file] :as jx} (:junit-xml opts)]
+    [{:effect :write-file :path target-file
+      :text (junit/report run junit-suites jx)}]))
+
 (defn- finish [state]
   [(assoc state :phase :done)
    (concat (final-output state)
+           (junit-xml state)
            (post-summary state)
            [{:effect :save-timings :timings (timings state)}
             {:effect :exit :code (rs/exit-code (:run state))}])])

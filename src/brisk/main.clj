@@ -42,7 +42,8 @@
         read (config/read-config text (cond-> (assoc (select-keys env [:env :props :hostname :user])
                                                      :include (bfs/include-resolver file))
                                         (:profile options) (assoc :profile (:profile options))))
-        cfg (config/normalize (:config read) options env)]
+        cfg (config/normalize (:config read) options env)
+        parsed (update parsed :errors into (cli/plugin-flag-errors options (:plugins cfg)))]
     {:cli parsed
      :config (update cfg :warnings into (:warnings read))
      :read-error (:error read)
@@ -56,6 +57,13 @@
        (mapcat :test-paths)
        bfs/clojure-files
        (mapv #(discover/ns-info % (bfs/read-file %)))))
+
+(defn- local-timestamp
+  "Now as an ISO local date-time to the second, as kaocha-junit-xml writes
+  its timestamps."
+  []
+  (.format java.time.format.DateTimeFormatter/ISO_LOCAL_DATE_TIME
+           (.truncatedTo (java.time.LocalDateTime/now) java.time.temporal.ChronoUnit/SECONDS)))
 
 (defn- reporter
   "`:live` needs a terminal; anything else gets the append-only CI output.
@@ -117,6 +125,9 @@
        :print (print-lines! e)
        :redraw (vreset! height (term/redraw! @height frame))
        :save-timings (bfs/write-timings! timings)
+       :write-file (when-let [err (bfs/write-file! (:path e) (:text e))]
+                     (print-lines! {:lines [(str "WARNING: could not write " (:path e) ": " err)]
+                                    :stream :err}))
        :post-summary (post-summary! e)
        :exit nil)
      (when (= :exit effect) (reduced code)))
@@ -235,6 +246,8 @@
                      :color? (color? config (:options cli) env tty?)
                      :durations (bfs/read-timings)
                      :started-at (System/currentTimeMillis)}
+                    (when-let [jx (:junit-xml config)]
+                      {:junit-xml (assoc jx :timestamp (local-timestamp) :cwd (System/getProperty "user.dir"))})
                     (hooks/engine-opts config))
               _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))]
           (cond

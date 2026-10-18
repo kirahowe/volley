@@ -12,6 +12,7 @@
   `apply-cli-opts` (see the docstrings of the private helpers for the Kaocha
   function each one mirrors)."
   (:require
+   [brisk.cli :as cli]
    [brisk.hooks :as hooks]
    [brisk.runtime :as runtime]
    [clojure.edn :as edn]
@@ -334,11 +335,13 @@
 
 (def ^:private supported-plugins
   #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
-    :kaocha.plugin/print-invocations :kaocha.plugin/profiling :kaocha.plugin/hooks})
+    :kaocha.plugin/print-invocations :kaocha.plugin/profiling :kaocha.plugin/hooks
+    :kaocha.plugin/junit-xml})
 
 (def ^:private silent-namespaces
   #{"kaocha.plugin.profiling" "kaocha.plugin.print-invocations"
-    "kaocha.plugin.randomize" "kaocha.plugin.capture-output" "kaocha.filter"})
+    "kaocha.plugin.randomize" "kaocha.plugin.capture-output" "kaocha.filter"
+    "kaocha.plugin.junit-xml"})
 
 (def ^:private known-keys
   #{:kaocha/tests :kaocha/plugins :kaocha/reporter :kaocha/color? :kaocha/fail-fast?
@@ -347,6 +350,7 @@
     :capture-output? :diff-style :bindings
     ;; brisk's own shape, so a normalized config can be normalized again
     :workers :isolate? :runtime :warnings :errors :filters :reporter :hooks :worker-setup
+    :junit-xml
     ;; read by brisk.hooks
     :brisk/worker-setup})
 
@@ -477,6 +481,24 @@
   [& xs]
   (first (filter some? xs)))
 
+(defn- junit-xml
+  "`kaocha.plugin.junit-xml`'s settings: the target file from
+  `--junit-xml-file` or `:kaocha.plugin.junit-xml/target-file`, and the two
+  flags. nil when the plugin is off or no file is named, as the plugin then
+  writes nothing."
+  [cfg raw cli-options plugins]
+  (let [target (pick (:junit-xml-file cli-options)
+                     (:kaocha.plugin.junit-xml/target-file cfg)
+                     (get-in raw [:junit-xml :target-file]))]
+    (when (and target (contains? (set plugins) :kaocha.plugin/junit-xml))
+      {:target-file (str target)
+       :omit-system-out? (boolean (pick (:junit-xml-omit-system-out cli-options)
+                                        (:kaocha.plugin.junit-xml/omit-system-out? cfg)
+                                        (get-in raw [:junit-xml :omit-system-out?])))
+       :add-location? (boolean (pick (:junit-xml-add-location-metadata cli-options)
+                                     (:kaocha.plugin.junit-xml/add-location-metadata? cfg)
+                                     (get-in raw [:junit-xml :add-location?])))})))
+
 
 (defn normalize
   "Normalize raw `tests.edn` data (from `read-config`, or nil when the file is
@@ -517,39 +539,43 @@
                            suites)
          top-hooks (read-hook-config cfg hooks/top-level-keys "" hooks-on?)
          tests (mapv (fn [s h] (with-hook-config (suite-view s) h)) suites suite-hooks)
+         junit (junit-xml cfg raw cli-options plugins)
          runtime (runtime/resolve-runtime (pick (:runtime cli-options) (:runtime raw))
                                           (get env :bb? true))]
      (with-hook-config
-      {:tests tests
-      :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
-      :filters (config-filters cfg cli-options)
-      :plugins plugins
-      :fail-fast? (boolean (pick (:fail-fast cli-options) (:kaocha/fail-fast? cfg) false))
-      :color? (boolean (pick (:color cli-options) (:kaocha/color? cfg) true))
-      :capture-output? (boolean (pick (:capture-output cli-options)
-                                      (:kaocha.plugin.capture-output/capture-output? cfg)
-                                      true))
-      :reporter reporter
-      :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
-      :workers (pick (:workers cli-options) (:workers raw) (runtime/default-workers runtime (:cpus env)))
-      :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
-      :runtime runtime
-      :warnings
-      (vec (distinct
-            (concat
-             (when bad? ["tests.edn did not contain a map, using defaults"])
-             (->vec (:warnings raw))
-             (when (and (= :jvm runtime) (pick (:isolate cli-options) (:isolate? raw)))
-               ["--isolate starts a new JVM for every namespace, which is slow"])
-             (for [p plugins :when (not (contains? supported-plugins p))]
-               (str "unsupported plugin " (pr-str p) " ignored"))
-             (for [k (sort-by str (keys cfg))
-                   :when (and (not (silent-key? k)) (not= ::error k))]
-               (str "unsupported option " (pr-str k) " ignored"))
-             (mapcat suite-warnings suites)
-             (hooks-off-warning cfg suites hooks-on?)
-             (:warnings top-hooks)
-             (mapcat :warnings suite-hooks)
-             reporter-warnings
-             (cli-warnings cli-options))))}
+      (cond->
+       {:tests tests
+       :errors (vec (distinct (concat (->vec (:errors raw)) (when-let [e (::error cfg)] [e]))))
+       :filters (config-filters cfg cli-options)
+       :plugins plugins
+       :fail-fast? (boolean (pick (:fail-fast cli-options) (:kaocha/fail-fast? cfg) false))
+       :color? (boolean (pick (:color cli-options) (:kaocha/color? cfg) true))
+       :capture-output? (boolean (pick (:capture-output cli-options)
+                                       (:kaocha.plugin.capture-output/capture-output? cfg)
+                                       true))
+       :reporter reporter
+       :watch? (boolean (pick (:watch cli-options) (:kaocha/watch? cfg) false))
+       :workers (pick (:workers cli-options) (:workers raw) (runtime/default-workers runtime (:cpus env)))
+       :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
+       :runtime runtime
+       :warnings
+       (vec (distinct
+             (concat
+              (when bad? ["tests.edn did not contain a map, using defaults"])
+              (->vec (:warnings raw))
+              (when (and (= :jvm runtime) (pick (:isolate cli-options) (:isolate? raw)))
+                ["--isolate starts a new JVM for every namespace, which is slow"])
+              (for [p plugins :when (not (contains? supported-plugins p))]
+                (str "unsupported plugin " (pr-str p) " ignored"))
+              (for [k (sort-by str (keys cfg))
+                    :when (and (not (silent-key? k)) (not= ::error k))]
+                (str "unsupported option " (pr-str k) " ignored"))
+              (mapcat suite-warnings suites)
+              (hooks-off-warning cfg suites hooks-on?)
+              (:warnings top-hooks)
+              (mapcat :warnings suite-hooks)
+              reporter-warnings
+              (cli-warnings cli-options)
+              (cli/plugin-flag-warnings cli-options supported-plugins))))}
+       junit (assoc :junit-xml junit))
       top-hooks))))

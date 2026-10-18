@@ -73,6 +73,7 @@ Pure core:
 | `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
 | `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
 | `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
+| `brisk.junit` | Run state → the Ant JUnit XML report `kaocha.plugin/junit-xml` writes. |
 | `brisk.hooks` | Kaocha's hooks plugin and `:brisk/worker-setup` as data: reading them from tests.edn, the `:configure` message, the Kaocha-shaped testables, test plan and result hooks receive. |
 | `brisk.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
@@ -119,6 +120,8 @@ then in code.
  :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
  :hooks            {:pre-load [my.hooks/load!] ...}  ; only with :kaocha.plugin/hooks; see "Hooks"
  :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
+ :junit-xml        {:target-file "junit.xml"        ; only with :kaocha.plugin/junit-xml and a file
+                   :omit-system-out? false :add-location? false}
  :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]
  :errors           []                               ; config Kaocha would exit on; defaults used
  :plugins          [:kaocha.plugin/filter ...]
@@ -141,8 +144,15 @@ ignore. Plugins brisk treats as built in or harmless: `:kaocha.plugin/filter`,
 `:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (warn: ordering
 is per worker), `:kaocha.plugin/print-invocations` (no-op),
 `:kaocha.plugin/profiling` (brisk always reports slowest tests), `:kaocha.plugin/hooks`
-(see "Hooks"). Anything
+(see "Hooks"), `:kaocha.plugin/junit-xml` (`brisk.junit`; the parent writes
+the report from the run state after the summary). Anything
 else: warning.
+
+Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`)
+are parsed by `brisk.cli` like any other, but, as in Kaocha, they are an
+unknown option (exit 255) unless their plugin is in `:plugins` or given
+with `--plugin` (`brisk.cli/plugin-flag-errors`). Flags of a listed plugin
+brisk does not run are accepted with a warning.
 
 ### Namespace info (`brisk.discover`)
 
@@ -372,6 +382,7 @@ event if the queue never goes quiet). Effects:
 {:effect :print :lines [str] :stream :out|:err}
 {:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
 {:effect :save-timings :timings {ns ms}}
+{:effect :write-file :path str :text str}   ; the junit-xml report, after the summary
 {:effect :post-summary :hooks [entry] :result kaocha-result}   ; after the summary, with post-summary hooks
 {:effect :exit :code n}             ; always last; the state is then :done
 ```

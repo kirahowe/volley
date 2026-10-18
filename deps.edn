@@ -6,4 +6,6 @@
         babashka/process {:mvn/version "0.6.25"}}
  :aliases
  {:test {:extra-paths ["test" "dev-resources"]
-         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}}}
+         ;; data.xml parses junit-xml reports in the tests; babashka has it built in
+         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
+                      org.clojure/data.xml {:mvn/version "0.0.8"}}}}}

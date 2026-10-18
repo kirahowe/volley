@@ -76,6 +76,16 @@
     (spit timings-file (pr-str (into (sorted-map) timings)))
     (catch Exception _ nil)))
 
+(defn write-file!
+  "Write `text` to `path`, creating its directory. Returns nil, or the
+  error message when it could not be written."
+  [path text]
+  (try
+    (some-> (fs/parent path) fs/create-dirs)
+    (spit (str path) text :encoding "UTF-8")
+    nil
+    (catch Exception e (or (ex-message e) (str e)))))
+
 (defn absolute
   "Absolute form of `path`."
   [path]
