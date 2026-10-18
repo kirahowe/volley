@@ -232,3 +232,12 @@
                (hooks/setup :unit)
                (hooks/before-run :unit))]
     (is (str/ends-with? (ex-message (hooks/setup-error hs)) "threw java.lang.NullPointerException: npe"))))
+
+(deftest file-paths-are-the-projects
+  ;; the JVM's var metadata holds the classpath-relative path
+  (let [dir (System/getProperty "user.dir")]
+    (is (= "dev-resources/exec/pass_test.clj" (worker/project-path dir "exec/pass_test.clj")))
+    (is (= "dev-resources/exec/pass_test.clj" (worker/project-path dir "dev-resources/exec/pass_test.clj")))
+    (is (= "src/brisk/main.clj" (worker/project-path dir (str dir "/src/brisk/main.clj"))))
+    (is (= "nowhere/x.clj" (worker/project-path dir "nowhere/x.clj")))
+    (is (nil? (worker/project-path dir nil)))))

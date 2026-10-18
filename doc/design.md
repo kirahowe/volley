@@ -344,7 +344,9 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   `--print-result`, above the frame in live mode, cleaned of control
   and escape sequences but never cut to the terminal width), as Kaocha does, and
   run-state attributes it to whatever the worker is running when the line
-  arrives, for the failure report; ordering between the stdout and stderr
+  arrives (output outside any test var that another worker already
+  printed is shown once, since each worker loads the namespaces Kaocha
+  loads once), for the failure report; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.
 - The worker calls the 5-arity `brisk.filters/decide` with the loaded
   namespace's real metadata (merged over the static `:ns-meta` copy).
@@ -364,6 +366,10 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   (`brisk.protocol/encode-check`; `:result` only when the property returned
   something other than false). `brisk.render` shows the seed, the count, the
   shrunk input and a rerun call instead of the raw result map.
+- File paths in events are relative to the project directory
+  (`brisk.shell.worker/project-path`): on the JVM a var's `:file` is
+  classpath-relative (`p/a_test.clj`), so the worker finds it on the
+  classpath and reports `test/p/a_test.clj`, as babashka does.
 - `:file` and `:line` of a `:fail` are the reported ones only when the file
   belongs to the project (`brisk.shell.worker/project-file?`). Otherwise,
   for example an interpreter file that test.check found by walking the
@@ -877,6 +883,14 @@ difference:
   `:brisk/worker-setup` and load hooks (`brisk.shell.hooks/setup`). A
   namespace that fails to load then is a warning (`--preload could not
   load ...`, once per run); its own run reports the error.
+- **Namespace failures in the junit-xml report.** kaocha-junit-xml gives
+  the testcase of a failed namespace (a load error, a failing assertion
+  in a `:once` fixture) an empty `classname`; brisk uses the namespace,
+  so CI tools group it with that namespace's tests.
+- **A focus that matches nothing.** Both print "All N tests were
+  skipped..." and exit 0. Kaocha counts every testable it skipped
+  (suites, namespaces and vars) and stops before running; brisk counts
+  the vars of the namespaces it ran and prints its summary too.
 - **A var without assertions in the junit-xml report.** Both count it as a
   failure in the testsuite's `failures`. kaocha-junit-xml writes its
   testcase with no `<failure>` child; brisk adds one with Kaocha's

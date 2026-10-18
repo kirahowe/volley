@@ -196,6 +196,7 @@
                :run run
                :shown nil
                :dirty #{}
+               :load-output {}
                :nses nses
                :preload (preload-list plan entries (:preload? opts))
                :junit-suites (mapv (fn [s] {:id (:id s)
@@ -275,16 +276,36 @@
                    (render/documentation-lines prev run ropts)
                    (render/ci-lines prev run ropts)))])
 
+(defn- load-output
+  "The text of stray output `ev` printed outside any test var (loading a
+  namespace, typically), or nil."
+  [state {:keys [event worker text captured? protocol-error]}]
+  (when (and (= :output event) (not captured?) (not protocol-error)
+             (nil? (get-in state [:run :workers worker :var])))
+    text))
+
+(defn- repeated-load-output?
+  "True for load-time output another worker already printed: every worker
+  that loads a namespace prints what its loading prints, where Kaocha
+  loads it once and prints it once."
+  [state ev]
+  (when-let [text (load-output state ev)]
+    (let [first-worker (get-in state [:load-output text])]
+      (and first-worker (not= first-worker (:worker ev))))))
+
 (defn- notice
   "What to show as soon as `ev` arrives, whatever the reporter, as
   `{:stream :out|:err :line str}` entries: a protocol line that could not
   be read, a worker's warning (each text once per run, since every worker
   may send it), and output a test printed that was not captured
   (`--no-capture-output`, load-time prints, JVM warnings), as Kaocha
-  prints it as it happens. Output a worker rescued from a test that
-  exited (`:captured?`) belongs to that test's failure report only."
+  prints it as it happens; load-time output that another worker already
+  printed is shown once. Output a worker rescued from a test that exited
+  (`:captured?`) belongs to that test's failure report only."
   [state {:keys [protocol-error worker message text captured?] :as ev}]
   (cond
+    (repeated-load-output? state ev) nil
+
     (and (= :output (:event ev)) protocol-error)
     [{:stream :err
       :line (render/protocol-notice {:worker worker
@@ -435,9 +456,18 @@
     [{:effect :write-file :path target-file
       :text (junit/report run junit-suites jx)}]))
 
+(defn- all-skipped-warning
+  "Kaocha's warning when the filters left nothing to run."
+  [{:keys [run]}]
+  (when-let [n (rs/all-skipped run)]
+    [{:effect :print :stream :err
+      :lines [(str "WARNING: All " n " tests were skipped. Check for misspelled settings in your"
+                   " Kaocha test configuration or incorrect focus or skip filters.")]}]))
+
 (defn- finish [state]
   [(assoc state :phase :done)
-   (concat (final-output state)
+   (concat (all-skipped-warning state)
+           (final-output state)
            (junit-xml state)
            (post-summary state)
            [{:effect :save-timings :timings (timings state)}
@@ -499,6 +529,8 @@
     (-> state
         (update :dirty into (keep :ns) (cond-> (conj (vec crash) ev) held (conj {:ns held})))
         (update :notices into (notice state ev))
+        (cond-> (load-output state ev)
+          (update :load-output #(if (contains? % (:text ev)) % (assoc % (:text ev) (:worker ev)))))
         (cond-> (= :worker/warning (:event ev)) (update :warned conj (:message ev)))
         (watch-protocol ev)
         (update :sched sched/handle-event ev)

@@ -300,7 +300,10 @@
                      :fail-fast? (:fail-fast? config)
                      :isolate? (:isolate? config)
                      :preload? (:preload? config)
-                     :invocation (runtime/invocation)
+                     ;; the rerun hint reads the same config file
+                     :invocation (cond-> (runtime/invocation)
+                                   (not= "tests.edn" (:config-file loaded))
+                                   (str " --config-file " (:config-file loaded)))
                      :bindings (:bindings config)
                      :capture-output? (:capture-output? config)
                      :reporter mode

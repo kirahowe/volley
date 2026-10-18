@@ -298,6 +298,17 @@
   [rec]
   (filter in-run? (vals (:vars rec))))
 
+(defn all-skipped
+  "When the run ran no test at all because the filters skipped every one
+  it found, how many they skipped; else nil. Kaocha warns then
+  (`kaocha.api/run`: \"All N tests were skipped\")."
+  [state]
+  (let [recs (vals (:namespaces state))
+        skipped (count (mapcat (comp vals :vars) (filter unselected? recs)))]
+    (when (and (pos? skipped) (every? unselected? recs) (empty? (:file-errors state))
+               (empty? (:not-run state)))
+      skipped)))
+
 (defn- all-vars [state]
   (mapcat (comp vals :vars) (vals (:namespaces state))))
 

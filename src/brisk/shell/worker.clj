@@ -13,6 +13,7 @@
    [brisk.filters :as filters]
    [brisk.protocol :as protocol]
    [brisk.shell.hooks :as hooks]
+   [clojure.java.io :as io]
    [clojure.test :as t]))
 
 (set! *warn-on-reflection* true)
@@ -159,7 +160,30 @@
       (subs file (count prefix))
       file)))
 
-(defn- rel [file] (relative-path (System/getProperty "user.dir") file))
+(defn- classpath-file
+  "The file system path of `file` when it names a source file on the
+  classpath, as the JVM's var metadata does (`p/a_test.clj`), else nil."
+  [file]
+  (when-let [url (and (string? file) (not (.isAbsolute (java.io.File. ^String file)))
+                      (io/resource file))]
+    (when (= "file" (.getProtocol ^java.net.URL url))
+      (.getCanonicalPath (java.io.File. (.toURI ^java.net.URL url))))))
+
+(defn project-path
+  "`file` as the project sees it, relative to directory `dir`: babashka's
+  var metadata already holds `test/p/a_test.clj`; the JVM's holds the
+  classpath-relative `p/a_test.clj`, which is looked up on the classpath.
+  Anything else comes back as it was."
+  [dir file]
+  (let [abs? (and (string? file) (.isAbsolute (java.io.File. ^String file)))]
+    (cond
+      (or (not (string? file)) abs?) (relative-path dir file)
+      (.isFile (java.io.File. ^String dir ^String file)) file
+      :else (if-let [found (classpath-file file)]
+              (relative-path (.getCanonicalPath (java.io.File. ^String dir)) found)
+              file))))
+
+(defn- rel [file] (project-path (System/getProperty "user.dir") file))
 
 (def zero-assertions-message
   "What Kaocha reports for a test var that made no assertion

@@ -158,15 +158,23 @@
                             :type "brisk.WorkerCrashed"}]])
                 (map failure-element (var-failures failures ns var)))))
 
+(defn- classname
+  "A failure's namespace as the testcase's classname; empty for one that
+  belongs to no namespace (an unreadable file, a worker). Kaocha leaves it
+  empty for a namespace too, which groups those testcases under no class
+  in CI tools."
+  [f]
+  (if (symbol? (:ns f)) (str (:ns f)) ""))
+
 (defn- failure-testcase [f]
   (let [g (other-failure f)]
-    [:testcase {:name (str (:ns g)) :classname "" :time (seconds 0)}
+    [:testcase {:name (str (:ns g)) :classname (classname f) :time (seconds 0)}
      (failure-element g)]))
 
 (defn- outside-testcase
   "An assertion a `:once` fixture made, outside every test."
   [f]
-  [:testcase {:name (str (:ns f)) :classname "" :time (seconds 0)}
+  [:testcase {:name (str (:ns f)) :classname (classname f) :time (seconds 0)}
    (failure-element f)])
 
 (defn- suite-element

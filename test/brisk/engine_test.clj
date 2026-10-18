@@ -265,3 +265,22 @@
         effects (:effects (engine/step state {:event :tick :at 100}))
         emitted (mapcat (comp :emit :frame) (filter #(= :redraw (:effect %)) effects))]
     (is (some #{line} emitted))))
+
+(deftest load-time-output-every-worker-prints-shows-once
+  ;; each worker loads the shared namespace; Kaocha loads it once
+  (let [{:keys [state]} (engine/init {:suites [{:id :unit :namespaces [{:ns 'a-test} {:ns 'b-test}]}]}
+                                     {:workers 2 :reporter :ci :started-at 0})
+        step (fn [st ev] (engine/step (:state st) ev))
+        out (fn [w text] {:event :output :text text :stream :stderr :worker w :at 3})
+        results (reductions step {:state state}
+                            [{:event :tick :at 0}
+                             {:event :worker/ready :worker 1 :at 1}
+                             {:event :worker/ready :worker 2 :at 1}
+                             {:event :ns/start :ns 'a-test :run-id 1 :worker 1 :at 2}
+                             {:event :ns/start :ns 'b-test :run-id 2 :worker 2 :at 2}
+                             (out 1 "connecting to db")
+                             (out 2 "connecting to db")
+                             (out 1 "connecting to db")])
+        printed (->> results (mapcat :effects) (filter #(= :print (:effect %))) (mapcat :lines))]
+    (is (= 2 (count (filter #{"connecting to db"} printed)))
+        "the second worker's copy is dropped; the same worker printing it again is not")))

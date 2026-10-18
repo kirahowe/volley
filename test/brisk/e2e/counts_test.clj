@@ -43,3 +43,9 @@
   (testing ":skip, :skip-meta and ^:kaocha/skip: Kaocha prints 6 tests"
     (let [{:keys [out]} (e2e/brisk (e2e/copy-project "filters") [])]
       (is (= "6 tests | 6 passed | 0 failed | 0 errors | 0 skipped" (summary out))))))
+
+(deftest a-focus-that-matches-nothing-warns-like-kaocha
+  ;; kaocha.api/run: "All N tests were skipped. Check for misspelled settings ..."
+  (let [{:keys [exit err]} (e2e/brisk (e2e/copy-project "filters") ["--focus" "filters.core-test/nope"])]
+    (is (= 0 exit))
+    (is (re-find #"WARNING: All \d+ tests were skipped\. Check for misspelled settings" err))))

@@ -370,3 +370,7 @@
     (let [{:keys [exit out]} (run "default" ["--watch" "--print-result"])]
       (is (= 1 exit))
       (is (some? (e2e/last-edn-line out "{:vars"))))))
+
+(deftest the-rerun-hint-keeps-the-config-file
+  (let [{:keys [out]} (run "default" ["--config-file" "other.edn"] {"other.edn" "#kaocha/v1 {}"})]
+    (is (re-find #"(?m)^  .* --config-file other\.edn --focus acme\.strings-test/wrong" out))))

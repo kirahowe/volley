@@ -115,3 +115,13 @@
              (:attrs (first (children (by-name "b-test") :error))))))
     (testing "captured output goes to system-out"
       (is (= "hello <world>\n" (text-of (first (children suite :system-out))))))))
+
+(deftest a-namespace-failure-is-classed-under-its-namespace
+  (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
+                      [(ev {:event :ns/start :ns 'a-test})
+                       (ev {:event :ns/error :ns 'a-test :phase :load
+                            :error {:class "java.io.FileNotFoundException" :message "nope" :trace []}})
+                       (ev {:event :ns/end :ns 'a-test})])
+        suite (first (children (parse (junit/report state [{:id :unit :namespaces '[a-test]}] opts)) :testsuite))
+        tc (first (children suite :testcase))]
+    (is (= {:name "a-test" :classname "a-test"} (select-keys (:attrs tc) [:name :classname])))))
