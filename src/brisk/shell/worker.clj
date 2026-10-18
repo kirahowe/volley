@@ -115,25 +115,39 @@
            (try (requiring-resolve 'sci.core/stacktrace)
                 (catch Throwable _ nil)))))
 
-(defn- unwrap
-  "The error the test raised. When an exception escapes a test body,
-  babashka wraps it in an ExceptionInfo that carries the interpreter's
-  call stack (`:sci.impl/callstack`) with the original as its cause."
-  [^Throwable e]
-  (if (and (contains? (ex-data e) :sci.impl/callstack) (ex-cause e))
-    (ex-cause e)
-    e))
+(defn- chain
+  "`t` and its causes, outermost first."
+  [t]
+  (take-while some? (iterate ex-cause t)))
+
+(defn- without-wrappers
+  "`Throwable->map` data `tm` of `e` with the interpreter's wrappers left
+  out of `:via` (they repeat their cause's message with the call stack in
+  their data) and messages that quote a wrapper rebuilt
+  (`brisk.shell.hooks/message`)."
+  [tm e]
+  (let [ts (chain e)]
+    (if (or (not= (count ts) (count (:via tm))) (not-any? hooks/sci-wrapper? ts))
+      tm
+      (assoc tm :via (into [] (keep (fn [[t v]]
+                                      (when-not (hooks/sci-wrapper? t)
+                                        (assoc v :message (hooks/message t)))))
+                           (map vector ts (:via tm)))))))
 
 (defn encode-throwable
   "Wire form of a Throwable a test raised. On babashka the JVM stack trace
   is nothing but interpreter frames, so the trace comes from the
   interpreter's own call stack (`sci.core/stacktrace`), which names the
-  user's functions with file and line. The JVM keeps its stack trace."
+  user's functions with file and line: `e`'s, or else that of the first
+  wrapper in its cause chain that names one of them. The interpreter's wrappers are left out of
+  the cause chain wherever they are. The JVM keeps its stack trace."
   [^Throwable e]
-  (let [enc (protocol/encode-error (Throwable->map (unwrap e)))
-        frames (when-let [st @sci-stacktrace]
-                 (try (st e) (catch Throwable _ nil)))
-        trace (protocol/interpreter-trace frames (System/getProperty "user.dir"))]
+  (let [enc (protocol/encode-error (without-wrappers (Throwable->map e) e))
+        st @sci-stacktrace
+        trace-of (fn [t] (when st
+                           (seq (protocol/interpreter-trace (try (st t) (catch Throwable _ nil))
+                                                            (System/getProperty "user.dir")))))
+        trace (or (trace-of e) (some #(when (hooks/sci-wrapper? %) (trace-of %)) (rest (chain e))))]
     (cond-> enc (seq trace) (assoc :trace trace))))
 
 (defn relative-path
@@ -158,7 +172,7 @@
   expected or actual value."
   [ns-sym v contexts m]
   (let [raw (:actual m)
-        actual (cond-> raw (throwable? raw) unwrap)
+        actual (cond-> raw (throwable? raw) hooks/unwrap)
         loc (location m (meta v))
         error? (and (= :error (:type m)) (throwable? actual))
         check (when (= :fail (:type m)) (protocol/encode-check actual))]
@@ -171,7 +185,7 @@
              :expected (when-not (::zero? m) (protocol/encode-value (:expected m)))
              :actual (cond
                        (::zero? m) nil
-                       error? {:str (str (.getName (class actual)) ": " (ex-message actual))}
+                       error? {:str (str (.getName (class actual)) ": " (hooks/message actual))}
                        :else (protocol/encode-value actual))
              :file (rel (:file loc))
              :line (:line loc)

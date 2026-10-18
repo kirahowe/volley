@@ -4,6 +4,7 @@
   (:require
    [brisk.run-state :as rs]
    [brisk.select :as select]
+   [brisk.shell.hooks :as hooks]
    [brisk.shell.worker :as worker]
    [clojure.string :as str]
    [clojure.test :as t :refer [deftest is testing]]))
@@ -203,3 +204,31 @@
     (testing "the :once fixtures still run around what did run"
       (is (= {:pass 3 :fail 0 :error 0} (counts (run-events 'exec.fixtures-test {:fail-fast? true})))))
     (is (= :ns/end (:event (last (run-events 'exec.fail-test {:fail-fast? true})))))))
+
+(defn- sci-wrapper
+  "What babashka's interpreter wraps around `cause` when it passes an
+  interpreted `try`: an ExceptionInfo with the call stack in its data."
+  [cause]
+  (ex-info (ex-message cause) {:type :sci/error :sci.impl/callstack (volatile! nil)} cause))
+
+(deftest interpreter-wrappers-are-dropped-anywhere-in-the-cause-chain
+  (testing "a future's ExecutionException around a wrapper (probe variants2, w.trace-test/fut)"
+    (let [e (java.util.concurrent.ExecutionException. (sci-wrapper (NumberFormatException. "For input string: \"y\"")))
+          enc (worker/encode-throwable e)
+          chain (take-while some? (iterate :cause enc))]
+      (is (= ["java.util.concurrent.ExecutionException" "java.lang.NumberFormatException"] (map :class chain)))
+      (is (= "java.lang.NumberFormatException: For input string: \"y\"" (:message enc)))
+      (is (not-any? #(str/includes? (str (:data %)) "callstack") chain))))
+  (testing "an error a hook wraps, itself wrapped (probe hooks, prerun.edn)"
+    (let [e (sci-wrapper (ex-info "brisk: pre-run hook x/y threw" {:hook :pre-run}
+                                  (sci-wrapper (ex-info "pre-run boom" {}))))
+          chain (take-while some? (iterate :cause (worker/encode-throwable e)))]
+      (is (= ["brisk: pre-run hook x/y threw" "pre-run boom"] (map :message chain)))
+      (is (= ["{:hook :pre-run}" "{}"] (map :data chain))))))
+
+(deftest a-hook-error-names-the-unwrapped-exception
+  (let [hook '(fn [_] (throw (ex-info "npe" {:sci.impl/callstack (volatile! nil)} (NullPointerException. "npe"))))
+        hs (-> (hooks/init {:hooks {:pre-run [hook]} :config {}})
+               (hooks/setup :unit)
+               (hooks/before-run :unit))]
+    (is (str/ends-with? (ex-message (hooks/setup-error hs)) "threw java.lang.NullPointerException: npe"))))

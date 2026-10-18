@@ -358,8 +358,12 @@ The interpreter records that call stack only when no interpreted
 code is interpreted too, so the worker's catches around test execution are
 written `(catch ^:sci/error Throwable e ...)`, which tells SCI to keep the
 location. The exception then reaches the worker wrapped in an ExceptionInfo
-with `:sci.impl/callstack` in its data; the worker reports the wrapped
-cause (its class, message and data) with the wrapper's call stack. The JVM
+with `:sci.impl/callstack` in its data. Such wrappers can sit anywhere in
+the cause chain (a future rethrows one inside an ExecutionException, a
+hook error wraps one), so `brisk.shell.worker/encode-throwable` leaves
+every wrapper out of the chain, rebuilds a message that quotes one, and
+takes the trace from the first call stack that names user code. A hook
+error names the unwrapped exception (`brisk.shell.hooks/unwrap`). The JVM
 keeps its own stack trace.
 
 A test var opens (`:var/start`) before its `:each` fixtures run and
