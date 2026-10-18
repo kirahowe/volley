@@ -1,7 +1,7 @@
 (ns brisk.jvm-e2e-test
-  "brisk with JVM workers, end to end on dev-resources/projects/jvm: from a
-  babashka parent with `--runtime jvm`, and from a parent on the JVM
-  started by the Clojure CLI."
+  "brisk with JVM workers from a babashka parent (`--runtime jvm`), end
+  to end on dev-resources/projects/jvm, and error traces on both
+  runtimes. `brisk.e2e.jvm-parent-test` covers a parent on the JVM."
   (:require
    [babashka.fs :as fs]
    [brisk.e2e.support :as e2e]
@@ -37,53 +37,4 @@
       (spit (str (fs/path dir "deps.edn"))
             (str (slurp (str (fs/path dir "deps.edn"))) "\n;; changed\n"))
       (is (= 0 (:exit (run))))
-      (is (= 2 (count (cache-files dir)))))
-    (testing "--aliases picks other aliases; a missing :test alias would lose the helper"
-      (spit (str (fs/path dir "deps.edn"))
-            "{:paths [\"src\"] :aliases {:other {:extra-paths [\"extra\"] :jvm-opts [\"-Dbrisk.fixture=other\"]}}}")
-      (let [{:keys [exit out]} (e2e/brisk dir ["--runtime" "jvm" "--aliases" ":other"]
-                                          {:env {"EXPECT_FIXTURE_PROP" "other"} :timeout-ms 180000})]
-        (is (= 0 exit) out)
-        (is (= expected-summary (summary out)))))))
-
-(deftest bb-parent-reports-an-unusable-classpath
-  (let [dir (e2e/copy-project "jvm" {"deps.edn" "{:deps {no.such/lib {:mvn/version \"0.0.0-none\"}}}"})
-        {:keys [exit err]} (e2e/brisk dir ["--runtime" "jvm"] {:timeout-ms 180000})]
-    (is (= 250 exit))
-    (is (str/includes? err "clojure -Spath"))))
-
-(deftest jvm-parent-starts-jvm-workers-with-its-options
-  (let [dir (e2e/copy-project "jvm")
-        deps (pr-str {:paths ["src" "extra"]
-                      :deps {'brisk/brisk {:local/root (str (fs/absolutize "."))}}})
-        {:keys [exit out err]}
-        (e2e/sh dir ["clojure" "-Sdeps" deps "-J-Dbrisk.fixture=parent" "-J-Xmx384m"
-                     "-M" "-m" "brisk.main"]
-                {:env {"EXPECT_FIXTURE_PROP" "parent" "EXPECT_MAX_HEAP_MB" "384"}
-                 :timeout-ms 180000})]
-    (is (= 0 exit) (str out err))
-    (is (= expected-summary (summary out)))))
-
-(deftest jvm-parent-can-still-start-bb-workers
-  (let [dir (e2e/copy-project "pending")
-        deps (pr-str {:deps {'brisk/brisk {:local/root (str (fs/absolutize "."))}}})
-        {:keys [exit out]} (e2e/sh dir ["clojure" "-Sdeps" deps "-M" "-m" "brisk.main"
-                                        "--runtime" "bb" "--print-result"]
-                                   {:timeout-ms 180000})]
-    (is (= 0 exit))
-    (is (map? (e2e/print-result out))))
-)
-
-(deftest error-traces-name-the-user-frames-on-both-runtimes
-  ;; deep.core/outer calls middle calls innermost, which divides by zero;
-  ;; relay-explosion calls explode, which throws ex-info.
-  (doseq [runtime ["bb" "jvm"]]
-    (testing runtime
-      (let [dir (e2e/copy-project "traces")
-            {:keys [exit out err]} (e2e/brisk dir ["--runtime" runtime] {:timeout-ms 180000})
-            frame-line (fn [fn-name] (re-find (re-pattern (str "(?m)^ +at deep\\.core.?" fn-name ".*core\\.clj:\\d+")) out))]
-        (is (= 2 exit) (str out err))
-        (doseq [f ["innermost" "middle" "outer" "explode" "relay.explosion"]]
-          (is (frame-line f) (str "a trace line for " f "\n" out)))
-        (is (re-find #"core\.clj:4\)" out) "innermost's line, where the division is")
-        (is (str/includes? out "data: {:id 7, :via :relay}") "the error the test raised, not a wrapper")))))
+      (is (= 2 (count (cache-files dir)))))))

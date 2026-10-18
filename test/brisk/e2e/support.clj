@@ -82,3 +82,20 @@
   `:brisk/result`."
   [out]
   (:brisk/result (last-edn-line out "{:kaocha")))
+
+(defn run
+  "Run brisk with `args` in a fresh copy of fixture `project`, with
+  `files` added (see `copy-project`). Returns `{:exit :out :err}`."
+  ([project args] (run project args {}))
+  ([project args files] (brisk (copy-project project files) args)))
+
+(defn result
+  "`--print-result` of a run: `[exit result-map]`."
+  [project args]
+  (let [{:keys [exit out]} (run project (conj (vec args) "--print-result"))]
+    [exit (print-result out)]))
+
+(defn executed
+  "Vars that ran, with their status."
+  [res]
+  (into {} (keep (fn [[v {:keys [status]}]] (when-not (= :skipped status) [v status]))) (:vars res)))

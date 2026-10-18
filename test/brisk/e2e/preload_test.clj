@@ -1,6 +1,6 @@
 (ns brisk.e2e.preload-test
-  "`--preload`: each worker loads every planned namespace first, as Kaocha
-  does, suite by suite."
+  "`--preload`: each worker loads every planned namespace first, as
+  Kaocha does, suite by suite."
   (:require
    [brisk.e2e.support :as e2e]
    [clojure.string :as str]
@@ -18,3 +18,13 @@
     (is (pos? exit))
     (is (= 1 (count (re-seq #"--preload could not load shop.missing-dep-test" err)))
         "once per run, however many workers preload it")))
+
+(deftest preload-loads-every-namespace-first-like-kaocha
+  (testing "lo.b-test relies on an assert-expr another test namespace defines"
+    (let [[exit res] (e2e/result "load-order" ["--preload" "--workers" "2" "--isolate"])]
+      (is (= 0 exit))
+      (is (= '{lo.a-test/a :passed lo.b-test/b :passed} (e2e/executed res)))))
+  (testing "without it, a worker that loads only lo.b-test has no such assertion"
+    (let [[exit res] (e2e/result "load-order" ["--workers" "2" "--isolate"])]
+      (is (= 1 exit))
+      (is (= :error (get-in res [:namespaces 'lo.b-test])) "roughly= does not resolve"))))
