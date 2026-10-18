@@ -179,3 +179,26 @@
       (jvm-watch-session dir w)
       (finally
         (is (not= ::timeout (stop! w)))))))
+
+(defn- in-pty
+  "`script` runs `sh-cmd` with a pseudo-terminal as its controlling
+  terminal; nil when it is not available."
+  [sh-cmd]
+  (let [mac? (str/includes? (str/lower-case (System/getProperty "os.name")) "mac")]
+    (when (fs/which "script")
+      (if mac?
+        ["script" "-q" "/dev/null" "sh" "-c" sh-cmd]
+        ["script" "-qec" (str "sh -c '" (str/replace sh-cmd "'" "'\\''") "'") "/dev/null"]))))
+
+(deftest terminal-settings-are-restored-when-watch-mode-is-killed
+  (testing "the shutdown hook restores icanon and echo (babashka.process refuses to run there)"
+    (let [dir (e2e/copy-project "default")
+          cmd (str (str/join " " (map #(str "'" % "'") (brisk-command "--watch")))
+                   " < /dev/tty > out.txt 2>&1 & pid=$!;"
+                   " n=0; until grep -q '" marker "' out.txt || [ $n -gt 300 ]; do sleep 0.1; n=$((n+1)); done;"
+                   " kill -TERM $pid; wait $pid; stty -a")]
+      (when-let [argv (in-pty cmd)]
+        (let [{:keys [out]} (e2e/sh dir argv {:timeout-ms 60000})]
+          (is (str/includes? (slurp (str (fs/path dir "out.txt"))) marker) "watch mode was running")
+          (is (re-find #"(?<![-\w])icanon" out) "canonical mode is back")
+          (is (re-find #"(?<![-\w])echo\b" out) "echo is back"))))))

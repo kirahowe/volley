@@ -99,8 +99,21 @@
   (with-restore! show-cursor!
     (fn [] (hide-cursor!) (f))))
 
-(defn- stty! [& args]
-  (sh-out (str "stty " (str/join " " args) " < /dev/tty 2>/dev/null")))
+(defn- stty!
+  "Runs `stty args` on the controlling terminal and returns its output, or
+  nil. It starts the process with a plain ProcessBuilder because restoring
+  the terminal happens in a shutdown hook too, and babashka.process refuses
+  to start anything once shutdown is in progress."
+  [& args]
+  (try
+    (let [proc (-> (ProcessBuilder. ^java.util.List (into ["stty"] args))
+                   (.redirectInput (java.io.File. "/dev/tty"))
+                   (.redirectError (java.io.File. "/dev/null"))
+                   (.start))
+          out (slurp (.getInputStream proc))]
+      (.waitFor proc)
+      out)
+    (catch Exception _ nil)))
 
 (defn with-raw-mode!
   "Runs `(f)` with the terminal in raw-ish mode (no line buffering, no echo)
