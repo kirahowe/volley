@@ -42,7 +42,9 @@
         cfg (config/normalize (:config read) options env)
         cfg (cond-> cfg
               (= :jvm (:runtime cfg))
-              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka"))]
+              (update :warnings conj "--runtime jvm is not supported yet; workers run on babashka")
+              (:watch? cfg)
+              (update :warnings conj "watch mode is not implemented yet; running the tests once"))]
     {:cli parsed
      :config (update cfg :warnings into (:warnings read))
      :read-error (:error read)
