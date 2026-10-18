@@ -1,3 +1,3 @@
 #kaocha/v1
 {:tests [{:id :a :test-paths ["ta" "support"]}
-         {:id :b :test-paths ["tb" "support"] :brisk/worker-setup [ps.setup/setup-b]}]}
+         {:id :b :test-paths ["tb" "support"] :volley/worker-setup [ps.setup/setup-b]}]}

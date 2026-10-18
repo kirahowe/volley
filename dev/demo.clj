@@ -3,9 +3,9 @@
   the live view can be judged by eye. Options: --speed N (default 1),
   --ci (append-only output), --no-color, --width N."
   (:require
-   [brisk.render :as render]
-   [brisk.run-state :as rs]
-   [brisk.shell.terminal :as term]))
+   [volley.render :as render]
+   [volley.run-state :as rs]
+   [volley.shell.terminal :as term]))
 
 ;;; Script
 
@@ -100,7 +100,7 @@
                         [1500 {:event :output :worker 3 :stream :stderr
                                :text "#  SIGSEGV (0xb) at pc=0x00007f"}]
                         [1900 {:event :ns/error :worker 3 :ns 'demo.crash-test :synthetic? true
-                               :error {:class "brisk.WorkerCrashed" :exit-code 139 :trace []
+                               :error {:class "volley.WorkerCrashed" :exit-code 139 :trace []
                                        :message "worker process exited with code 139"}}]
                         [1900 {:event :ns/end :worker 3 :ns 'demo.crash-test :synthetic? true
                                :crashed? true}]
@@ -135,7 +135,7 @@
 
 (defn- play
   "Replays the timeline in real time (scaled by :speed). Returns the exit
-  code brisk would use."
+  code volley would use."
   [{:keys [speed ci? color? width]}]
   (let [base   (System/currentTimeMillis)
         live?  (and (not ci?) (term/tty?))

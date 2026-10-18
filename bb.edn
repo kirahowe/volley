@@ -1,18 +1,18 @@
 {:paths ["src"]
  :deps {}
  :tasks
- {test {:doc "Run brisk's own test suite with brisk (tests.edn); takes brisk's flags"
+ {test {:doc "Run volley's own test suite with volley (tests.edn); takes volley's flags"
         :extra-paths ["test" "dev-resources"]
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
-        :requires ([brisk.main :as main])
+        :requires ([volley.main :as main])
         :task (System/exit (main/run *command-line-args*))}
-  test:jvm {:doc "Run brisk's own test suite with the parent on the JVM (clojure -M:test); takes brisk's flags. Fails on reflection warnings in src."
+  test:jvm {:doc "Run volley's own test suite with the parent on the JVM (clojure -M:test); takes volley's flags. Fails on reflection warnings in src."
             :requires ([babashka.fs :as fs] [babashka.process :as p] [clojure.string :as str])
             :task (let [proc (apply p/process {:out :string :err :string}
-                                    "clojure" "-M:test" "-m" "brisk.main" *command-line-args*)
+                                    "clojure" "-M:test" "-m" "volley.main" *command-line-args*)
                         {:keys [exit out err]} (deref proc)
-                        ;; parent and JVM workers print them while compiling brisk's source
-                        reflective (->> (re-seq (re-pattern "Reflection warning, (brisk/[^:]+\\.clj)[^\\n]*") (str out err))
+                        ;; parent and JVM workers print them while compiling volley's source
+                        reflective (->> (re-seq (re-pattern "Reflection warning, (volley/[^:]+\\.clj)[^\\n]*") (str out err))
                                         (filter (fn [m] (fs/exists? (str "src/" (second m)))))
                                         (map first)
                                         distinct)]
@@ -20,20 +20,20 @@
                     (binding [*out* *err*] (print err) (flush))
                     (when (seq reflective)
                       (binding [*out* *err*]
-                        (println "Reflection warnings in brisk's source:")
+                        (println "Reflection warnings in volley's source:")
                         (run! println reflective)))
                     (System/exit (if (seq reflective) 1 exit)))}
-  test:bootstrap {:doc "Run brisk's own test suite with plain clojure.test"
+  test:bootstrap {:doc "Run volley's own test suite with plain clojure.test"
                   :extra-paths ["test" "dev-resources"]
                   :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
-                  :requires ([brisk.test-bootstrap :as bootstrap])
+                  :requires ([volley.test-bootstrap :as bootstrap])
                   :task (bootstrap/run-tests! *command-line-args*)}
-  test:diff {:doc "Compare brisk's Kaocha-compat core against Kaocha itself (downloads Kaocha)"
+  test:diff {:doc "Compare volley's Kaocha-compat core against Kaocha itself (downloads Kaocha)"
              :extra-paths ["test" "dev-resources"]
              :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
                           lambdaisland/kaocha {:mvn/version "1.91.1392"}}
-             :requires ([brisk.test-bootstrap :as bootstrap])
-             :task (bootstrap/run-tests! ["brisk.diff.kaocha-diff" "brisk.diff.kaocha-e2e"])}
+             :requires ([volley.test-bootstrap :as bootstrap])
+             :task (bootstrap/run-tests! ["volley.diff.kaocha-diff" "volley.diff.kaocha-e2e"])}
   demo {:doc "Replay a scripted run through the live view (--ci, --speed N, --no-color)"
         :extra-paths ["dev"]
         :requires ([demo])

@@ -11,7 +11,7 @@
 
 (deftest jvm-option-reached-the-worker
   (is (= (System/getenv "EXPECT_FIXTURE_PROP")
-         (System/getProperty "brisk.fixture"))))
+         (System/getProperty "volley.fixture"))))
 
 (deftest heap-option-reached-the-worker
   (if-let [mb (System/getenv "EXPECT_MAX_HEAP_MB")]

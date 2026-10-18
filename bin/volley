@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Run volley with the classpath of the bb.edn in the current directory.
+# VOLLEY_COMMAND is what the rerun hint tells you to run.
+VOLLEY_COMMAND="${VOLLEY_COMMAND:-$0}" exec bb -m volley.main "$@"

@@ -1,3 +1,3 @@
 (ns ps.setup)
 
-(defn setup-b [] (System/setProperty "brisk.preload.url" "jdbc:test"))
+(defn setup-b [] (System/setProperty "volley.preload.url" "jdbc:test"))

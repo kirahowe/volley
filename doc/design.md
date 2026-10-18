@@ -1,9 +1,9 @@
-# brisk design
+# volley design
 
-brisk is a test runner for `clojure.test` that runs on babashka and on the
+volley is a test runner for `clojure.test` that runs on babashka and on the
 JVM. It runs test namespaces in parallel worker processes, shows results
 live as they happen, and has a watch mode with vitest-style keys. Moving from
-Kaocha takes one binstub change: brisk reads `tests.edn` and accepts
+Kaocha takes one binstub change: volley reads `tests.edn` and accepts
 Kaocha's CLI flags.
 
 ## Goals for the alpha
@@ -43,12 +43,12 @@ load namespaces and run tests, reporting what happens as events.
 
 This is structural, not a guideline:
 
-- Every namespace under `brisk.*` **except** `brisk.shell.*` and `brisk.main`
+- Every namespace under `volley.*` **except** `volley.shell.*` and `volley.main`
   is pure: no I/O, no atoms, no dynamic rebinding, no `System/` calls, no
   clocks, no randomness. Inputs come in as arguments (file contents as
   strings, timestamps as numbers, terminal width as a number) and results go
   out as data.
-- `brisk.shell.*` and `brisk.main` do the I/O and keep the side effects as
+- `volley.shell.*` and `volley.main` do the I/O and keep the side effects as
   thin as possible. They call into the core for every decision.
 - The parent's state is one immutable value threaded through a single event
   loop: `(reduce step state events)` in spirit. The one queue the loop reads
@@ -64,43 +64,43 @@ Pure core:
 
 | Namespace | Responsibility |
 |---|---|
-| `brisk.cli` | argv → options map, or a list of errors. Kaocha flags plus brisk's own. |
-| `brisk.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
-| `brisk.discover` | File path + file text → namespace info (name, requires). Path filtering by `ns-patterns`. |
-| `brisk.select` | Config + namespace infos → the plan's namespaces. |
-| `brisk.filters` | Kaocha's filter rules for one var (`decide`), and the focus-meta keys a worker settles. The only selection code a worker loads; `brisk.select` uses it too. |
-| `brisk.deps-graph` | Namespace infos → dependency graph; changed files → affected test namespaces. |
-| `brisk.schedule` | Pure scheduler state machine: queue, workers, assignments. |
-| `brisk.protocol` | Encode and decode messages between parent and worker. |
-| `brisk.run-state` | Fold events into the run's state: counts, failures, durations, exit code. |
-| `brisk.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
-| `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
-| `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
-| `brisk.junit` | Run state → the Ant JUnit XML report `kaocha.plugin/junit-xml` writes. |
-| `brisk.hooks` | Kaocha's hooks plugin and `:brisk/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
-| `brisk.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
-| `brisk.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
+| `volley.cli` | argv → options map, or a list of errors. Kaocha flags plus volley's own. |
+| `volley.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
+| `volley.discover` | File path + file text → namespace info (name, requires). Path filtering by `ns-patterns`. |
+| `volley.select` | Config + namespace infos → the plan's namespaces. |
+| `volley.filters` | Kaocha's filter rules for one var (`decide`), and the focus-meta keys a worker settles. The only selection code a worker loads; `volley.select` uses it too. |
+| `volley.deps-graph` | Namespace infos → dependency graph; changed files → affected test namespaces. |
+| `volley.schedule` | Pure scheduler state machine: queue, workers, assignments. |
+| `volley.protocol` | Encode and decode messages between parent and worker. |
+| `volley.run-state` | Fold events into the run's state: counts, failures, durations, exit code. |
+| `volley.render` | Run state → text: live frame, CI lines, failure reports, diffs, summary. |
+| `volley.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
+| `volley.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
+| `volley.junit` | Run state → the Ant JUnit XML report `kaocha.plugin/junit-xml` writes. |
+| `volley.hooks` | Kaocha's hooks plugin and `:volley/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
+| `volley.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
+| `volley.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
 
 | Namespace | Responsibility |
 |---|---|
-| `brisk.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
-| `brisk.shell.hooks` | Resolves and calls hooks inside a worker (and `post-summary` in the parent). Portable, like the worker. |
-| `brisk.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
-| `brisk.shell.fs` | Glob test paths, read files, snapshot modification times. |
-| `brisk.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
-| `brisk.shell.jvm` | The one JVM-only call (`RuntimeMXBean` input arguments), loaded through `requiring-resolve` because babashka lacks `java.lang.management`. |
-| `brisk.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
-| `brisk.shell.watch` | The watch loop: polls mtimes and keys, drives `brisk.watch` and one engine run at a time. |
-| `brisk.main` | `-main`: wire everything together and run the event loop (or hand over to `brisk.shell.watch`). |
+| `volley.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
+| `volley.shell.hooks` | Resolves and calls hooks inside a worker (and `post-summary` in the parent). Portable, like the worker. |
+| `volley.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
+| `volley.shell.fs` | Glob test paths, read files, snapshot modification times. |
+| `volley.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
+| `volley.shell.jvm` | The one JVM-only call (`RuntimeMXBean` input arguments), loaded through `requiring-resolve` because babashka lacks `java.lang.management`. |
+| `volley.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
+| `volley.shell.watch` | The watch loop: polls mtimes and keys, drives `volley.watch` and one engine run at a time. |
+| `volley.main` | `-main`: wire everything together and run the event loop (or hand over to `volley.shell.watch`). |
 
 ## Data contracts
 
 These shapes are the agreement between namespaces. Change them here first,
 then in code.
 
-### Normalized config (`brisk.config`)
+### Normalized config (`volley.config`)
 
 ```clojure
 {:tests            [{:id           :unit            ; keyword
@@ -114,23 +114,23 @@ then in code.
                      :focus-meta   []               ; keywords
                      :skip-meta    []
                      :hooks        {:pre-test [...]}  ; suite-level hooks, when present
-                     :worker-setup [...]}]             ; suite-level :brisk/worker-setup, when present
+                     :worker-setup [...]}]             ; suite-level :volley/worker-setup, when present
  :fail-fast?       false
  :color?           true
  :capture-output?  true
- :reporter         :live                            ; brisk reporter keyword
+ :reporter         :live                            ; volley reporter keyword
  :reporters        [my.ns/report]                   ; the project's own reporters, called in the workers
  :watch?           false
- :workers          8                                ; brisk-only; default depends on :runtime
- :isolate?         false                            ; brisk-only: fresh process per ns
- :preload?         false                            ; brisk-only: each worker requires every planned ns first
+ :workers          8                                ; volley-only; default depends on :runtime
+ :isolate?         false                            ; volley-only: fresh process per ns
+ :preload?         false                            ; volley-only: each worker requires every planned ns first
  :bindings         {my.ns/*var* value}              ; Kaocha's :kaocha/bindings, bound in the workers
- :runtime          :bb                              ; brisk-only: :bb or :jvm; default is the parent's runtime
+ :runtime          :bb                              ; volley-only: :bb or :jvm; default is the parent's runtime
  :hooks            {:pre-load [my.hooks/load!] ...}  ; only with :kaocha.plugin/hooks; see "Hooks"
- :worker-setup     [my.test/isolate!]              ; from :brisk/worker-setup
+ :worker-setup     [my.test/isolate!]              ; from :volley/worker-setup
  :junit-xml        {:target-file "junit.xml"        ; only with :kaocha.plugin/junit-xml and a file
                    :omit-system-out? false :add-location? false}
- :warnings         ["brisk does not run these plugins and ignores their options: :kaocha.plugin/notifier"]
+ :warnings         ["volley does not run these plugins and ignores their options: :kaocha.plugin/notifier"]
  :unknown-plugins  [:my.team/plugin]                ; neither built in nor known; the shell checks they load
  :errors           []                               ; config Kaocha would exit on; defaults used
  :plugins          [:kaocha.plugin/filter ...]
@@ -143,21 +143,21 @@ keys, so they stay separate from the per-suite vectors. Filter entries keep
 the type they had: symbols from tests.edn, keywords from the CLI.
 
 Kaocha accepts both `:test-paths` and `:kaocha/test-paths` style keys, and
-`#kaocha/v1` fills in defaults. brisk must match Kaocha's normalization. The
+`#kaocha/v1` fills in defaults. volley must match Kaocha's normalization. The
 reference is Kaocha's own source in
 `~/.m2/repository/lambdaisland/kaocha/1.91.1392/kaocha-1.91.1392.jar`
 (`kaocha/config.clj`, `kaocha/default_config.edn`, `kaocha/plugin/filter.clj`).
 
-Kaocha options brisk doesn't support produce a warning, never a silent
-ignore. Plugins fall in three groups (`brisk.config`):
+Kaocha options volley doesn't support produce a warning, never a silent
+ignore. Plugins fall in three groups (`volley.config`):
 
 - Built in or stood in for, silently: `:kaocha.plugin/filter`,
   `:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (one of
-  Kaocha's defaults; brisk never shuffles, it orders by previous timings),
-  `:kaocha.plugin/print-invocations` (brisk prints its own rerun command),
-  `:kaocha.plugin/profiling` (brisk always lists the slowest tests),
+  Kaocha's defaults; volley never shuffles, it orders by previous timings),
+  `:kaocha.plugin/print-invocations` (volley prints its own rerun command),
+  `:kaocha.plugin/profiling` (volley always lists the slowest tests),
   `:kaocha.plugin/hooks` (see "Hooks"), `:kaocha.plugin/junit-xml`
-  (`brisk.junit`; the parent writes the report from the run state after
+  (`volley.junit`; the parent writes the report from the run state after
   the summary).
 - Kaocha's other plugins and common add-ons (notifier, gc-profiling,
   debug, orchestra, preloads, version-filter, the alpha ones, cloverage):
@@ -166,20 +166,20 @@ ignore. Plugins fall in three groups (`brisk.config`):
 - Anything else goes to `:unknown-plugins`. Kaocha exits 248 when a
   plugin's namespaces cannot be loaded (`kaocha.plugin/register`); the
   shell checks the classpath and the suites' paths for a source file of
-  each candidate namespace (`brisk.config/plugin-candidates`) and exits
-  248 with Kaocha's message (`brisk.config/plugin-load-error`) when there
+  each candidate namespace (`volley.config/plugin-candidates`) and exits
+  248 with Kaocha's message (`volley.config/plugin-load-error`) when there
   is none. A plugin with a namespace that exists joins the warning line.
 
 Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`,
 `--profiling`, `--notifications`, `--gc-profiling` and their siblings)
-are parsed by `brisk.cli` like any other, but, as in Kaocha, they are an
+are parsed by `volley.cli` like any other, but, as in Kaocha, they are an
 unknown option (exit 255) unless their plugin is in `:plugins` or given
-with `--plugin` (`brisk.cli/plugin-flag-errors`). `--help` lists them
+with `--plugin` (`volley.cli/plugin-flag-errors`). `--help` lists them
 under a heading of their own. `--randomize` and `--seed` belong to a
-default plugin and are always accepted, with one warning that brisk does
+default plugin and are always accepted, with one warning that volley does
 not randomize.
 
-### Namespace info (`brisk.discover`)
+### Namespace info (`volley.discover`)
 
 ```clojure
 {:ns       'my.app-test
@@ -198,7 +198,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
 {:op :run :ns 'my.app-test :run-id 3
  :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
                     :suite-focused? bool :suite-skipped? bool}]  ; :suite-skipped? only when true
-          :ns-meta {...}    ; from brisk.select/plan; workers call filters/decide
+          :ns-meta {...}    ; from volley.select/plan; workers call filters/decide
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
           :pass-inputs {:suite {:id kw} :own filters :global filters}}  ; visible statically (see below)
  :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
@@ -210,15 +210,15 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
  :reporters [sym]                             ; the project's reporters, see below
  :worker-setup [entry]
  :suites {:unit {:hooks {...} :worker-setup [...]}}
- :testables {:unit suite-testable}            ; brisk.hooks/suite-testable per suite
- :config kaocha-shaped-config}                ; brisk.hooks/kaocha-config
+ :testables {:unit suite-testable}            ; volley.hooks/suite-testable per suite
+ :config kaocha-shaped-config}                ; volley.hooks/kaocha-config
 {:op :shutdown}
 ```
 
 `:run` messages also carry `:suite`, the id of the suite the namespace was
 planned under.
 
-**Tests the parser cannot see.** `brisk.discover` sees only literal
+**Tests the parser cannot see.** `volley.discover` sees only literal
 `deftest`, `deftest-` and `defspec` forms, but any macro call can define
 tests, so the parent's plan treats every namespace as possibly holding
 more tests than it shows, and workers decide per var with the real vars
@@ -235,9 +235,9 @@ and metadata:
   each select spec carries `:resolve-focus-meta` and `:pass-inputs`: the
   suite and the suite's and global filters the passes are built from. A
   worker requires every namespace in `:preload` before its first test,
-  computes the keys its loaded tests carry (`brisk.filters/used-meta`),
+  computes the keys its loaded tests carry (`volley.filters/used-meta`),
   removes the others from both filter sets and rebuilds the passes
-  (`brisk.filters/resolve-focus-meta`), and warns, once per worker, about
+  (`volley.filters/resolve-focus-meta`), and warns, once per worker, about
   each dropped key with Kaocha's message (`:worker/warning`; the parent
   prints each text once). The plan keeps the namespaces the filters keep
   with every key in place. Dropping a key no test carries never brings
@@ -247,20 +247,20 @@ and metadata:
   carries `:suite-skipped?`. The plan's size and the worker's work are
   linear in the number of keys.
 - A namespace that finishes with every var skipped by a filter (or with
-  no vars) is not listed or counted (`brisk.run-state/unselected?`), as
+  no vars) is not listed or counted (`volley.run-state/unselected?`), as
   Kaocha does not report it.
 
 ### Worker → parent events (stdout)
 
 Each event is one line: a prefix followed by an EDN map. The pool starts
 each worker with a random nonce as its last argument, and the prefix is
-`#brisk/event:<nonce> ` (`brisk.protocol/prefix-for`; `#brisk/event `
+`#volley/event:<nonce> ` (`volley.protocol/prefix-for`; `#volley/event `
 when a worker is started without one). The worker writes each event with
-a newline before and after it (`brisk.protocol/frame-event`), and the
+a newline before and after it (`volley.protocol/frame-event`), and the
 pool drops empty stdout lines. Child processes a test starts inherit the
 worker's stdout, so the leading newline ends a partial line a child left
 behind, and the nonce means nothing a child prints can pass for an event.
-`brisk.protocol/decode-line` also finds the prefix anywhere in a line:
+`volley.protocol/decode-line` also finds the prefix anywhere in a line:
 text before it, and any after the event's map, is output.
 Any other line on a worker's stdout or stderr is stray output; the parent
 attributes it to whatever test that worker is currently running. The parent
@@ -288,13 +288,13 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 
 Passing assertions are counted in `:var/end`, not sent one by one.
 
-Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
+Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`):
 
 - `:ns/error` is always followed by `:ns/end`, so every namespace has exactly
   one terminal event. `:ns/error` covers load errors and a `:once` or `:each`
   fixture that throws.
-- `:var/skipped :reason` is whatever `brisk.filters/decide` returned.
-  Only `:pending` vars are part of the run (`brisk.run-state/in-run?`):
+- `:var/skipped :reason` is whatever `volley.filters/decide` returned.
+  Only `:pending` vars are part of the run (`volley.run-state/in-run?`):
   they count as tests and as "skipped" in the summary, `<skipped/>` in
   the junit-xml report. A var skipped for any other reason (a filter, a
   `pre-test` hook, a failed fixture) is left out of every count and of
@@ -313,7 +313,7 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   a protocol error is killed by the engine's watchdog, and its exit is
   reported as a crash that says why.
 - The worker encodes every event with the print vars bound to
-  `brisk.protocol/safe-print-bindings` (`*print-length*` and
+  `volley.protocol/safe-print-bindings` (`*print-length*` and
   `*print-level*` nil, `*print-dup*`, `*print-meta*` and
   `*print-namespace-maps*` false, `*print-readably*` true). Events are
   printed inside the test's dynamic scope, and a fixture that binds
@@ -323,8 +323,8 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   process exits and both streams close, waiting at most 500ms for the
   streams: a background process a test started inherits the worker's
   pipes and may keep them open long after the worker is gone. Lines that
-  arrive after the exit event are stray output of no namespace. When the worker held a namespace, `brisk.schedule/crash-events`
-  yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
+  arrive after the exit event are stray output of no namespace. When the worker held a namespace, `volley.schedule/crash-events`
+  yields a synthetic `:ns/error` (`:error {:class "volley.WorkerCrashed" ...
   :exit-code n}`) and `:ns/end` (`:crashed? true`), both with `:synthetic? true`.
 - The worker reads commands from the original stdin and points
   `System/in` (with `System/setIn`) and `*in*` at empty streams, so a test
@@ -348,7 +348,7 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   printed is shown once, since each worker loads the namespaces Kaocha
   loads once), for the failure report; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.
-- The worker calls the 5-arity `brisk.filters/decide` with the loaded
+- The worker calls the 5-arity `volley.filters/decide` with the loaded
   namespace's real metadata (merged over the static `:ns-meta` copy).
 - `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
   error is in `:error`.
@@ -363,29 +363,29 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
 - A `:fail` whose actual value is a failed `clojure.test.check/quick-check`
   result (what a failing `defspec` reports) also carries `:check {:seed n
   :num-tests n :failing-size n :smallest value :fail value :result value}`
-  (`brisk.protocol/encode-check`; `:result` only when the property returned
-  something other than false). `brisk.render` shows the seed, the count, the
+  (`volley.protocol/encode-check`; `:result` only when the property returned
+  something other than false). `volley.render` shows the seed, the count, the
   shrunk input and a rerun call instead of the raw result map.
 - File paths in events are relative to the project directory
-  (`brisk.shell.worker/project-path`): on the JVM a var's `:file` is
+  (`volley.shell.worker/project-path`): on the JVM a var's `:file` is
   classpath-relative (`p/a_test.clj`), so the worker finds it on the
   classpath and reports `test/p/a_test.clj`, as babashka does.
 - `:file` and `:line` of a `:fail` are the reported ones only when the file
-  belongs to the project (`brisk.shell.worker/project-file?`). Otherwise,
+  belongs to the project (`volley.shell.worker/project-file?`). Otherwise,
   for example an interpreter file that test.check found by walking the
   stack on babashka, they are the test var's own. Values are cut at 100 items, 8 levels and 10000
   characters; a cut value has no `:edn`.
 
 Values (`:expected`, `:actual`) are sent as
 `{:str "(pr-str value)" :edn value-or-absent}`. `:edn` is present only when
-the value survives an EDN round trip; `brisk.render` uses it for structural
+the value survives an EDN round trip; `volley.render` uses it for structural
 diffs and falls back to the string. Errors (`err`) are
 `{:class str :message str :data str-or-nil :trace [str ...] :cause err-or-nil}`
 with the stack trace trimmed of runner frames.
 
 On babashka the Java stack trace of an error in a test holds only
-interpreter frames, so `brisk.shell.worker/encode-throwable` takes the
-trace from `sci.core/stacktrace` instead (`brisk.protocol/interpreter-trace`:
+interpreter frames, so `volley.shell.worker/encode-throwable` takes the
+trace from `sci.core/stacktrace` instead (`volley.protocol/interpreter-trace`:
 `my.app/parse (src/my/app.clj:12)`, built-in and runner frames dropped).
 The interpreter records that call stack only when no interpreted
 `try`/`catch` is active where the exception passes, and the worker's own
@@ -394,10 +394,10 @@ written `(catch ^:sci/error Throwable e ...)`, which tells SCI to keep the
 location. The exception then reaches the worker wrapped in an ExceptionInfo
 with `:sci.impl/callstack` in its data. Such wrappers can sit anywhere in
 the cause chain (a future rethrows one inside an ExecutionException, a
-hook error wraps one), so `brisk.shell.worker/encode-throwable` leaves
+hook error wraps one), so `volley.shell.worker/encode-throwable` leaves
 every wrapper out of the chain, rebuilds a message that quotes one, and
 takes the trace from the first call stack that names user code. A hook
-error names the unwrapped exception (`brisk.shell.hooks/unwrap`). The JVM
+error names the unwrapped exception (`volley.shell.hooks/unwrap`). The JVM
 keeps its own stack trace.
 
 A test var opens (`:var/start`) before its `:each` fixtures run and
@@ -411,7 +411,7 @@ does not run a namespace whose tests are all skipped.
 `:capture-output?` means the worker binds `*out*`/`*err*` per test and
 returns the text in `:var/end`; the parent shows it only for failed tests.
 
-### Run state (`brisk.run-state`)
+### Run state (`volley.run-state`)
 
 A plain map built only by folding events. It must not depend on the
 interleaving of events from different workers beyond each worker's own order.
@@ -437,7 +437,7 @@ more, the difference is reported as a failure saying the details were
 lost, and counts toward the exit code as that many assertions.
 
 A crash is counted once, from the scheduler's synthetic `:ns/error`
-(class `brisk.WorkerCrashed`); it renders as CRASH. `:worker/exit` never
+(class `volley.WorkerCrashed`); it renders as CRASH. `:worker/exit` never
 creates a failure, whatever its code. A file whose ns form cannot be read
 counts as one error, as Kaocha's `load-error-testable` does. Namespaces that
 never ran are listed in the summary; they count as failures unless the
@@ -448,11 +448,11 @@ vanished without a crash being reported cannot make a run pass. Interrupted name
 keep the vars that finished, lose the one that was running, are listed
 in the summary, and never count as failures.
 
-### Engine inputs and effects (`brisk.engine`)
+### Engine inputs and effects (`volley.engine`)
 
 Events from a worker id the run never spawned are ignored.
 Inputs are the flat events from the queue plus `{:event :tick :at ms}`,
-which `brisk.main` feeds whenever 80ms pass (the poll timeout, or after an
+which `volley.main` feeds whenever 80ms pass (the poll timeout, or after an
 event if the queue never goes quiet). In live mode a tick at most every
 250ms also carries `:width`, the terminal width read again, which
 replaces the width the live view renders to. Effects:
@@ -483,35 +483,35 @@ finished namespace with its failures, then the summary; a test that runs
 for 30s gets a `still running: ns/var (30.01s)` line, repeated every 30s,
 in this mode and the documentation one), `:documentation`
 (Kaocha's documentation layout, failures and summary at the end) and
-`:result` (`--print-result`: one EDN map from `brisk.run-state/result`).
+`:result` (`--print-result`: one EDN map from `volley.run-state/result`).
 
 Rendering is incremental. The engine keeps `:dirty`, the namespaces named
 by the events folded since the last render (plus the namespace a worker
 held when one of its protocol lines broke, and the namespaces fail-fast
-interrupted), and passes it to `brisk.render` as `:only`. The renderers
-then look at those namespaces alone, and `brisk.run-state/ns-failures-of`
+interrupted), and passes it to `volley.render` as `:only`. The renderers
+then look at those namespaces alone, and `volley.run-state/ns-failures-of`
 gives one namespace's failures without walking the others, so a run's
 output costs time linear in its namespaces.
 
 `preflight` returns Kaocha's exit codes: a config that fails Kaocha's
 spec (a suite id that is not a keyword) 252, a plugin that cannot be
 loaded 248, other config errors (including an unreadable tests.edn, and
-values brisk cannot use such as `:preload? "yes"` or a `:kaocha/bindings`
+values volley cannot use such as `:preload? "yes"` or a `:kaocha/bindings`
 that is not a map, on which Kaocha crashes) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
 (-2), help/version/print-config/print-test-plan 0 (also with `--watch`,
 as Kaocha prints and exits; `--print-result` turns `--watch` off with a
 warning and prints the one result), and an empty plan prints
 Kaocha's "No tests were found" warning and exits 0. A run exits with
-`brisk.run-state/exit-code`.
+`volley.run-state/exit-code`.
 
 ## Hooks
 
 Real suites need setup in the process that runs the tests: pointing the
 code at a temporary home directory, instrumenting specs, starting a
-system. Kaocha runs everything in one process. brisk's tests run in
+system. Kaocha runs everything in one process. volley's tests run in
 several worker processes, so setup has to happen in each of them.
 
-**`:brisk/worker-setup`** (top level or on a suite) is a vector of
+**`:volley/worker-setup`** (top level or on a suite) is a vector of
 qualified symbols naming fns of no arguments. Each worker calls the
 top-level ones once, before it loads its first namespace, and a suite's
 ones before its first namespace of that suite. It needs no plugin. This
@@ -519,17 +519,17 @@ is the recommended way to isolate a process, as relay's
 `relay.test-support/isolate!` does.
 
 **Kaocha's hooks plugin** (`:plugins [:kaocha.plugin/hooks]`) is
-supported with these semantics (`brisk.hooks/semantics`). A hook is a
+supported with these semantics (`volley.hooks/semantics`). A hook is a
 qualified symbol, resolved with `requiring-resolve` in the process that
 runs it, or a list form, evaluated there. Its arguments are Kaocha's;
-`brisk.hooks` builds testables, the test plan and the result in Kaocha's
+`volley.hooks` builds testables, the test plan and the result in Kaocha's
 shape (`:kaocha.testable/type`, `:kaocha.testable/id`, `:kaocha.ns/name`,
 `:kaocha.var/var`, `:kaocha.result/pass` and so on). The test plan a
 worker passes holds only the namespaces that worker has loaded so far.
 
 | Hook | Runs in | When |
 |---|---|---|
-| `pre-load` | each worker | once, before its first namespace is required (after `:brisk/worker-setup`) |
+| `pre-load` | each worker | once, before its first namespace is required (after `:volley/worker-setup`) |
 | `post-load` | each worker | after every namespace it loads, with the plan so far |
 | `pre-run` | each worker | once, before the tests of its first namespace |
 | `post-run` | each worker | once, when it is shut down cleanly |
@@ -537,11 +537,11 @@ worker passes holds only the namespaces that worker has loaded so far.
 | `pre-test` / `post-test` (top level) | each worker | around each namespace and each var; with the suite testable once per worker, before its first namespace of the suite and at shutdown |
 | `pre-test` / `post-test` on a suite (and `before`/`after`) | each worker | with the suite testable, once per worker as above |
 | `pre-load-test` / `post-load-test` | each worker | around each namespace's require; with the suite testable once per worker |
-| `pre-report` | each worker | on every clojure.test report event, before brisk counts it |
+| `pre-report` | each worker | on every clojure.test report event, before volley counts it |
 | `post-summary` | the parent | once, after the summary is printed |
-| `config` | nowhere | warned about: brisk plans in the parent before any hook could change the config |
+| `config` | nowhere | warned about: volley plans in the parent before any hook could change the config |
 
-Return values are threaded from hook to hook as in Kaocha. brisk uses the
+Return values are threaded from hook to hook as in Kaocha. volley uses the
 result of `pre-report` (the event it counts), of a var's `pre-test` (a
 testable with `:kaocha.testable/skip` skips the var, reported with reason
 `:pre-test-hook`) and of `wrap-run`; it ignores the others, because the
@@ -559,7 +559,7 @@ Hooks a suite cannot have in Kaocha (`pre-load` on a suite, say), unknown
 hook keys, entries that are neither qualified symbols nor lists, and hook
 keys without the plugin are warnings.
 
-**Failures.** If `:brisk/worker-setup`, `pre-load`, `pre-run` or a suite's
+**Failures.** If `:volley/worker-setup`, `pre-load`, `pre-run` or a suite's
 setup hooks throw (or a hook does not resolve), the worker runs no tests:
 every namespace it is given is reported as an `:ns/error` with phase
 `:setup` ("not run: worker setup failed"), so a process that could not be
@@ -573,7 +573,7 @@ was. A shutdown hook that throws is sent as `:worker/error` (with `:hook`)
 and counts as one failure per hook and message, however many workers
 it failed in, since Kaocha runs `post-run` once; the report lists the
 workers. A `wrap-run` hook that never calls `run` leaves the namespace's
-tests unrun: Kaocha then reports nothing and exits 0, and so does brisk,
+tests unrun: Kaocha then reports nothing and exits 0, and so does volley,
 with a warning naming the namespace.
 In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker killed by
@@ -581,9 +581,9 @@ fail-fast or a watch cancel runs no shutdown hooks.
 
 ## Reporters
 
-brisk always prints its own output. `--reporter` and `:kaocha/reporter`
+volley always prints its own output. `--reporter` and `:kaocha/reporter`
 choose between its forms and add the project's reporters
-(`brisk.config/brisk-reporter`):
+(`volley.config/volley-reporter`):
 
 - `kaocha.report/documentation` selects the documentation layout.
 - Kaocha's other reporters (`dots`, `kaocha.report.progress/report`,
@@ -593,8 +593,8 @@ choose between its forms and add the project's reporters
   get a warning and the live view.
 - Any other symbol is a reporter of the project's own, kept in
   `:reporters`. Kaocha calls its reporter with every clojure.test event;
-  brisk's workers do the same, after the `pre-report` hooks
-  (`brisk.shell.hooks/report-fn`), with `*out*` bound to the worker's
+  volley's workers do the same, after the `pre-report` hooks
+  (`volley.shell.hooks/report-fn`), with `*out*` bound to the worker's
   stray output, so what a reporter prints shows like uncaptured test
   output. A var may hold a function or a vector of reporter symbols, as
   in `kaocha.config/resolve-reporter`. A reporter that throws is printed
@@ -606,10 +606,10 @@ choose between its forms and add the project's reporters
 
 ## Watch mode
 
-`brisk.shell.watch` runs a single loop on one thread. Each pass it waits up
+`volley.shell.watch` runs a single loop on one thread. Each pass it waits up
 to 80ms on the event queue, feeds the event and an 80ms tick to the current
-run's `brisk.engine` state, reads pending key presses, and every 200ms
-(`brisk.watch/poll-ms`) takes a snapshot of modification times. The queue
+run's `volley.engine` state, reads pending key presses, and every 200ms
+(`volley.watch/poll-ms`) takes a snapshot of modification times. The queue
 still holds only worker events: keys and file changes are read by the loop
 that reads the queue, so there is no second queue and no extra thread or
 atom. The shell threads one value through the loop (UI state, config,
@@ -620,15 +620,15 @@ queue, as in a one-shot run.
 
 **Watched files.** Every file under every suite's `:test-paths` and
 `:source-paths`, plus tests.edn. Dot directories and editor droppings
-(`.#x`, `x~`, `#x#`, `.swp`, `.tmp`) are skipped (`brisk.watch/watched-file?`).
+(`.#x`, `x~`, `#x#`, `.swp`, `.tmp`) are skipped (`volley.watch/watched-file?`).
 
 **From files to a rerun.**
 
-1. `brisk.watch/changes` diffs two snapshots into added, modified and
+1. `volley.watch/changes` diffs two snapshots into added, modified and
    deleted paths.
 2. The shell re-reads and re-parses only the added and modified Clojure
-   files (`brisk.discover/ns-info`; `watch/update-infos`) and computes
-   `watch/affected-by`: `brisk.deps-graph/affected` over the new graph for
+   files (`volley.discover/ns-info`; `watch/update-infos`) and computes
+   `watch/affected-by`: `volley.deps-graph/affected` over the new graph for
    added and modified files, over the old graph for deleted ones, since the
    new graph no longer knows them. A path the graph cannot place (a
    resource, an unreadable file) affects every test namespace, as in
@@ -650,7 +650,7 @@ queue, as in a one-shot run.
 **Selections.** The state machine emits `{:effect :start-run :selection s}`
 where `s` is `{:all? :failed? :namespaces :reload-config? :ns-pattern
 :test-pattern}`. `watch/select-plan` builds the plan: it takes the normal
-`brisk.select/plan` (so the config's suites, ns-patterns, `:focus`,
+`volley.select/plan` (so the config's suites, ns-patterns, `:focus`,
 `:skip` and meta filters always apply), then keeps only the namespaces that
 
 - are selected: `:all?`, or `:namespaces` (the affected ones), or with
@@ -676,14 +676,14 @@ subset passed. Failures of namespaces that no longer exist are dropped.
 during a run, the shell kills the workers by handle, waits for their exit
 events so none of their output reaches the next run, and starts the new
 run. Worker ids count up for the life of the parent process (each run's
-`brisk.engine/init` gets `:first-worker-id`, the next id after the last
+`volley.engine/init` gets `:first-worker-id`, the next id after the last
 run's), and the engine drops every event from a worker its run did not
 spawn, so a cancelled run's worker that takes longer than the 5s wait to
 exit can never be mistaken for one of the new run's. The new selection is the union of the cancelled run's selection and
 the new one, so a cancelled affected-only run does not lose its namespaces.
 A change that affects no test namespace does not disturb a run.
 
-**Keys** (raw mode through `brisk.shell.terminal`, restored when the loop
+**Keys** (raw mode through `volley.shell.terminal`, restored when the loop
 ends, on Ctrl-C, on a crash, and by a shutdown hook; `isig` stays on, so
 Ctrl-C still interrupts):
 
@@ -735,24 +735,24 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   `--isolate` starts a fresh process per namespace. The default should be
   chosen by benchmark on real suites.
 - **Serial tests.** A namespace with `^:synchronized` (eftest/hawk's marker)
-  or `^:brisk/serial` metadata runs after the parallel batch, alone. This
-  needs the namespace's metadata, which `brisk.discover` reads from the `ns`
+  or `^:volley/serial` metadata runs after the parallel batch, alone. This
+  needs the namespace's metadata, which `volley.discover` reads from the `ns`
   form statically.
 - **JVM mode.** Workers run on the runtime the parent runs on, unless
   `--runtime` (or `:runtime` in tests.edn) says otherwise; a bb parent is
   detected by the `babashka.version` system property.
   * A JVM parent starts `java <defaults> <forwarded options> -cp <its
-    classpath + suite test paths> clojure.main -m brisk.shell.worker` with
+    classpath + suite test paths> clojure.main -m volley.shell.worker` with
     its own `java`. The forwarded options are the parent's
     `RuntimeMXBean` input arguments minus things that collide with the
-    parent (`brisk.runtime/forward-jvm-args`). `-XX:TieredStopAtLevel=1`
+    parent (`volley.runtime/forward-jvm-args`). `-XX:TieredStopAtLevel=1`
     comes first so a forwarded setting wins.
   * `--runtime jvm` from a bb parent computes the classpath with `clojure
     -Spath -A<aliases>`: `--aliases`, else `:test` if deps.edn defines it,
-    else none. It caches the result in `.brisk/classpath-<key>.txt`, where
+    else none. It caches the result in `.volley/classpath-<key>.txt`, where
     the key is a SHA-256 of deps.edn and the aliases; a cache whose jars
-    are gone is recomputed. brisk's own source root (found from
-    `brisk/shell/worker.clj` on the parent's classpath) is put in front,
+    are gone is recomputed. volley's own source root (found from
+    `volley/shell/worker.clj` on the parent's classpath) is put in front,
     and the aliases' `:jvm-opts` are passed to the workers.
   * Default worker count: CPU count capped at 8 (bb) or 4 (JVM). The JVM
     cap comes from the benchmark below.
@@ -760,16 +760,16 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
     run (parent JVM plus worker JVM), and each worker loads the project's
     source again, so the engine already starts every worker at once, workers
     are kept across namespaces, and a worker loads `clojure.test` and
-    `brisk.filters` before it sends `:worker/ready`. A worker loads
-    nothing that reads source files (`brisk.select` and `brisk.discover`
+    `volley.filters` before it sends `:worker/ready`. A worker loads
+    nothing that reads source files (`volley.select` and `volley.discover`
     pull in edamame) or folds run state, which keeps a JVM worker's start
     to ready near 0.4s on a 16-core Mac. `--isolate` is allowed
     with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
-  timings from a previous run (stored by the shell in `.brisk/timings.edn`).
+  timings from a previous run (stored by the shell in `.volley/timings.edn`).
 - **Fail fast.** On the first failure (a failed or erroring assertion, a
   namespace error or a crash) the engine stops handing out work, kills every
-  other busy worker by handle at once (`brisk.schedule/interrupt` takes
+  other busy worker by handle at once (`volley.schedule/interrupt` takes
   their namespaces back, so their exit is not a crash), drops anything
   else those workers still send, and records their namespaces with
   `:run/interrupted`. The failing worker gets `:fail-fast?` in its run
@@ -783,21 +783,21 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (see "Reporters" below), `--plugin`, `--profile`, `--diff-style`,
   `--print-config`, `--print-test-plan`, `--print-result`, and the plugin
-  flags above. `--[no-]randomize` and `--seed` are accepted with a warning. brisk's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
+  flags above. `--[no-]randomize` and `--seed` are accepted with a warning. volley's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
   `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions
 
-Choices made where Kaocha gives no answer or brisk cannot match it
+Choices made where Kaocha gives no answer or volley cannot match it
 exactly. Each is the conservative option.
 
 - **Overlapping suites.** When two suites select the same namespace,
-  Kaocha runs it twice. brisk runs it once, with the first suite's
+  Kaocha runs it twice. volley runs it once, with the first suite's
   selection, because run state is keyed by namespace.
-- **Colour.** Kaocha colours output even when piped. brisk colours only
+- **Colour.** Kaocha colours output even when piped. volley colours only
   when stdout is a terminal or `--color` is given explicitly, and never
   when `NO_COLOR` is set, so CI logs stay plain unless asked.
-- **Unreadable tests.edn.** Kaocha lets the reader exception escape. brisk
+- **Unreadable tests.edn.** Kaocha lets the reader exception escape. volley
   prints the error and exits 250, the code Kaocha uses for invalid config.
 - **Namespaces that never ran.** When no worker can be started, every
   namespace left in the queue counts as one failure, so a broken
@@ -819,7 +819,7 @@ exactly. Each is the conservative option.
 ### JVM benchmark
 
 Wall time in seconds of `clojure -M:test` (Kaocha 1.91.1392) and of
-`clojure -M:test:brisk --workers N` on four copies of real projects, three
+`clojure -M:test:volley --workers N` on four copies of real projects, three
 runs each, on a 16-core Mac that was also busy with other work (load
 average 12 to 17), so the spread is wide. Every run had the same executed
 vars, assertion counts and pass/fail per var as Kaocha.
@@ -840,60 +840,60 @@ the cost of starting a second one.
 
 ### Deliberate divergences from Kaocha
 
-`bb test:diff` (`brisk.diff.kaocha-e2e`) runs Kaocha 1.91.1392 under
-babashka and brisk on the fixture projects in `dev-resources/projects` and
+`bb test:diff` (`volley.diff.kaocha-e2e`) runs Kaocha 1.91.1392 under
+babashka and volley on the fixture projects in `dev-resources/projects` and
 requires the same executed vars, outcomes, assertion counts and exit
 codes. These cases differ on purpose, and the differential tests pin the
 difference:
 
 - **A namespace that fails to load.** Kaocha's `kaocha.testable/load`
   rethrows a namespace's load error to the suite, so the whole suite
-  becomes one error and none of its tests run. brisk reports that
+  becomes one error and none of its tests run. volley reports that
   namespace (and an unreadable ns form, a `:once` fixture that throws)
   as one error each and runs the rest. Both exit non-zero.
 - **Fail-fast inside a var.** Kaocha's `kaocha.report/fail-fast` throws
   at the first failing assertion, so the rest of that var does not run.
-  brisk finishes the failing var (its other assertions still count), then
+  volley finishes the failing var (its other assertions still count), then
   runs no further var, as Kaocha's `run-testables` does. Namespaces other
   workers were running are killed and listed as interrupted; Kaocha, with
   one process, has nothing to compare them to.
 - **Load error class on the JVM.** The JVM wraps a missing-namespace error
   raised while loading a test namespace in a `CompilerException`; babashka
-  throws the `FileNotFoundException` itself. brisk reports whatever the
+  throws the `FileNotFoundException` itself. volley reports whatever the
   worker saw, with the cause chain.
 - **A test that calls `System/exit`.** It ends Kaocha's process, with
   whatever code the test chose, so `(System/exit 0)` makes Kaocha pass.
-  In brisk it ends one worker; the namespace is reported as a CRASH,
+  In volley it ends one worker; the namespace is reported as a CRASH,
   whatever the code, and the run goes on.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
-  escape and exits with a stack trace. brisk reports a namespace error.
+  escape and exits with a stack trace. volley reports a namespace error.
 - **An assertion in a `:once` fixture.** Kaocha prints a failing one
   but leaves it out of its counts and the exit code, since its totals
-  add up the vars. brisk counts it for the namespace, in the summary and
+  add up the vars. volley counts it for the namespace, in the summary and
   in the exit code. (Assertions in an `:each` fixture count for the test
   they wrap in both.)
 - **An `:each` fixture that throws.** Kaocha lets the exception end the
-  run. brisk reports a namespace error and lists the tests the fixture
+  run. volley reports a namespace error and lists the tests the fixture
   kept from running as skipped (reason `:fixture-failed`).
 - **Load order.** Kaocha loads every test namespace before it runs any,
   so a test namespace can rely on something another one defines without
-  requiring it (an `assert-expr` method, a spec, a multimethod). brisk
+  requiring it (an `assert-expr` method, a spec, a multimethod). volley
   loads a namespace in the worker that runs it, so such a dependency holds
   only when both happen to land in the same worker in the right order.
   `--preload` (or `:preload? true` in tests.edn) makes each worker require
   every planned namespace before running any, as Kaocha does, at the cost
   of loading everything once per worker. It goes suite by suite: before
   the first namespace of a suite loads, the worker runs that suite's
-  `:brisk/worker-setup` and load hooks (`brisk.shell.hooks/setup`). A
+  `:volley/worker-setup` and load hooks (`volley.shell.hooks/setup`). A
   namespace that fails to load then is a warning (`--preload could not
   load ...`, once per run); its own run reports the error.
 - **Namespace failures in the junit-xml report.** kaocha-junit-xml gives
   the testcase of a failed namespace (a load error, a failing assertion
-  in a `:once` fixture) an empty `classname`; brisk uses the namespace,
+  in a `:once` fixture) an empty `classname`; volley uses the namespace,
   so CI tools group it with that namespace's tests.
 - **A focus that matches nothing.** Both print "All N tests were
   skipped..." and exit 0. Kaocha counts every testable it skipped
-  (suites, namespaces and vars) and stops before running; brisk counts
+  (suites, namespaces and vars) and stops before running; volley counts
   the vars of the namespaces it ran and prints its summary too.
 - **`--print-config`, `--print-test-plan`, `--print-result`.** They print
   Kaocha's shapes: the normalized config (`:kaocha/tests` with suite
@@ -902,20 +902,20 @@ difference:
   (`:kaocha.test-plan/tests`: suites holding namespaces holding vars, a
   filtered var with `:kaocha.testable/skip`), and the result
   (`:kaocha.result/tests` with `:kaocha.result/count`, `pass`, `fail`,
-  `error` and `pending` per var). What differs: brisk's own settings and
-  plan details sit under `:brisk/*` keys; there is no
+  `error` and `pending` per var). What differs: volley's own settings and
+  plan details sit under `:volley/*` keys; there is no
   `:kaocha/cli-options` and no `:kaocha/reporter` unless the project
   names its own reporters; the test plan comes from the parser, so it has
   no `:kaocha.ns/ns` or `:kaocha.var/var` objects, carries only literal
   metadata and lacks tests a macro defines; the result has no
   `:kaocha.testable/events`, durations or `:kaocha.testable/wrap`, and a
   filtered var keeps no metadata; `--print-result` prints one line rather
-  than a pretty-printed map, with `brisk.run-state/result` (per-var
-  status, `:totals`, the exit code) under `:brisk/result`.
+  than a pretty-printed map, with `volley.run-state/result` (per-var
+  status, `:totals`, the exit code) under `:volley/result`.
 - **A var without assertions in the junit-xml report.** Both count it as a
   failure in the testsuite's `failures`. kaocha-junit-xml writes its
-  testcase with no `<failure>` child; brisk adds one with Kaocha's
+  testcase with no `<failure>` child; volley adds one with Kaocha's
   message, so a tool that reads testcases sees the failure too.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
-  one pending test; brisk counts each of its vars as skipped (reason
+  one pending test; volley counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).

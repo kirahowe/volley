@@ -1,4 +1,4 @@
-# brisk
+# volley
 
 A parallel, live-output `clojure.test` runner for babashka that can stand in
 for Kaocha. Read `doc/design.md` before changing anything; it defines the
@@ -6,20 +6,20 @@ architecture and the data contracts between namespaces.
 
 ## Commands
 
-- `bb test` runs brisk's own test suite with brisk itself (`tests.edn`).
+- `bb test` runs volley's own test suite with volley itself (`tests.edn`).
 - `bb test:bootstrap` runs the same suite with plain clojure.test, for when
-  brisk is too broken to run itself.
+  volley is too broken to run itself.
 - `bb test:jvm` runs the same suite with the parent on the JVM and fails
   on reflection warnings in `src` (every shell namespace sets
   `*warn-on-reflection*`).
-- `bb test:diff` compares brisk with Kaocha (downloads Kaocha).
+- `bb test:diff` compares volley with Kaocha (downloads Kaocha).
 - `bb lint` runs clj-kondo over `src` and `test`. It must report no errors
   or warnings.
 
 ## Rules
 
-- **Functional core, imperative shell.** Everything under `brisk.*` except
-  `brisk.shell.*` and `brisk.main` is pure: no I/O, atoms, dynamic
+- **Functional core, imperative shell.** Everything under `volley.*` except
+  `volley.shell.*` and `volley.main` is pure: no I/O, atoms, dynamic
   rebinding, clocks, randomness or `System/` calls. Pass those things in as
   arguments. Shell namespaces stay thin and delegate decisions to the core.
 - **Minimize state.** Prefer an immutable value threaded through a loop or
@@ -27,14 +27,14 @@ architecture and the data contracts between namespaces.
   shared mutable objects without updating `doc/design.md`.
 - **Property tests first.** Every pure namespace gets test.check properties
   (`clojure.test.check.clojure-test/defspec`) for its invariants, with
-  generators in `test/brisk/gen/<area>.clj` so tests can share them. Use example-based
+  generators in `test/volley/gen/<area>.clj` so tests can share them. Use example-based
   `deftest`s for specific Kaocha-compatibility cases and for shell code.
 - **Style.** Follow the Clojure Style Guide (https://guide.clojure.style).
   Idiomatic Clojure: small functions over data, threading macros where they
   read better, destructuring, no `def` inside functions, no deeply nested
   `let`/`if` ladders, no reflection-heavy interop, no `:refer :all`, no
   unused requires. Docstrings on public vars; private helpers with `defn-`.
-- **Portable worker.** `brisk.shell.worker` and every pure namespace must run
+- **Portable worker.** `volley.shell.worker` and every pure namespace must run
   on both babashka and the JVM. Don't use babashka-only libraries there.
 - **Kaocha is the reference.** When matching Kaocha behaviour, read its
   source in `~/.m2/repository/lambdaisland/kaocha/1.91.1392/` rather than

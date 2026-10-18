@@ -13,7 +13,7 @@ Treat them as indications, not a controlled comparison.
 
 ## babashka
 
-| Project | Tests | Own runner | brisk |
+| Project | Tests | Own runner | volley |
 |---|---|---|---|
 | compositor | 26 | 0.50 to 0.65s | 0.43 to 0.50s |
 | relay, without `deploy-test` | 507 | 153.8s (relay's own runner) | 27.5s (8 workers) |
@@ -23,13 +23,13 @@ On relay, both runners reported the same test counts and the same failures.
 On a fixture project in this repository, 4 workers finished 3.7 times
 faster than 1 worker.
 
-A fresh run of compositor on 2026-10-18 with brisk took 0.15 to 0.52s
+A fresh run of compositor on 2026-10-18 with volley took 0.15 to 0.52s
 (`time`, two runs, load average 9 to 13), which falls inside the range above.
 
 ## JVM
 
 Wall time in seconds of `clojure -M:test` (Kaocha 1.91.1392) and of
-`clojure -M:test:brisk --workers N` on four copies of real projects, three
+`clojure -M:test:volley --workers N` on four copies of real projects, three
 runs each. Every run had the same executed vars, assertion counts and
 pass/fail per var as Kaocha.
 
@@ -44,12 +44,12 @@ Empty cells were not measured.
 
 ### Adoption test, 2026-10-18
 
-Copies of two of the projects above switched from Kaocha to brisk the way
+Copies of two of the projects above switched from Kaocha to volley the way
 the README describes, one run each.
 The machine was loaded: the load average was 7 to 20 during these runs,
 higher than for the table above.
 
-| Project (tests) | Kaocha | brisk |
+| Project (tests) | Kaocha | volley |
 |---|---|---|
 | hosted-clay (70) | 6.3, 9.8 | 9.3 |
 | reader (244, 1440 assertions) | 215 | 40 |
@@ -61,11 +61,11 @@ load, so compare within a row, not across tables.
 
 ## What the numbers say
 
-- On small suites brisk gains little. On a short JVM suite it is slower
+- On small suites volley gains little. On a short JVM suite it is slower
   than Kaocha by about half a second, because the parent and a worker each
   start a JVM. local-coder is the example: 2.2 to 2.8s with Kaocha, 2.7s
-  with brisk. A suite that takes Kaocha under about 10 seconds may be no
-  faster: hosted-clay took 9.3s with brisk in the adoption test against
+  with volley. A suite that takes Kaocha under about 10 seconds may be no
+  faster: hosted-clay took 9.3s with volley in the adoption test against
   6.3 and 9.8s with Kaocha.
 - Gains come from overlapping namespaces that take a long time. In secrets
   the one 62-second test sets the floor; in reader, embedded Postgres setup

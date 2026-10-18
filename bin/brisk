@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Run brisk with the classpath of the bb.edn in the current directory.
-# BRISK_COMMAND is what the rerun hint tells you to run.
-BRISK_COMMAND="${BRISK_COMMAND:-$0}" exec bb -m brisk.main "$@"

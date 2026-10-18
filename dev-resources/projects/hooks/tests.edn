@@ -1,6 +1,6 @@
 #kaocha/v1
 {:plugins [:kaocha.plugin/hooks]
- :brisk/worker-setup [hooks.probe/worker-setup!]
+ :volley/worker-setup [hooks.probe/worker-setup!]
  :kaocha.hooks/pre-load [hooks.probe/pre-load]
  :kaocha.hooks/post-load [hooks.probe/post-load]
  :kaocha.hooks/pre-run [hooks.probe/pre-run]
@@ -15,4 +15,4 @@
  :tests [{:id :unit
           :kaocha.hooks/before [hooks.probe/suite-before]
           :kaocha.hooks/after [hooks.probe/suite-after]
-          :brisk/worker-setup [hooks.probe/suite-setup!]}]}
+          :volley/worker-setup [hooks.probe/suite-setup!]}]}

@@ -3,5 +3,5 @@
   (:require [clojure.test :refer [deftest is]]))
 
 (deftest logs-the-prefix
-  (-> (ProcessBuilder. ["sh" "-c" "echo '#brisk/event {:oops'"]) (.inheritIO) (.start) (.waitFor))
+  (-> (ProcessBuilder. ["sh" "-c" "echo '#volley/event {:oops'"]) (.inheritIO) (.start) (.waitFor))
   (is true))

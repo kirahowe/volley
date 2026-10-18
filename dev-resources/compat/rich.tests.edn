@@ -1,5 +1,5 @@
-;; Exercises the Aero and Kaocha reader tags brisk supports. Used by
-;; brisk.config-test and the Kaocha differential test.
+;; Exercises the Aero and Kaocha reader tags volley supports. Used by
+;; volley.config-test and the Kaocha differential test.
 #kaocha/v1
 {:tests [{:id           :unit
           :test-paths   ["test/unit"]

@@ -1,5 +1,5 @@
 (ns g.gen-test
-  "Tests defined by a macro, which brisk's parser cannot see."
+  "Tests defined by a macro, which volley's parser cannot see."
   (:require [clojure.test :refer [deftest is]]))
 
 (defmacro defcase [n v & [m]]

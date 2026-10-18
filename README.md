@@ -1,6 +1,6 @@
-# brisk
+# volley
 
-brisk is a test runner for `clojure.test` on babashka and the JVM. It runs
+volley is a test runner for `clojure.test` on babashka and the JVM. It runs
 test namespaces in parallel worker processes, shows each namespace as it
 finishes, and has a watch mode that reruns only the tests affected by a
 change. It reads Kaocha's `tests.edn` and command-line flags, so a project
@@ -9,12 +9,12 @@ for suites that are slow enough that waiting for a single process to finish
 hurts, and for babashka projects that want Kaocha's configuration without
 its startup cost.
 
-brisk is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
+volley is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
 
 ## What it looks like
 
 This is a run of a small fixture project with failures, with output piped
-(not a terminal). On a terminal brisk redraws one line per running
+(not a terminal). On a terminal volley redraws one line per running
 namespace instead and prints the same failure reports and summary.
 
 ```
@@ -62,7 +62,7 @@ Slowest tests:
   0ms  shop.errors-test/throws-outside-is
 
 Rerun failures:
-  bb -m brisk.main --focus shop.cart-test/add-item-shape --focus shop.cart-test/prints-then-fails --focus shop.errors-test/throws-inside-is --focus shop.errors-test/throws-outside-is
+  bb -m volley.main --focus shop.cart-test/add-item-shape --focus shop.cart-test/prints-then-fails --focus shop.errors-test/throws-inside-is --focus shop.errors-test/throws-outside-is
 ```
 
 The run exited with code 4, the number of failures, as Kaocha does.
@@ -71,60 +71,60 @@ The run exited with code 4, the number of failures, as Kaocha does.
 
 ### babashka
 
-Add brisk to `bb.edn` as a git dependency, and a task to run it:
+Add volley to `bb.edn` as a git dependency, and a task to run it:
 
 ```clojure
 {:paths ["src" "test"]
- :deps {io.github.kirahowe/brisk {:git/url "https://github.com/kirahowe/brisk"
+ :deps {io.github.kirahowe/volley {:git/url "https://github.com/kirahowe/volley"
                                   :git/sha "<commit sha>"}}
  :tasks {test {:doc "Run the tests"
-               :requires ([brisk.main])
-               :task (apply brisk.main/-main *command-line-args*)}}}
+               :requires ([volley.main])
+               :task (apply volley.main/-main *command-line-args*)}}}
 ```
 
-Run `bb test`, or `bb -m brisk.main` directly.
+Run `bb test`, or `bb -m volley.main` directly.
 
-If your project has no `tests.edn`, brisk uses Kaocha's defaults: one
+If your project has no `tests.edn`, volley uses Kaocha's defaults: one
 suite with `test/` as its test path, running the namespaces whose names
 end in `-test`. It prints Kaocha's "Did not load a configuration file"
 warning on every run until you create the file. A `tests.edn` holding
 `#kaocha/v1 {}` gives the same defaults without the warning.
 
 If the `test` task above replaces one you wrote yourself, check which
-namespaces it ran. brisk runs only namespaces whose names end in `-test`
+namespaces it ran. volley runs only namespaces whose names end in `-test`
 unless the suite sets `:ns-patterns`, so a namespace such as
 `my.app.checks` stops running when you switch.
 
-For a `bin/brisk` binstub like Kaocha's `bin/kaocha`, copy
-[`bin/brisk`](bin/brisk) into your project and make it executable with
-`chmod +x bin/brisk`. It runs `bb -m brisk.main "$@"` with your
+For a `bin/volley` binstub like Kaocha's `bin/kaocha`, copy
+[`bin/volley`](bin/volley) into your project and make it executable with
+`chmod +x bin/volley`. It runs `bb -m volley.main "$@"` with your
 `bb.edn`.
 
 Workers start with the parent's classpath, so your `bb.edn` `:paths` and
-`:deps` apply to the tests. Like Kaocha, brisk adds each suite's
+`:deps` apply to the tests. Like Kaocha, volley adds each suite's
 `:test-paths` to the classpath. It does not add `:source-paths`; put those
 on the classpath through `bb.edn`.
 
 ### JVM
 
 Change the `:test` alias in `deps.edn` that runs Kaocha: swap
-`lambdaisland/kaocha` for brisk in `:extra-deps` and `kaocha.runner` for
-`brisk.main` in `:main-opts`. Keep the alias's other `:extra-paths`,
+`lambdaisland/kaocha` for volley in `:extra-deps` and `kaocha.runner` for
+`volley.main` in `:main-opts`. Keep the alias's other `:extra-paths`,
 `:extra-deps` and `:jvm-opts`; the tests need them as before.
 
 ```clojure
 {:aliases
  {:test {:extra-paths ["test" "test-resources"]
-         :extra-deps {io.github.kirahowe/brisk {:git/url "https://github.com/kirahowe/brisk"
+         :extra-deps {io.github.kirahowe/volley {:git/url "https://github.com/kirahowe/volley"
                                                 :git/sha "<commit sha>"}
                       org.clojure/test.check {:mvn/version "1.1.1"}}
          :jvm-opts ["-Xmx2g"]
-         :main-opts ["-m" "brisk.main"]}}}
+         :main-opts ["-m" "volley.main"]}}}
 ```
 
 Run `clojure -M:test`. A `bin/kaocha` binstub that runs
-`clojure -M:test "$@"` keeps working unchanged. On the JVM brisk depends on `borkdude/edamame`,
-`babashka/fs` and `babashka/process`; Clojure resolves them from brisk's
+`clojure -M:test "$@"` keeps working unchanged. On the JVM volley depends on `borkdude/edamame`,
+`babashka/fs` and `babashka/process`; Clojure resolves them from volley's
 `deps.edn`.
 
 ## Moving from Kaocha
@@ -140,16 +140,16 @@ bb -m kaocha.runner/-main
 with
 
 ```
-bb -m brisk.main
+bb -m volley.main
 ```
 
 and remove `lambdaisland/kaocha` from your dependencies if nothing else
-uses it. A `bin/kaocha` binstub becomes `bin/brisk` (see above).
+uses it. A `bin/kaocha` binstub becomes `bin/volley` (see above).
 
 ### On the JVM
 
-Change the alias from `kaocha.runner` to `brisk.main` and replace
-`lambdaisland/kaocha` with brisk, as in the install example. brisk does
+Change the alias from `kaocha.runner` to `volley.main` and replace
+`lambdaisland/kaocha` with volley, as in the install example. volley does
 not need Kaocha, so drop the dependency unless something else uses it.
 A `bin/kaocha` binstub that runs `clojure -M:test "$@"` keeps working
 unchanged. The parent runs on the JVM, so the workers are JVM processes
@@ -164,20 +164,20 @@ too:
   workers, the tests can use up to four times that heap.
 - The default worker count is the CPU count, at most 4.
 - Each worker is a JVM that starts and loads your code again, so a suite
-  that takes Kaocha under about 10 seconds may be no faster under brisk,
+  that takes Kaocha under about 10 seconds may be no faster under volley,
   or a little slower. In one adoption test, a 70-test suite took 9.3s
-  with brisk against 6.3 and 9.8s with Kaocha. Large suites gain the
+  with volley against 6.3 and 9.8s with Kaocha. Large suites gain the
   most: a 244-test suite (1440 assertions, the same results under both)
-  took 40s with brisk against 215s with Kaocha. The machine was busy
+  took 40s with volley against 215s with Kaocha. The machine was busy
   during both measurements. See [doc/benchmarks.md](doc/benchmarks.md).
 
 To keep the parent on babashka and run tests on the JVM, use
-`bb -m brisk.main --runtime jvm`. brisk runs `clojure -Spath` for the
+`bb -m volley.main --runtime jvm`. volley runs `clojure -Spath` for the
 aliases in `--aliases` (default: `:test` if your `deps.edn` defines it) and
 starts workers with `java -cp`. The classpath is cached in
-`.brisk/classpath-<hash>.txt`, keyed on `deps.edn` and the aliases. A change
+`.volley/classpath-<hash>.txt`, keyed on `deps.edn` and the aliases. A change
 to a `:local/root` dependency's own `deps.edn`, or to `~/.clojure/deps.edn`,
-is not noticed; delete `.brisk/classpath-*.txt` after one. `--runtime bb`
+is not noticed; delete `.volley/classpath-*.txt` after one. `--runtime bb`
 from a JVM parent starts babashka workers.
 
 ### What carries over unchanged
@@ -190,8 +190,8 @@ from a JVM parent starts babashka workers.
   `--reporter`, `--watch`, `--plugin`, `--profile`.
 - `--print-config`, `--print-test-plan` and `--print-result` print
   Kaocha's shapes (`:kaocha/tests`, `:kaocha.test-plan/tests`,
-  `:kaocha.result/tests`), but not the same maps: brisk's own settings sit
-  under `:brisk/*` keys, the test plan lists only the tests the parser
+  `:kaocha.result/tests`), but not the same maps: volley's own settings sit
+  under `:volley/*` keys, the test plan lists only the tests the parser
   can see and holds no namespace or var objects, the result has counts
   but no events, and `--print-result` prints one line. The
   [divergences](doc/design.md#deliberate-divergences-from-kaocha) list
@@ -213,12 +213,12 @@ from a JVM parent starts babashka workers.
 
 ### What differs
 
-Kaocha options brisk does not support print a warning instead of being
+Kaocha options volley does not support print a warning instead of being
 ignored silently. Kaocha's other plugins (notifier, gc-profiling,
 cloverage and the like) are accepted with their options, and one warning
-line names the ones brisk does not run. A plugin that cannot be loaded at
+line names the ones volley does not run. A plugin that cannot be loaded at
 all stops the run with exit 248, as in Kaocha. Kaocha's reporters map to
-brisk's output without a warning (`documentation` to its documentation
+volley's output without a warning (`documentation` to its documentation
 layout), and a reporter of your own, such as `--reporter my.app/report`,
 runs in the workers and gets every `clojure.test` event.
 
@@ -233,12 +233,12 @@ namespace is loaded in the worker that runs it unless you pass `--preload`.
 
 - Test namespaces run at the same time in separate processes. Tests that
   use a fixed port, write the same file or share a database schema can
-  collide. Mark such a namespace `^:synchronized` or `^:brisk/serial`
+  collide. Mark such a namespace `^:synchronized` or `^:volley/serial`
   (it then runs alone, after the others), or run everything in one
   worker with `--workers 1`.
-- Hooks and `:brisk/worker-setup` run in every worker, so setup that
+- Hooks and `:volley/worker-setup` run in every worker, so setup that
   starts a server on a fixed port starts one per worker.
-- brisk does not randomize the order of tests. It runs the namespaces
+- volley does not randomize the order of tests. It runs the namespaces
   that were slowest last time first. `--randomize` and `--seed` are
   accepted with a warning.
 - When two suites select the same namespace, it runs once, with the
@@ -253,14 +253,14 @@ namespace is loaded in the worker that runs it unless you pass `--preload`.
 ## Watch mode
 
 `--watch` (or `:watch? true` in `tests.edn`) runs everything once and then
-keeps running. brisk polls the modification times of every file under the
+keeps running. volley polls the modification times of every file under the
 suites' `:test-paths` and `:source-paths`, and of `tests.edn`, every 200ms.
 When files change it works out which test namespaces depend on them (from
 the `ns` forms) and reruns just those in fresh worker processes, so no
 state survives between runs. New and deleted test files are picked up. A
-change to `tests.edn` reloads the config and reruns everything. brisk does
+change to `tests.edn` reloads the config and reruns everything. volley does
 not watch `deps.edn`; restart it after changing dependencies. If a run is
-still going when files change, brisk cancels it and starts a new one.
+still going when files change, volley cancels it and starts a new one.
 
 Each run ends with the counts line of the summary, without the slowest
 tests or the rerun command (`f` reruns the failures), and a status line
@@ -292,12 +292,12 @@ List the functions in `tests.edn`:
 
 ```clojure
 #kaocha/v1
-{:brisk/worker-setup [my.test-support/isolate!]
+{:volley/worker-setup [my.test-support/isolate!]
  :tests [{:id :unit}]}
 ```
 
 Each worker calls them with no arguments before it loads its first test
-namespace. A suite can have its own `:brisk/worker-setup` too, called
+namespace. A suite can have its own `:volley/worker-setup` too, called
 before the worker's first namespace of that suite. If one throws, that
 worker runs no tests and each namespace it was given is reported as an
 error.
@@ -308,7 +308,7 @@ error.
   most 8 on babashka and at most 4 on the JVM.
 - `--[no-]isolate`: start a fresh worker for every namespace. It is slow and
   prints a warning.
-- `--runtime bb|jvm`: the worker runtime. Default: the runtime brisk runs on.
+- `--runtime bb|jvm`: the worker runtime. Default: the runtime volley runs on.
 - `--aliases :a:b`: deps.edn aliases for the classpath of JVM workers
   started from babashka.
 - `--[no-]preload` (or `:preload? true` in `tests.edn`): each worker loads
@@ -316,22 +316,22 @@ error.
   test namespace relies on something another one defines without requiring
   it, such as a custom `assert-expr`.
 
-A namespace marked `^:synchronized` or `^:brisk/serial` (on the `ns` form or
+A namespace marked `^:synchronized` or `^:volley/serial` (on the `ns` form or
 on any of its test vars) runs after the parallel batch, alone.
 
-`bb -m brisk.main --help` lists every flag.
+`bb -m volley.main --help` lists every flag.
 
 ## Output
 
-On a terminal brisk redraws a live view: one line per running namespace, a
+On a terminal volley redraws a live view: one line per running namespace, a
 line for each namespace as it finishes, and failures as they happen. When
 stdout is not a terminal it prints append-only lines instead, one per
 finished namespace followed by its failures. A test that has run for 30
 seconds gets a `still running` line in that mode. Both end with a summary,
 the slowest tests and a `--focus` command to rerun the failures. That
-command starts the way you ran brisk: `bb test` inside a babashka task,
-`bin/brisk` through the binstub, `clojure -M:test` on the JVM. Set
-`BRISK_COMMAND` to choose it yourself. It keeps `--config-file` when you
+command starts the way you ran volley: `bb test` inside a babashka task,
+`bin/volley` through the binstub, `clojure -M:test` on the JVM. Set
+`VOLLEY_COMMAND` to choose it yourself. It keeps `--config-file` when you
 used one. `--reporter documentation` prints one line per test var,
 grouped by namespace.
 
@@ -343,11 +343,11 @@ once.
 The summary counts the tests that ran and the pending ones, which it
 calls skipped. Tests that `--focus`, `--skip` or the metadata filters
 leave out are not counted, as in Kaocha: `--focus my.app-test/one`
-reports `1 test`. When the filters leave nothing to run, brisk prints
+reports `1 test`. When the filters leave nothing to run, volley prints
 Kaocha's "All N tests were skipped" warning.
 
-brisk saves namespace durations in `.brisk/timings.edn`, and the next run
-starts the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
+volley saves namespace durations in `.volley/timings.edn`, and the next run
+starts the slowest namespaces first. Add `.volley/` to your `.gitignore`.
 
 ## CI
 
@@ -356,7 +356,7 @@ starts the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
   and a load error each count as a failure, so a broken run cannot exit 0.
 - Colour is on for terminals and off otherwise. `--color` forces it on, and
   `NO_COLOR` always turns it off.
-- With stdout piped, brisk prints plain append-only lines with no redrawing.
+- With stdout piped, volley prints plain append-only lines with no redrawing.
 - `--junit-xml-file report.xml` (with `kaocha.plugin/junit-xml` in
   `:plugins`) writes an Ant JUnit XML report.
 - Set `CI=true` for the `#profile` reader tag to pick `:ci`, as Kaocha
@@ -365,9 +365,9 @@ starts the slowest namespaces first. Add `.brisk/` to your `.gitignore`.
 ## Known limitations
 
 - `clojure.test` only. No ClojureScript and no coverage.
-- brisk finds test namespaces by reading their source. It cannot see tests
+- volley finds test namespaces by reading their source. It cannot see tests
   that a macro defines, though filters still reach them at run time.
-- `--randomize` and `--seed` are accepted with a warning. brisk runs the
+- `--randomize` and `--seed` are accepted with a warning. volley runs the
   slowest namespaces first rather than shuffling.
 - Hooks run once per worker, so a hook that starts something with a fixed
   port starts N of them.
@@ -380,7 +380,7 @@ The full list, with reasons, is in [doc/design.md](doc/design.md).
 
 ## Benchmarks
 
-brisk ran a 507-test babashka suite in 27.5s with 8 workers, against 153.8s
+volley ran a 507-test babashka suite in 27.5s with 8 workers, against 153.8s
 for that project's own runner. On a 26-test babashka suite it took 0.43 to
 0.50s against 0.50 to 0.65s. On the JVM it ran a 244-test suite in 40s
 against Kaocha's 215s; on suites that take Kaocha a few seconds it is no
@@ -390,12 +390,12 @@ in [doc/benchmarks.md](doc/benchmarks.md).
 
 ## Contributing
 
-- `bb test`: brisk's own suite, run by brisk (`tests.edn`).
-- `bb test:jvm`: the same suite with brisk itself running on the JVM. It
-  also fails when brisk's source causes a reflection warning.
+- `bb test`: volley's own suite, run by volley (`tests.edn`).
+- `bb test:jvm`: the same suite with volley itself running on the JVM. It
+  also fails when volley's source causes a reflection warning.
 - `bb test:bootstrap`: the same suite with plain `clojure.test`, for when
-  brisk is too broken to run itself.
-- `bb test:diff`: compares brisk with Kaocha 1.91.1392 itself (downloads
+  volley is too broken to run itself.
+- `bb test:diff`: compares volley with Kaocha 1.91.1392 itself (downloads
   Kaocha).
 - `bb lint`: clj-kondo over `src` and `test`. It must report no errors or
   warnings.
