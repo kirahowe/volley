@@ -73,6 +73,23 @@
           {:keys [world]} (ge/simulate w max-steps)]
       (zero? (:exit world)))))
 
+(defspec worker-ids-start-at-the-first-id-and-are-never-reused runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world state]} (ge/simulate w max-steps)
+          ids (:spawned world)
+          first-id (get-in w [:opts :first-worker-id])]
+      (and (every? #(>= % first-id) ids)
+           (apply distinct? -1 ids)
+           (= (engine/next-worker-id state) (+ first-id (count ids)))))))
+
+(defspec events-of-workers-from-an-earlier-run-are-dropped runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world state]} (ge/simulate w max-steps)
+          run (:run state)]
+      (and (not (contains? (:namespaces run) ge/stale-ns))
+           (= (:exit world) (rs/exit-code run))
+           (not-any? #(str/includes? % (str ge/stale-ns)) (printed-lines world))))))
+
 ;;; Examples
 
 (def ^:private help "USAGE: brisk")

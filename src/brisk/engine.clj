@@ -137,7 +137,10 @@
   * `plan`  from `brisk.select/plan`
   * `opts`  `{:workers n :fail-fast? b :isolate? b :capture-output? b
               :reporter :live|:ci|:documentation|:result :width n :color? b
-              :durations {ns ms} :started-at ms}`
+              :durations {ns ms} :started-at ms :first-worker-id n}`
+
+  `:first-worker-id` (default 1) is where this run's worker ids start.
+  Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
   of unreadable test files, which are printed in CI mode at the end."
@@ -151,7 +154,8 @@
                     (rs/init {:namespaces (keys nses) :started-at started-at})
                     file-errors)
         state {:sched (sched/init {:parallel (mapv :ns parallel) :serial (mapv :ns serial)}
-                                  (select-keys opts [:workers :fail-fast? :isolate? :durations]))
+                                  (-> (select-keys opts [:workers :fail-fast? :isolate? :durations])
+                                      (assoc :first-id (:first-worker-id opts 1))))
                :run run
                :shown nil
                :nses nses
@@ -159,6 +163,7 @@
                :durations (or durations {})
                :phase :running
                :stopping #{}
+               :spawned #{}
                :drain-at nil
                :killed-at nil
                :now started-at}]
@@ -178,7 +183,10 @@
   (let [[sch spawned] (sched/drain-spawns (:sched state))
         [sch assigns] (sched/next-assignments sch)
         [sch shut] (sched/drain-shutdowns sch)
-        state (-> state (assoc :sched sch) (update :stopping into shut))]
+        state (-> state
+                  (assoc :sched sch)
+                  (update :stopping into shut)
+                  (update :spawned into spawned))]
     [state
      (concat (map (fn [id] {:effect :spawn :worker id}) spawned)
              (map (fn [[w ns-sym]] {:effect :send :worker w :msg (run-message state ns-sym)}) assigns)
@@ -312,12 +320,24 @@
 (defn- advance-clock [state at]
   (cond-> state (number? at) (update :now #(if % (max % at) at))))
 
+(defn- foreign?
+  "True for an event from a worker this run never spawned: a late event of
+  an earlier (cancelled) run in watch mode."
+  [state {:keys [event worker]}]
+  (and (not= :tick event) (some? worker) (not (contains? (:spawned state) worker))))
+
+(defn next-worker-id
+  "The first worker id a later run should use, so ids stay unique across
+  runs."
+  [state]
+  (sched/next-id (:sched state)))
+
 (defn step
   "Fold one input into the loop state. Returns `{:state :effects}`. Once an
   `:exit` effect has been returned the state is `:done` and further inputs
-  are ignored."
+  are ignored, as are events from workers this run did not spawn."
   [state {:keys [event at] :as input}]
-  (if (= :done (:phase state))
+  (if (or (= :done (:phase state)) (foreign? state input))
     {:state state :effects []}
     (let [tick? (= :tick event)
           state (cond-> (advance-clock state at)

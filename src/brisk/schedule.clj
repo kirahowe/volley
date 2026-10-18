@@ -8,8 +8,10 @@
   * `drain-spawns`      which new worker ids to start
   * `drain-shutdowns`   which worker ids to tell to shut down
 
-  Worker ids come from the scheduler (1, 2, 3, ...) and are never reused, so
-  a replacement worker is always a new id.
+  Worker ids come from the scheduler (`:first-id`, then up by one) and are
+  never reused, so a replacement worker is always a new id. Watch mode
+  starts each run's ids after the last run's, so a late event from an
+  earlier run can never be taken for one of this run's workers.
 
   Events it understands (all others are ignored):
 
@@ -41,8 +43,9 @@
   * `:workers`    maximum concurrent workers (default 1)
   * `:fail-fast?` stop assigning after the first failure
   * `:isolate?`   each worker runs one namespace, then is retired
-  * `:durations`  `{ns millis}` from earlier runs, for longest-first order"
-  [{:keys [parallel serial]} {:keys [workers fail-fast? isolate? durations]}]
+  * `:durations`  `{ns millis}` from earlier runs, for longest-first order
+  * `:first-id`   the first worker id to hand out (default 1)"
+  [{:keys [parallel serial]} {:keys [workers fail-fast? isolate? durations first-id]}]
   {:queue (vec (order-by-duration parallel durations))
    :serial (vec serial)
    :max-workers (max 1 (or workers 1))
@@ -55,7 +58,7 @@
    :crashed {}
    :failed? false
    :spawn-failures 0
-   :next-id 1
+   :next-id (or first-id 1)
    :spawn-requests []
    :shutdown-requests []})
 
@@ -261,6 +264,11 @@
   "Ids of workers that have not exited, in any status."
   [state]
   (vec (sort (keys (:workers state)))))
+
+(defn next-id
+  "The id the next spawned worker will get."
+  [state]
+  (:next-id state))
 
 (defn summary
   "Counts for reporting: `{:finished n :pending n :crashed n :failed? bool}`."

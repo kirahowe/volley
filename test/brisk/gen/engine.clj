@@ -16,7 +16,9 @@
 (defn- ns-sym [i] (symbol (str "sim.ns" i "-test")))
 
 (def gen-world
-  "A plan plus everything the outside world will do."
+  "A plan plus everything the outside world will do, sometimes with worker
+  ids that start above 1 and a stale worker of an earlier run whose events
+  arrive mixed in with this run's."
   (gen/let [n (gen/choose 0 8)
             fates (gen/vector gen-fate n)
             serial (gen/vector gen/boolean n)
@@ -28,7 +30,9 @@
             all-spawns-fail? (gen/frequency [[12 (gen/return false)] [1 (gen/return true)]])
             hung? (gen/frequency [[8 (gen/return false)] [1 (gen/return true)]])
             choices (gen/vector (gen/choose 0 1000) 0 600)
-            reporter (gen/elements [:ci :documentation :live])]
+            reporter (gen/elements [:ci :documentation :live])
+            first-id (gen/frequency [[2 (gen/return 1)] [1 (gen/choose 2 60)]])
+            stale? gen/boolean]
     (let [entries (mapv (fn [i] {:ns (ns-sym i) :file (str "test/sim/ns" i "_test.clj")
                                  :serial? (nth serial i) :select {:passes [] :ns-meta {}}})
                         (range n))]
@@ -38,10 +42,17 @@
               :warnings [] :errors []}
        :fates (zipmap (map :ns entries) fates)
        :opts {:workers workers :fail-fast? fail-fast? :isolate? isolate? :capture-output? true
-              :reporter reporter :width 120 :color? false :started-at 0 :durations {}}
+              :reporter reporter :width 120 :color? false :started-at 0 :durations {}
+              :first-worker-id first-id}
        :spawn-fails (if all-spawns-fail? (vec (repeat 100 true)) spawn-fails)
        :hung? hung?
+       :stale? (and stale? (> first-id 1))
        :choices choices})))
+
+(def stale-ns
+  "The namespace a worker of an earlier run reports in `simulate` when the
+  world is `:stale?`."
+  'stale.earlier-run-test)
 
 (defn- ns-events [ns-sym fate]
   (let [v 'a-test
@@ -74,7 +85,9 @@
   [world {:keys [effect worker msg] :as e}]
   (case effect
     :spawn (let [fail? (get (:spawn-fails world) (:spawn-count world 0) false)
-                 world (update world :spawn-count (fnil inc 0))]
+                 world (-> world
+                           (update :spawn-count (fnil inc 0))
+                           (update :spawned conj worker))]
              (-> world
                  (assoc-in [:workers worker] {:queue [] :exiting? false})
                  (enqueue worker (if fail?
@@ -127,10 +140,16 @@
   "Run the engine against a generated world until it exits or `max-steps`
   inputs have been fed. Returns the world (with `:output` effects, `:exit`)
   and the final engine state."
-  [{:keys [plan opts fates spawn-fails hung? choices]} max-steps]
+  [{:keys [plan opts fates spawn-fails hung? stale? choices]} max-steps]
   (let [{:keys [state effects]} (engine/init plan opts)
-        world (reduce interpret {:workers {} :clock 0 :fates fates :spawn-fails spawn-fails
-                                 :hung? hung? :output []}
+        stale-worker (dec (:first-worker-id opts 1))
+        workers (if stale?
+                  {stale-worker {:exiting? true
+                                 :queue (vec (concat (ns-events stale-ns [:fail])
+                                                     [{:event :worker/exit :code 137}]))}}
+                  {})
+        world (reduce interpret {:workers workers :clock 0 :fates fates :spawn-fails spawn-fails
+                                 :hung? hung? :output [] :spawned []}
                       effects)
         {state :state effects :effects} (engine/start state)
         world (reduce interpret world effects)]

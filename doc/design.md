@@ -264,6 +264,7 @@ reason is `:fail-fast`.
 
 ### Engine inputs and effects (`brisk.engine`)
 
+Events from a worker id the run never spawned are ignored.
 Inputs are the flat events from the queue plus `{:event :tick :at ms}`,
 which `brisk.main` feeds whenever 80ms pass (the poll timeout, or after an
 event if the queue never goes quiet). Effects:
@@ -363,7 +364,11 @@ subset passed. Failures of namespaces that no longer exist are dropped.
 **Cancel.** When a debounced change (or `a`, `f`, `Enter`, `c`) arrives
 during a run, the shell kills the workers by handle, waits for their exit
 events so none of their output reaches the next run, and starts the new
-run. The new selection is the union of the cancelled run's selection and
+run. Worker ids count up for the life of the parent process (each run's
+`brisk.engine/init` gets `:first-worker-id`, the next id after the last
+run's), and the engine drops every event from a worker its run did not
+spawn, so a cancelled run's worker that takes longer than the 5s wait to
+exit can never be mistaken for one of the new run's. The new selection is the union of the cancelled run's selection and
 the new one, so a cancelled affected-only run does not lose its namespaces.
 A change that affects no test namespace does not disturb a run.
 
