@@ -146,9 +146,16 @@
 
 (defn- rel [file] (relative-path (System/getProperty "user.dir") file))
 
+(def zero-assertions-message
+  "What Kaocha reports for a test var that made no assertion
+  (`kaocha.type.var`, report type `:kaocha.type.var/zero-assertions`)."
+  "Test ran without assertions. Did you forget an (is ...)?")
+
 (defn assertion-event
   "Event for a failing or erroring clojure.test report map `m`, raised
-  inside var `v` (nil outside any var) with `contexts` outermost first."
+  inside var `v` (nil outside any var) with `contexts` outermost first.
+  Kaocha's zero-assertions report is a failure with its message and no
+  expected or actual value."
   [ns-sym v contexts m]
   (let [raw (:actual m)
         actual (cond-> raw (throwable? raw) unwrap)
@@ -161,10 +168,11 @@
              :type (:type m)
              :message (some-> (:message m) str)
              :contexts (vec (map str contexts))
-             :expected (protocol/encode-value (:expected m))
-             :actual (if error?
-                       {:str (str (.getName (class actual)) ": " (ex-message actual))}
-                       (protocol/encode-value actual))
+             :expected (when-not (::zero? m) (protocol/encode-value (:expected m)))
+             :actual (cond
+                       (::zero? m) nil
+                       error? {:str (str (.getName (class actual)) ": " (ex-message actual))}
+                       :else (protocol/encode-value actual))
              :file (rel (:file loc))
              :line (:line loc)
              :error (when error? (encode-throwable raw))}
@@ -261,7 +269,19 @@
     (safely
      #(case (:type m)
         (:pass :fail :error) (count-and-emit! acc outside emit! ns-sym m)
+        :kaocha.type.var/zero-assertions
+        (count-and-emit! acc outside emit! ns-sym
+                         (assoc m :type :fail :message zero-assertions-message ::zero? true))
         nil))))
+
+(defn- check-assertions!
+  "Kaocha fails a test var that made no assertion: report it as Kaocha's
+  `kaocha.type.var/-run` does, after the var and its `:each` fixtures
+  ran, through `clojure.test/report` so `pre-report` hooks see it."
+  [acc]
+  (let [{:keys [var pass fail error]} @acc]
+    (when (and var (zero? (+ pass fail error)))
+      (t/do-report {:type :kaocha.type.var/zero-assertions}))))
 
 (defn- test-vars!
   "What `clojure.test/test-vars` does for the vars of one namespace: the
@@ -306,7 +326,9 @@
                   (vswap! reached conj v)
                   (let [test! (fn []
                                 (start-var! acc emit! ns-sym capture? v)
-                                (try (test!) (finally (safely #(end-var! acc emit! ns-sym)))))
+                                (try (test!)
+                                     (check-assertions! acc)
+                                     (finally (safely #(end-var! acc emit! ns-sym)))))
                         r (hooks/run-var hs ns-sym v test! counts)]
                     (when (:kaocha.testable/skip r)
                       (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))

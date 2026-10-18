@@ -14,6 +14,7 @@
          (System/getProperty "brisk.fixture"))))
 
 (deftest heap-option-reached-the-worker
-  (when-let [mb (System/getenv "EXPECT_MAX_HEAP_MB")]
+  (if-let [mb (System/getenv "EXPECT_MAX_HEAP_MB")]
     (let [max-mb (quot (.maxMemory (Runtime/getRuntime)) 1048576)]
-      (is (<= (- (Long/parseLong mb) 64) max-mb (+ (Long/parseLong mb) 64))))))
+      (is (<= (- (Long/parseLong mb) 64) max-mb (+ (Long/parseLong mb) 64))))
+    (is true "no heap size expected")))

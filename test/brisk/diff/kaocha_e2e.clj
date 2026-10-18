@@ -74,7 +74,9 @@
                           ["generated" ["--focus-meta" ":integration" "--focus-meta" ":slow"]]
                           ["generated" ["--focus-meta" ":nobody"]]
                           ["generated" ["--focus" "g.plain-test" "--focus" "g.gen-test"]]
-                          ["generated" ["--skip-meta" ":integration"]]]]
+                          ["generated" ["--skip-meta" ":integration"]]
+                          ;; kaocha.type.var: a var with no assertion fails
+                          ["zero-assertions" []]]]
     (same-run? project args)))
 
 (deftest fail-fast-stops-after-the-failing-var-like-kaocha

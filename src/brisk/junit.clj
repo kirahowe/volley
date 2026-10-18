@@ -106,8 +106,11 @@
 
 (defn- failure-element [f]
   (if (= :fail (:kind f))
-    [:failure {:message (str "[:fail] expected: " (value-str (:expected f))
-                             ". actual: " (value-str (:actual f)))
+    [:failure {:message (if (or (:expected f) (:actual f) (empty? (:message f)))
+                          (str "[:fail] expected: " (value-str (:expected f))
+                               ". actual: " (value-str (:actual f)))
+                          ;; Kaocha's zero-assertions failure has no values
+                          (:message f))
                :type "assertion failure"}
      (detail f)]
     [:error {:message (or (:message f) (get-in f [:error :message]) (:reason f))

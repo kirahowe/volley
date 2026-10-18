@@ -316,6 +316,14 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   namespace's real metadata (merged over the static `:ns-meta` copy).
 - `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
   error is in `:error`.
+- A var that ran and made no assertion (none passed, failed or errored,
+  counting its `:each` fixtures) fails, as Kaocha's `kaocha.type.var/-run`
+  fails it: the worker reports `{:type :kaocha.type.var/zero-assertions}`
+  through `clojure.test/report`, so `pre-report` hooks see it, and sends
+  it as a `:fail` assertion with Kaocha's message "Test ran without
+  assertions. Did you forget an (is ...)?" and no `:expected` or
+  `:actual`. Pending vars and vars the filters or a `pre-test` hook skip
+  never run, so they never get it.
 - A `:fail` whose actual value is a failed `clojure.test.check/quick-check`
   result (what a failing `defspec` reports) also carries `:check {:seed n
   :num-tests n :failing-size n :smallest value :fail value :result value}`
@@ -794,6 +802,10 @@ difference:
   `:brisk/worker-setup` and load hooks (`brisk.shell.hooks/setup`). A
   namespace that fails to load then is a warning (`--preload could not
   load ...`, once per run); its own run reports the error.
+- **A var without assertions in the junit-xml report.** Both count it as a
+  failure in the testsuite's `failures`. kaocha-junit-xml writes its
+  testcase with no `<failure>` child; brisk adds one with Kaocha's
+  message, so a tool that reads testcases sees the failure too.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; brisk counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).
