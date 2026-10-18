@@ -227,8 +227,11 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   printed inside the test's dynamic scope, and a fixture that binds
   `*print-length*` or a namespace that `set!`s it would otherwise cut
   protocol lines short.
-- The pool emits `{:event :worker/exit :worker id :code n}` after both
-  streams close. When the worker held a namespace, `brisk.schedule/crash-events`
+- The pool emits `{:event :worker/exit :worker id :code n}` after the
+  process exits and both streams close, waiting at most 500ms for the
+  streams: a background process a test started inherits the worker's
+  pipes and may keep them open long after the worker is gone. Lines that
+  arrive after the exit event are stray output of no namespace. When the worker held a namespace, `brisk.schedule/crash-events`
   yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
   :exit-code n}`) and `:ns/end` (`:crashed? true`), both with `:synthetic? true`.
 - The worker reads commands from the original stdin and points

@@ -5,7 +5,9 @@
   Everything put on the queue is a flat event map (see `brisk.protocol/->event`):
   worker events with `:worker` and `:at` added, stray output as
   `{:event :output :text ... :stream :stdout|:stderr}`, and a final
-  `{:event :worker/exit :worker id :code n}` after both streams hit EOF.
+  `{:event :worker/exit :worker id :code n}` once the process has exited
+  and both streams hit EOF, or 500ms after the exit when something else
+  (a process the test left running) still holds them open.
   The scheduler decides when to start and stop workers; this namespace has
   no policy of its own."
   (:require
@@ -34,6 +36,11 @@
                                      :at (System/currentTimeMillis)
                                      :stream stream})))))
 
+(def ^:private reader-grace-ms
+  "How long after a worker exits its output may still drain before the
+  pool reports the exit."
+  500)
+
 (defn- daemon-thread ^Thread [^Runnable f]
   (doto (Thread. f) (.setDaemon true) (.start)))
 
@@ -54,8 +61,12 @@
                                         (fn [line] {:kind :output :text line})))]]
     (daemon-thread
      (fn []
-       (let [code (:exit @proc)]
-         (run! #(.join ^Thread %) readers)
+       (let [code (:exit @proc)
+             deadline (+ (System/currentTimeMillis) reader-grace-ms)]
+         ;; A process the test started in the background may hold the
+         ;; worker's pipes open long after the worker is gone, so the
+         ;; readers get a short grace period, not an unbounded join.
+         (run! #(.join ^Thread % (max 1 (- deadline (System/currentTimeMillis)))) readers)
          (.put ^LinkedBlockingQueue queue
                {:event :worker/exit :worker id :code code
                 :at (System/currentTimeMillis)}))))
