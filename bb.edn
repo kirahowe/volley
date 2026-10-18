@@ -6,6 +6,12 @@
         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
         :requires ([brisk.test-bootstrap :as bootstrap])
         :task (bootstrap/run-tests! *command-line-args*)}
+  test:diff {:doc "Compare brisk's Kaocha-compat core against Kaocha itself (downloads Kaocha)"
+             :extra-paths ["test" "dev-resources"]
+             :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
+                          lambdaisland/kaocha {:mvn/version "1.91.1392"}}
+             :requires ([brisk.test-bootstrap :as bootstrap])
+             :task (bootstrap/run-tests! ["brisk.diff.kaocha-diff"])}
   demo {:doc "Replay a scripted run through the live view (--ci, --speed N, --no-color)"
         :extra-paths ["dev"]
         :requires ([demo])

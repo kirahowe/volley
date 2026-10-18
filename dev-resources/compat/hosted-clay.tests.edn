@@ -1,0 +1,6 @@
+#kaocha/v1
+;; Scoped to the JVM tests under test/hosted_clay so kaocha doesn't try to
+;; load test/tasks/* — those exercise the bb tasks and need bb's stdlib
+;; (bencode, babashka.fs/process), so they run under `bb test:tasks`, not here.
+{:tests [{:id        :unit
+          :test-paths ["test/hosted_clay"]}]}

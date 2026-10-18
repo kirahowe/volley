@@ -108,8 +108,16 @@ then in code.
  :workers          8                                ; brisk-only
  :isolate?         false                            ; brisk-only: fresh process per ns
  :runtime          :bb                              ; brisk-only: :bb or :jvm
- :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]}
+ :warnings         ["unsupported plugin :kaocha.plugin/foo ignored"]
+ :errors           []                               ; config Kaocha would exit on; defaults used
+ :plugins          [:kaocha.plugin/filter ...]
+ :filters          {:focus [] :skip [] :focus-meta [] :skip-meta []}} ; global (CLI) filters
 ```
+
+`:filters` holds the CLI filters (and top-level `:kaocha.filter/*` keys).
+Kaocha applies them as a second pass after each suite's own `:focus`/`:skip`
+keys, so they stay separate from the per-suite vectors. Filter entries keep
+the type they had: symbols from tests.edn, keywords from the CLI.
 
 Kaocha accepts both `:test-paths` and `:kaocha/test-paths` style keys, and
 `#kaocha/v1` fills in defaults. brisk must match Kaocha's normalization. The
@@ -129,15 +137,21 @@ else: warning.
 ```clojure
 {:ns       'my.app-test
  :file     "test/my/app_test.clj"
- :requires #{'my.app 'clojure.test}
- :test?    true}            ; under a test path and matches ns-patterns
+ :requires #{'my.app 'clojure.test}   ; libs that get loaded
+ :as-alias-only #{}                  ; `:as-alias` libs, which don't load
+ :meta     {:synchronized true}      ; ns name metadata + attr-map
+ :vars     {'foo {:slow true}}       ; literal metadata on deftest names
+ :test?    true}            ; set by discover/mark-tests: under a test path and matches ns-patterns
 ```
+A file whose ns form can't be read gives `{:file path :error msg}`.
 
 ### Parent → worker messages (stdin, one EDN map per line)
 
 ```clojure
 {:op :run :ns 'my.app-test :run-id 3
- :select {:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]}
+ :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
+                    :suite-focused? bool}]
+          :ns-meta {...}}   ; from brisk.select/plan; workers call select/decide
  :capture-output? true}
 {:op :shutdown}
 ```
