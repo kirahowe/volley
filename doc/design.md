@@ -6,8 +6,6 @@ live as they happen, and has a watch mode with vitest-style keys. Moving from
 Kaocha takes one binstub change: brisk reads `tests.edn` and accepts
 Kaocha's CLI flags.
 
-"brisk" is a working name.
-
 ## Goals for the alpha
 
 1. Run an existing Kaocha suite (`tests.edn`, `clojure.test` tests) unchanged,
@@ -148,8 +146,8 @@ reference is Kaocha's own source in
 
 Kaocha options brisk doesn't support produce a warning, never a silent
 ignore. Plugins brisk treats as built in or harmless: `:kaocha.plugin/filter`,
-`:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (warn: ordering
-is per worker), `:kaocha.plugin/print-invocations` (no-op),
+`:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (accepted without a
+warning; brisk never shuffles, it orders by previous timings), `:kaocha.plugin/print-invocations` (no-op),
 `:kaocha.plugin/profiling` (brisk always reports slowest tests), `:kaocha.plugin/hooks`
 (see "Hooks"), `:kaocha.plugin/junit-xml` (`brisk.junit`; the parent writes
 the report from the run state after the summary). Anything
@@ -670,8 +668,11 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
 - **CLI.** Kaocha's: `[suite-id ...]`, `--focus`, `--skip`, `--focus-meta`,
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (Kaocha reporter names mapped to the
-  closest brisk reporter), `--plugin` (warn), `--print-config`,
-  `--print-test-plan`. brisk's: `--workers N`, `--isolate`, `--preload`, `--runtime bb|jvm`, `--aliases :a:b`.
+  closest brisk reporter), `--plugin`, `--profile`, `--diff-style`,
+  `--print-config`, `--print-test-plan`, `--print-result`, `--[no-]profiling`
+  and the junit-xml flags. `--[no-]randomize` and `--seed` are accepted and
+  ignored. brisk's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
+  `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions
 
