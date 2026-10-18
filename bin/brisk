@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Run brisk with the classpath of the bb.edn in the current directory.
+exec bb -m brisk.main "$@"

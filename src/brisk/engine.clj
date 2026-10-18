@@ -224,9 +224,13 @@
       :result (print-effect [(binding [*print-namespace-maps* false] (pr-str (rs/result run)))])
       :live (concat [{:effect :redraw :frame (render/live-frame prev run ropts)}]
                     (print-effect (concat (nonblank (render/failure-report run ropts)) [summary])))
-      :documentation (print-effect (concat (render/documentation-lines prev run ropts)
-                                           (nonblank (render/failure-report run ropts))
-                                           [summary]))
+      ;; Each namespace block ends with a blank line, so the summary's own
+      ;; leading one would double it.
+      :documentation (let [report (nonblank (render/failure-report run ropts))]
+                       (print-effect (concat (render/documentation-lines prev run ropts)
+                                             report
+                                             [(cond-> summary
+                                                (empty? report) (str/replace-first #"^\n" ""))])))
       (print-effect (concat (render/ci-lines prev run ropts)
                             (nonblank (render/orphan-report run ropts))
                             [summary])))))
