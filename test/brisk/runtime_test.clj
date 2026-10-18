@@ -140,9 +140,11 @@
     (let [fwd (runtime/forward-jvm-args args)
           cmd (runtime/jvm-worker-command {:java "/j/bin/java" :jvm-args fwd :classpath "a:b"})]
       (and (= "/j/bin/java" (first cmd))
-           (= fwd (subvec cmd 1 (inc (count fwd))))
+           (= runtime/default-jvm-args (subvec cmd 1 (inc (count runtime/default-jvm-args))))
+           (= fwd (subvec cmd (inc (count runtime/default-jvm-args))
+                          (+ (inc (count runtime/default-jvm-args)) (count fwd))))
            (= ["-cp" "a:b" "clojure.main" "-m" "brisk.shell.worker"]
-              (subvec cmd (inc (count fwd))))))))
+              (subvec cmd (+ (inc (count runtime/default-jvm-args)) (count fwd))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Config

@@ -138,10 +138,20 @@
 ;; ---------------------------------------------------------------------------
 ;; Commands
 
+(def default-jvm-args
+  "Options every JVM worker starts with, before the forwarded ones, so a
+  forwarded option for the same setting wins. Test runs are short, and
+  limiting the JIT to the C1 compiler cuts about a fifth off a typical
+  suite's wall time (no wait for C2 compilation); a suite that is mostly
+  long CPU-bound loops can pass `-XX:TieredStopAtLevel=4` to undo it."
+  ["-XX:TieredStopAtLevel=1"])
+
 (defn jvm-worker-command
-  "argv for a JVM worker: the `java` executable, the forwarded JVM options,
-  the classpath, and `clojure.main -m brisk.shell.worker`."
+  "argv for a JVM worker: the `java` executable, `default-jvm-args`, the
+  forwarded JVM options, the classpath, and `clojure.main -m
+  brisk.shell.worker`."
   [{:keys [java jvm-args classpath]}]
   (-> [(or java "java")]
+      (into default-jvm-args)
       (into jvm-args)
       (into ["-cp" classpath "clojure.main" "-m" "brisk.shell.worker"])))
