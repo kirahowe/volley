@@ -176,6 +176,7 @@
                                       (assoc :first-id (:first-worker-id opts 1))))
                :run run
                :shown nil
+               :dirty #{}
                :nses nses
                :preload (vec (distinct (concat (:preload plan)
                                                (when (:preload? opts) (map :ns entries)))))
@@ -243,10 +244,15 @@
 (defn- print-effect [lines]
   (when (seq lines) [{:effect :print :lines (vec lines) :stream :out}]))
 
+(defn- shown
+  "The state once `run` has been rendered: nothing is dirty any more."
+  [state run]
+  (assoc state :shown run :dirty #{}))
+
 (defn- show*
   "Append-only output for what finished since `prev`."
   [state prev run ropts]
-  [(assoc state :shown run)
+  [(shown state run)
    (print-effect (if (= :documentation (mode state))
                    (render/documentation-lines prev run ropts)
                    (render/ci-lines prev run ropts)))])
@@ -325,7 +331,7 @@
   [state {:keys [event]}]
   (let [prev (:shown state)
         run (:run state)
-        ropts (render-opts state false)
+        ropts (assoc (render-opts state false) :only (:dirty state))
         tick? (= :tick event)
         [state notices] (flush-notices state)
         [state effects]
@@ -336,7 +342,7 @@
                                  [state []])
           :live (if tick?
                   (let [[state frame] (with-notices state (render/live-frame prev run ropts))]
-                    [(assoc state :shown run) [{:effect :redraw :frame frame}]])
+                    [(shown state run) [{:effect :redraw :frame frame}]])
                   [state []])
           [state []])]
     [state (concat notices effects)]))
@@ -346,7 +352,7 @@
   [state]
   (let [prev (:shown state)
         run (:run state)
-        ropts (render-opts state true)
+        ropts (assoc (render-opts state true) :only (:dirty state))
         nonblank (fn [s] (when-not (str/blank? s) [s]))
         summary (render/summary run ropts)]
     (case (mode state)
@@ -470,8 +476,10 @@
   (let [ev (cond-> ev
              (and (= :worker/exit (:event ev)) (contains? (:watchdog-killed state) (:worker ev)))
              (assoc :reason "killed: its protocol output could not be read and it went silent"))
-        crash (sched/crash-events (:sched state) ev)]
+        crash (sched/crash-events (:sched state) ev)
+        held (when (= :output (:event ev)) (get-in state [:run :workers (:worker ev) :ns]))]
     (-> state
+        (update :dirty into (keep :ns) (cond-> (conj (vec crash) ev) held (conj {:ns held})))
         (update :notices into (notice state ev))
         (cond-> (= :worker/warning (:event ev)) (update :warned conj (:message ev)))
         (watch-protocol ev)
@@ -491,6 +499,7 @@
           state (cond-> (-> state
                             (assoc :sched sch :interrupted? true)
                             (update :stopping into ids)
+                            (update :dirty into (map second taken))
                             (update :silenced into ids))
                   (seq taken) (update :run rs/apply-event
                                       {:event :run/interrupted :namespaces (mapv second taken)

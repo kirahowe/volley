@@ -639,22 +639,31 @@
 
 (defn- finished? [rec] (not= :running (rs/ns-result rec)))
 
-(defn- newly-finished [prev state]
-  (->> (vals (:namespaces state))
+(defn- candidates
+  "Namespace records of `state` that may have changed since the last
+  render: those named in `(:only opts)` when the caller tracks them, else
+  every one."
+  [state opts]
+  (if-let [only (:only opts)]
+    (keep #(get-in state [:namespaces %]) only)
+    (vals (:namespaces state))))
+
+(defn- newly-finished [prev state opts]
+  (->> (candidates state opts)
        (filter finished?)
        (remove rs/unselected?)
        (remove #(some-> (get-in prev [:namespaces (:ns %)]) finished?))
        (sort-by (juxt #(or (:end-at %) 0) #(str (:ns %))))))
 
-(defn- bad-var-keys [state]
-  (set (for [rec (vals (:namespaces state))
+(defn- bad-var-keys [recs]
+  (set (for [rec recs
              v   (vals (:vars rec))
              :when (#{:failed :errored} (rs/var-status v))]
          [(:ns rec) (:var v)])))
 
-(defn- newly-failed-vars [prev state]
-  (let [before (when prev (bad-var-keys prev))]
-    (->> (bad-var-keys state)
+(defn- newly-failed-vars [prev state opts]
+  (let [before (when prev (bad-var-keys (candidates prev opts)))]
+    (->> (bad-var-keys (candidates state opts))
          (remove (or before #{}))
          sort
          (map (fn [[ns var]] (get-in state [:namespaces ns :vars var]))))))
@@ -714,10 +723,12 @@
   state last rendered, or nil. :emit holds permanent lines: a line for each
   var that failed since `prev` and for each namespace that finished since
   `prev`. :frame holds the redrawn part: one line per busy worker, then the
-  counts footer. With `:final? true` in `opts` the frame is empty."
+  counts footer. With `:final? true` in `opts` the frame is empty.
+  `(:only opts)`, when given, holds every namespace whose events arrived
+  since `prev`, and only those are looked at."
   [prev state opts]
-  (let [emit  (concat (map #(fail-line opts %) (newly-failed-vars prev state))
-                      (map #(ns-line opts %) (newly-finished prev state)))
+  (let [emit  (concat (map #(fail-line opts %) (newly-failed-vars prev state opts))
+                      (map #(ns-line opts %) (newly-finished prev state opts)))
         block (running-block opts state)
         frame (if (:final? opts)
                 []
@@ -728,18 +739,17 @@
 (defn ci-lines
   "Append-only lines for non-TTY output: a line for each namespace that
   finished since `prev` (or nil), followed by detailed reports for that
-  namespace's failures."
+  namespace's failures. `(:only opts)` as in `live-frame`."
   [prev state opts]
-  (let [fs (group-by :ns (rs/failures state))]
-    (->> (newly-finished prev state)
-         (mapcat (fn [rec]
-                   (let [nfs (get fs (:ns rec))]
-                     (cons (ns-line opts rec)
-                           (mapcat (fn [[f g]]
-                                     (cons "" (failure-lines opts f (not= [(:ns f) (:var f)]
-                                                                          [(:ns g) (:var g)]))))
-                                   (map vector nfs (concat (rest nfs) [nil])))))))
-         (#(finish % opts)))))
+  (->> (newly-finished prev state opts)
+       (mapcat (fn [rec]
+                 (let [nfs (rs/ns-failures-of state (:ns rec))]
+                   (cons (ns-line opts rec)
+                         (mapcat (fn [[f g]]
+                                   (cons "" (failure-lines opts f (not= [(:ns f) (:var f)]
+                                                                        [(:ns g) (:var g)]))))
+                                 (map vector nfs (concat (rest nfs) [nil])))))))
+       (#(finish % opts))))
 
 ;;; Documentation reporter
 
@@ -772,9 +782,10 @@
   `kaocha.report/documentation`): for each namespace that finished since
   `prev` (or nil), its name and one line per test var with ✓, ✗ or - and
   its duration. Namespaces are printed whole when they finish, so lines of
-  namespaces running in parallel never interleave."
+  namespaces running in parallel never interleave. `(:only opts)` as in
+  `live-frame`."
   [prev state opts]
-  (finish (mapcat #(doc-ns-lines opts %) (newly-finished prev state)) opts))
+  (finish (mapcat #(doc-ns-lines opts %) (newly-finished prev state opts)) opts))
 
 ;;; Final summary
 

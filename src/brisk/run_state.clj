@@ -404,6 +404,22 @@
         :when (counted-not-run? reason)]
     {:kind :not-run :ns ns :reason reason}))
 
+(def ^:private failure-order (juxt sort-key #(str (:kind %))))
+
+(defn ns-failures-of
+  "`failures` of namespace `ns` alone, in the same order: what
+  `(filter #(= ns (:ns %)) (failures state))` gives, without looking at
+  every other namespace."
+  [state ns]
+  (let [rec (get-in state [:namespaces ns])
+        own? #(= ns (:ns %))]
+    (->> (concat (when rec (assertion-failures rec))
+                 (when rec (ns-failures rec))
+                 (filter own? (protocol-failures state))
+                 (when (contains? (:not-run state) ns) (filter own? (not-run-failures state))))
+         (sort-by failure-order)
+         vec)))
+
 (defn failures
   "Every failed assertion, errored assertion, namespace load error, worker
   crash, hook that failed as a worker shut down (`:worker-error`),
@@ -419,7 +435,7 @@
                (worker-failures state)
                (protocol-failures state)
                (not-run-failures state))
-       (sort-by (juxt sort-key #(str (:kind %))))
+       (sort-by failure-order)
        vec))
 
 (defn slowest

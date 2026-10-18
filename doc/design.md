@@ -432,6 +432,14 @@ in this mode and the documentation one), `:documentation`
 (Kaocha's documentation layout, failures and summary at the end) and
 `:result` (`--print-result`: one EDN map from `brisk.run-state/result`).
 
+Rendering is incremental. The engine keeps `:dirty`, the namespaces named
+by the events folded since the last render (plus the namespace a worker
+held when one of its protocol lines broke, and the namespaces fail-fast
+interrupted), and passes it to `brisk.render` as `:only`. The renderers
+then look at those namespaces alone, and `brisk.run-state/ns-failures-of`
+gives one namespace's failures without walking the others, so a run's
+output costs time linear in its namespaces.
+
 `preflight` returns Kaocha's exit codes: config errors (including an
 unreadable tests.edn) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
 (-2), help/version/print-config/print-test-plan 0, and an empty plan prints

@@ -67,6 +67,14 @@
           ks (map (juxt (comp str :ns) (comp str :var)) fs)]
       (= ks (sort ks)))))
 
+(defspec ns-failures-of-is-failures-filtered-by-namespace runs
+  ;; The append-only reporters render one namespace per :ns/end with it.
+  (prop/for-all [r gr/run]
+    (let [state (gr/fold (:plan r) (all-events r))
+          all (rs/failures state)]
+      (every? #(= (filterv (fn [f] (= % (:ns f))) all) (rs/ns-failures-of state %))
+              (distinct (concat (keys (:namespaces state)) (keep :ns all)))))))
+
 (defspec slowest-is-sorted-and-bounded runs
   (prop/for-all [r gr/run]
     (let [state (gr/fold (:plan r) (all-events r))
