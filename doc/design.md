@@ -314,7 +314,8 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   `:captured? true`. Output that escapes capture (load-time prints,
   `--no-capture-output`, JVM warnings) is stray output: the engine prints
   it as it arrives (on stdout in CI and documentation mode, on stderr with
-  `--print-result`, above the frame in live mode), as Kaocha does, and
+  `--print-result`, above the frame in live mode, cleaned of control
+  and escape sequences but never cut to the terminal width), as Kaocha does, and
   run-state attributes it to whatever the worker is running when the line
   arrives, for the failure report; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.

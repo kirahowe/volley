@@ -454,3 +454,9 @@
                 {:width 80 :color? false})]
     (is (str/includes? report "expected: 1\n"))
     (is (str/includes? report "actual:   2"))))
+
+(deftest stray-output-keeps-its-length-but-not-its-escapes
+  ;; probe liveout: only the redrawn frame has to fit the terminal
+  (let [long-line (apply str (repeat 30 "abcdef "))]
+    (is (= [long-line "next"] (render/stray-lines (str long-line "\nnext") {:width 40})))
+    (is (= ["red text" "x"] (render/stray-lines "\u001b[31mred text\u001b[0m\r\nx\u0007" {:width 40})))))

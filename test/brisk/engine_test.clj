@@ -253,3 +253,15 @@
     (is (= ["still running: slow-test/hangs (30.07s)"] l2))
     (is (empty? l3) "not again until another 30s have passed")
     (is (= ["still running: slow-test/hangs (1m 00s)"] l4))))
+
+(deftest live-view-prints-uncaptured-output-in-full
+  (let [line (apply str (repeat 40 "0123456789"))
+        {:keys [state]} (engine/init {:suites [{:id :unit :namespaces [{:ns 'a-test}]}]}
+                                     {:workers 1 :reporter :live :width 60 :started-at 0})
+        state (:state (engine/step state {:event :tick :at 0}))
+        state (:state (engine/step state {:event :worker/ready :worker 1 :at 1}))
+        state (:state (engine/step state {:event :ns/start :ns 'a-test :run-id 1 :worker 1 :at 2}))
+        state (:state (engine/step state {:event :output :text line :stream :stderr :worker 1 :at 3}))
+        effects (:effects (engine/step state {:event :tick :at 100}))
+        emitted (mapcat (comp :emit :frame) (filter #(= :redraw (:effect %)) effects))]
+    (is (some #{line} emitted))))

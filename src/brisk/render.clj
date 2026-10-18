@@ -563,10 +563,12 @@
                  opts)))
 
 (defn stray-lines
-  "Output a test printed outside capture, cleaned and fitted for the live
-  view, which shows it above the frame."
-  [text opts]
-  (finish [(ext text)] opts))
+  "Output a test printed outside capture, for the live view, which shows
+  it above the frame. Control and escape sequences are removed, but lines
+  keep their full length: they are printed once and scroll away with the
+  terminal's own wrapping, and only the redrawn frame must fit the width."
+  [text _opts]
+  (str/split-lines (ext text)))
 
 (defn protocol-notice
   "One line saying that a protocol line from `worker` could not be read,
