@@ -35,7 +35,7 @@ pass/fail per var as Kaocha.
 
 | Project (vars) | Kaocha | 1 worker | 2 | 4 | 8 |
 |---|---|---|---|---|---|
-| local-coder (23) | 2.2, 2.2, 2.8 | 2.7 | 2.7 | 2.7 | 2.8 to 2.9 |
+| a small app (23) | 2.2, 2.2, 2.8 | 2.7 | 2.7 | 2.7 | 2.8 to 2.9 |
 | hosted-clay (70) | 8.9, 12.2, 13.1 | 9.2 to 9.6 | 8.2 | 8.3 to 8.7 | 11.1 to 11.6 |
 | secrets (345) | 110, 112, 127 | | 70 to 71 | 70 to 76 | 72 to 80 |
 | reader (244) | 436, 590, 631 | | | 188, 195, 351 | 234, 380, 490 |
@@ -63,7 +63,7 @@ load, so compare within a row, not across tables.
 
 - On small suites volley gains little. On a short JVM suite it is slower
   than Kaocha by about half a second, because the parent and a worker each
-  start a JVM. local-coder is the example: 2.2 to 2.8s with Kaocha, 2.7s
+  start a JVM. The 23-test app is the example: 2.2 to 2.8s with Kaocha, 2.7s
   with volley. A suite that takes Kaocha under about 10 seconds may be no
   faster: hosted-clay took 9.3s with volley in the adoption test against
   6.3 and 9.8s with Kaocha.

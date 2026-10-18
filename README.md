@@ -75,12 +75,13 @@ The run exited with code 4, the number of failures, as Kaocha does.
 
 ### babashka
 
-Add volley to `bb.edn` as a git dependency, and a task to run it:
+volley is on Clojars as
+[`com.kirahowe/volley`](https://clojars.org/com.kirahowe/volley). Add it
+to `bb.edn`, and a task to run it:
 
 ```clojure
 {:paths ["src" "test"]
- :deps {io.github.kirahowe/volley {:git/url "https://github.com/kirahowe/volley"
-                                  :git/sha "<commit sha>"}}
+ :deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.1"}}
  :tasks {test {:doc "Run the tests"
                :requires ([volley.main])
                :task (apply volley.main/-main *command-line-args*)}}}
@@ -119,17 +120,25 @@ Change the `:test` alias in `deps.edn` that runs Kaocha: swap
 ```clojure
 {:aliases
  {:test {:extra-paths ["test" "test-resources"]
-         :extra-deps {io.github.kirahowe/volley {:git/url "https://github.com/kirahowe/volley"
-                                                :git/sha "<commit sha>"}
+         :extra-deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.1"}
                       org.clojure/test.check {:mvn/version "1.1.1"}}
          :jvm-opts ["-Xmx2g"]
          :main-opts ["-m" "volley.main"]}}}
 ```
 
 Run `clojure -M:test`. A `bin/kaocha` binstub that runs
-`clojure -M:test "$@"` keeps working unchanged. On the JVM volley depends on `borkdude/edamame`,
-`babashka/fs` and `babashka/process`; Clojure resolves them from volley's
-`deps.edn`.
+`clojure -M:test "$@"` keeps working unchanged. On the JVM volley depends
+on `borkdude/edamame`, `babashka/fs` and `babashka/process`, which come in
+with it. babashka has all three built in.
+
+### From git
+
+To try an unreleased commit, depend on the repository instead, on either
+runtime:
+
+```clojure
+io.github.kirahowe/volley {:git/sha "<full commit sha>"}
+```
 
 ## Moving from Kaocha
 
@@ -404,6 +413,12 @@ in [doc/benchmarks.md](doc/benchmarks.md).
 - `bb lint`: clj-kondo over `src` and `test`. It must report no errors or
   warnings.
 - `bb demo`: replays a scripted run through the live view.
+
+To release, set the version in `src/volley/version.edn`, give it a dated
+heading in `CHANGELOG.md`, and tag the commit `v<version>`. Then
+`clojure -T:build deploy` builds the jar and pushes it to Clojars, with
+`CLOJARS_USERNAME` and `CLOJARS_PASSWORD` (a deploy token) set.
+`clojure -T:build install` puts the jar in `~/.m2` to try it locally first.
 
 Read [AGENTS.md](AGENTS.md) and [doc/design.md](doc/design.md) before
 changing anything. The design doc defines the architecture and the data

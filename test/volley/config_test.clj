@@ -116,9 +116,9 @@
     (is (= [] (:warnings c)))))
 
 (deftest empty-v1-config-equals-missing-file-test
-  (testing "secrets and local-coder use `#kaocha/v1 {}`"
+  (testing "secrets and small-app use `#kaocha/v1 {}`"
     (is (= (config/normalize nil {}) (load-config (fixture "secrets"))))
-    (is (= (config/normalize nil {}) (load-config (fixture "local-coder"))))))
+    (is (= (config/normalize nil {}) (load-config (fixture "small-app"))))))
 
 (deftest real-project-configs-test
   (testing "kaocha.config/normalize-test-suite: only :id and :test-paths are overridden"

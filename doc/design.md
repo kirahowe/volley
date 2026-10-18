@@ -828,7 +828,7 @@ vars, assertion counts and pass/fail per var as Kaocha.
 
 | Project (vars) | Kaocha | 1 | 2 | 4 | 8 |
 |---|---|---|---|---|---|
-| local-coder (23) | 2.2, 2.2, 2.8 | 2.7 | 2.7 | 2.7 | 2.8 to 2.9 |
+| a small app (23) | 2.2, 2.2, 2.8 | 2.7 | 2.7 | 2.7 | 2.8 to 2.9 |
 | hosted-clay (70) | 8.9, 12.2, 13.1 | 9.2 to 9.6 | 8.2 | 8.3 to 8.7 | 11.1 to 11.6 |
 | secrets (345) | 110, 112, 127 | | 70 to 71 | 70 to 76 | 72 to 80 |
 | reader (244) | 436, 590, 631 | | | 188, 195, 351 | 234, 380, 490 |

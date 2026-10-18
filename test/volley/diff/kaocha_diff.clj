@@ -119,7 +119,7 @@
       (compare-config (str "#kaocha/v1 " (pr-str raw)) opts))))
 
 (deftest real-project-configs-match-kaocha-test
-  (doseq [f ["hosted-clay" "reader" "secrets" "local-coder" "rich"]]
+  (doseq [f ["hosted-clay" "reader" "secrets" "small-app" "rich"]]
     (let [text (slurp (io/resource (str "compat/" f ".tests.edn")))]
       (testing f
         (is (compare-config text {}))

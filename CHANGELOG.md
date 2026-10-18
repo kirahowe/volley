@@ -4,7 +4,7 @@ All notable changes to volley are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and volley uses
 [semantic versioning](https://semver.org/) once it leaves alpha.
 
-## [0.1.0-alpha.1] - unreleased
+## [0.1.0-alpha.1] - 2026-10-18
 
 First alpha. volley is a `clojure.test` runner that reads Kaocha's
 `tests.edn` and command-line flags.
@@ -90,3 +90,5 @@ First alpha. volley is a `clojure.test` runner that reads Kaocha's
   `System/exit` in a test, fail-fast inside a test, load order, the
   `--print-*` maps). See "Deliberate divergences from Kaocha" in
   [doc/design.md](doc/design.md).
+
+[0.1.0-alpha.1]: https://github.com/kirahowe/volley/releases/tag/v0.1.0-alpha.1
