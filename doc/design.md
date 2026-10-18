@@ -231,6 +231,10 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   streams close. When the worker held a namespace, `brisk.schedule/crash-events`
   yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
   :exit-code n}`) and `:ns/end` (`:crashed? true`), both with `:synthetic? true`.
+- The worker reads commands from the original stdin and points
+  `System/in` (with `System/setIn`) and `*in*` at empty streams, so a test
+  that reads stdin gets end of file instead of blocking on the command
+  channel.
 - The worker keeps the original stdout for protocol lines and points
   `System/out` and the root `*out*`/`*err*` at stderr, so nothing a test
   prints can corrupt a protocol line. With `:capture-output?` the worker

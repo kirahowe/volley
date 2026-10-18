@@ -196,3 +196,11 @@
       (is (str/starts-with? (e2e/summary-line out) "7 tests | 1 passed | 5 failed | 1 errors"))
       (is (str/includes? out "actual:   [1 2 4]") "the value printed in full")
       (is (not (str/includes? out "could not be read"))))))
+
+(deftest tests-that-read-stdin-see-an-empty-stream
+  (doseq [runtime ["bb" "jvm"]]
+    (testing runtime
+      (let [{:keys [exit out]} (e2e/brisk (e2e/copy-project "stdin") ["--workers" "1" "--runtime" runtime]
+                                          {:timeout-ms 60000})]
+        (is (= 0 exit) out)
+        (is (str/starts-with? (str (e2e/summary-line out)) "3 tests | 3 passed"))))))
