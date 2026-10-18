@@ -10,7 +10,8 @@
   the result). Hooks are resolved and called by `brisk.shell.worker` and,
   for `post-summary`, `brisk.main`."
   (:require
-   [brisk.run-state :as rs]))
+   [brisk.run-state :as rs]
+   [brisk.testable :as testable]))
 
 (def semantics
   "Where and when each `:kaocha.hooks/*` key runs in brisk."
@@ -120,37 +121,6 @@
    :kaocha/source-paths source-paths
    :kaocha/ns-patterns ns-patterns})
 
-(defn ns-testable
-  "The testable of namespace `ns-sym` before it is loaded
-  (`kaocha.type.ns/->testable`)."
-  [ns-sym]
-  {:kaocha.testable/type :kaocha.type/ns
-   :kaocha.testable/id (keyword (str ns-sym))
-   :kaocha.testable/desc (str ns-sym)
-   :kaocha.ns/name ns-sym})
-
-(defn var-testable
-  "The testable of test var `var-sym` in `ns-sym` with metadata
-  `var-meta` (`kaocha.type.ns/-load`); the shell adds `:kaocha.var/var`
-  and `:kaocha.var/test`."
-  [ns-sym var-sym var-meta]
-  (let [id (symbol (str ns-sym) (str var-sym))]
-    {:kaocha.testable/type :kaocha.type/var
-     :kaocha.testable/id (keyword id)
-     :kaocha.testable/desc (str var-sym)
-     :kaocha.testable/meta var-meta
-     :kaocha.var/name id}))
-
-(defn with-result
-  "`testable` with Kaocha's result counts."
-  [testable {:keys [pass fail error pending]}]
-  (assoc testable
-         :kaocha.result/count 1
-         :kaocha.result/pass (or pass 0)
-         :kaocha.result/fail (or fail 0)
-         :kaocha.result/error (or error 0)
-         :kaocha.result/pending (or pending 0)))
-
 (defn- kaocha-hook-keys [hooks]
   (into {} (map (fn [[k v]] [(keyword "kaocha.hooks" (name k)) v])) hooks))
 
@@ -164,13 +134,6 @@
           :kaocha/color? (boolean (:color? config))
           :kaocha.plugin.capture-output/capture-output? (boolean (:capture-output? config))}
          (kaocha-hook-keys (:hooks config))))
-
-(defn test-plan
-  "Kaocha's test plan shape: `kaocha-cfg` with `:kaocha/tests` replaced by
-  `:kaocha.test-plan/tests` (or `result-key`) holding `suites`."
-  ([kaocha-cfg suites] (test-plan kaocha-cfg suites :kaocha.test-plan/tests))
-  ([kaocha-cfg suites result-key]
-   (-> kaocha-cfg (dissoc :kaocha/tests) (assoc result-key (vec suites)))))
 
 (defn configure-message
   "The `{:op :configure}` message every worker gets before its first run,
@@ -202,16 +165,16 @@
   from brisk's run state. `suite-of` maps each namespace to its suite id."
   [config suite-of run]
   (let [var-result (fn [ns v]
-                     (let [t (var-testable ns (:var v) {})]
+                     (let [t (testable/var-testable ns (:var v) {})]
                        (cond
-                         (= :pending (:reason v)) (with-result t {:pending 1})
+                         (= :pending (:reason v)) (testable/with-result t {:pending 1})
                          (= :skipped (rs/var-status v)) (assoc t :kaocha.testable/skip true)
-                         :else (with-result t (rs/var-counts v)))))
+                         :else (testable/with-result t (rs/var-counts v)))))
         ns-result (fn [[ns rec]]
-                    (assoc (ns-testable ns)
+                    (assoc (testable/ns-testable ns)
                            :kaocha.result/tests (mapv #(var-result ns %) (vals (:vars rec)))))
         by-suite (group-by (comp suite-of key) (:namespaces run))]
-    (test-plan (kaocha-config config)
+    (testable/test-plan (kaocha-config config)
                (for [s (:tests config)]
                  (assoc (suite-testable s)
                         :kaocha.result/tests (mapv ns-result (sort-by (comp str key) (get by-suite (:id s))))))

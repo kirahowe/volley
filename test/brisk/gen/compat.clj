@@ -2,7 +2,7 @@
   "Generators for the Kaocha-compatibility namespaces: cli, config, discover,
   select and deps-graph."
   (:require
-   [brisk.select :as select]
+   [brisk.filters :as filters]
    [clojure.string :as str]
    [clojure.test.check.generators :as gen]))
 
@@ -160,22 +160,22 @@
 
 (defn worker-selected
   "Ids (`:ns/var` keywords) of the vars workers would run for `plan`: each
-  planned namespace's real vars, decided with `brisk.select/decide` after
+  planned namespace's real vars, decided with `brisk.filters/decide` after
   the spec's focus-meta keys are settled against the real metadata of
   every namespace in the plan's `:preload`, as a worker does. Pending vars
   count as selected: Kaocha reports them instead of filtering them out."
   [plan infos]
   (let [by-ns (into {} (map (juxt :ns identity)) infos)
-        used (select/used-meta (for [ns (map :ns (:preload plan))
+        used (filters/used-meta (for [ns (map :ns (:preload plan))
                                      :let [i (by-ns ns)]
                                      m (cons (:meta i) (vals (real-vars i)))]
                                  m))]
     (into #{}
           (for [{:keys [namespaces]} (:suites plan)
                 {:keys [ns select]} namespaces
-                :let [spec (:select (select/resolve-focus-meta select used))]
+                :let [spec (:select (filters/resolve-focus-meta select used))]
                 [v m] (real-vars (by-ns ns))
-                :when (#{:selected :pending} (:reason (select/decide spec ns v m)))]
+                :when (#{:selected :pending} (:reason (filters/decide spec ns v m)))]
             (keyword (str ns) (str v))))))
 
 (def corpus

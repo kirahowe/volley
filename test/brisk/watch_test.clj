@@ -1,6 +1,7 @@
 (ns brisk.watch-test
   (:require
    [brisk.discover :as discover]
+   [brisk.filters :as filters]
    [brisk.gen.watch :as gw]
    [brisk.select :as select]
    [brisk.watch :as watch]
@@ -246,13 +247,13 @@
         plan (watch/select-plan config infos [] {:failed? true} {'a-test #{'y}})
         spec (-> plan :suites first :namespaces first :select)]
     (is (= ['a-test] (map :ns (-> plan :suites first :namespaces))))
-    (is (= {:run? true :reason :selected} (select/decide spec 'a-test 'y {})))
-    (is (= :not-focused (:reason (select/decide spec 'a-test 'x {}))))))
+    (is (= {:run? true :reason :selected} (filters/decide spec 'a-test 'y {})))
+    (is (= :not-focused (:reason (filters/decide spec 'a-test 'x {}))))))
 
 (deftest var-pattern-skips-non-matching-vars
   (let [spec {:passes [] :ns-meta {} :var-pattern "^add"}]
-    (is (:run? (select/decide spec 'a-test 'adds {})))
-    (is (= :not-focused (:reason (select/decide spec 'a-test 'divides {}))))))
+    (is (:run? (filters/decide spec 'a-test 'adds {})))
+    (is (= :not-focused (:reason (filters/decide spec 'a-test 'divides {}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Affected namespaces

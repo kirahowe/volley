@@ -5,6 +5,7 @@
    [brisk.gen.report :as gr]
    [brisk.hooks :as hooks]
    [brisk.run-state :as rs]
+   [brisk.testable :as testable]
    [clojure.test :refer [deftest is testing]]
    [clojure.test.check.clojure-test :refer [defspec]]
    [clojure.test.check.properties :as prop]))
@@ -44,15 +45,15 @@
   (testing "kaocha.type.ns/->testable"
     (is (= {:kaocha.testable/type :kaocha.type/ns :kaocha.testable/id :my.app-test
             :kaocha.testable/desc "my.app-test" :kaocha.ns/name 'my.app-test}
-           (hooks/ns-testable 'my.app-test))))
+           (testable/ns-testable 'my.app-test))))
   (testing "kaocha.type.ns/-load builds var testables"
     (is (= {:kaocha.testable/type :kaocha.type/var :kaocha.testable/id :my.app-test/adds
             :kaocha.testable/desc "adds" :kaocha.testable/meta {:line 3}
             :kaocha.var/name 'my.app-test/adds}
-           (hooks/var-testable 'my.app-test 'adds {:line 3}))))
+           (testable/var-testable 'my.app-test 'adds {:line 3}))))
   (is (= {:kaocha.result/count 1 :kaocha.result/pass 2 :kaocha.result/fail 1
           :kaocha.result/error 0 :kaocha.result/pending 0}
-         (hooks/with-result {} {:pass 2 :fail 1}))))
+         (testable/with-result {} {:pass 2 :fail 1}))))
 
 (deftest the-semantics-table-covers-every-supported-key
   (is (= hooks/top-level-keys (set (keys hooks/semantics))))

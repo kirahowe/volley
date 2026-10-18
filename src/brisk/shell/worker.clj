@@ -10,6 +10,7 @@
   prints, even through `(.println System/out ...)`, arrives as stray output
   and can never interleave with a protocol line."
   (:require
+   [brisk.filters :as filters]
    [brisk.protocol :as protocol]
    [brisk.shell.hooks :as hooks]
    [clojure.test :as t]))
@@ -25,7 +26,7 @@
   (/ (- end-ns start-ns) 1e6))
 
 (defn run-everything
-  "A `decide` that selects every var. Used when `brisk.select` is absent."
+  "A `decide` that selects every var, for running a namespace whole."
   [_select _ns-sym _ns-meta _var-sym _var-meta]
   {:run? true :reason nil})
 
@@ -39,7 +40,7 @@
        (filter (comp :test meta))))
 
 (defn partition-vars
-  "Ask `decide` (the 5-arity of `brisk.select/decide`) about each var, with
+  "Ask `decide` (the 5-arity of `brisk.filters/decide`) about each var, with
   the namespace's metadata `ns-meta`. Returns `{:run [var ...] :skipped
   [[var reason] ...]}`, both in input order."
   [decide select ns-sym ns-meta vars]
@@ -437,7 +438,7 @@
 
 (defn- loaded-metas
   "Metadata of the namespaces in `nses` that are loaded and of their test
-  vars, for `brisk.select/used-meta`."
+  vars, for `brisk.filters/used-meta`."
   [nses]
   (for [ns nses
         :let [ns-obj (find-ns ns)]
@@ -445,29 +446,17 @@
         m (cons (meta ns-obj) (map meta (test-vars-of ns-obj)))]
     m))
 
-(def ^:private prepare-select
-  "`brisk.select/prepare`, or identity when brisk.select is absent."
-  (delay (or (try (requiring-resolve 'brisk.select/prepare) (catch Throwable _ nil))
-             identity)))
-
-(def ^:private resolve-focus-meta
-  "`brisk.select/resolve-focus-meta` and `used-meta`, when brisk.select is
-  on the classpath."
-  (delay (try [(requiring-resolve 'brisk.select/resolve-focus-meta)
-               (requiring-resolve 'brisk.select/used-meta)
-               (requiring-resolve 'brisk.select/missing-meta-warning)]
-              (catch Throwable _ nil))))
-
 (defn- settle-select
   "The select spec with its unresolved focus-meta keys settled against
   every preloaded test. Each dropped key is warned about once per worker,
   as Kaocha warns about it. Returns `[hs select]`."
   [hs emit! select preload]
-  (if-let [[resolve used-meta warning] (when (seq (:resolve-focus-meta select)) @resolve-focus-meta)]
-    (let [{select :select dropped :dropped} (resolve select (used-meta (loaded-metas (map :ns preload))))
+  (if (seq (:resolve-focus-meta select))
+    (let [{select :select dropped :dropped}
+          (filters/resolve-focus-meta select (filters/used-meta (loaded-metas (map :ns preload))))
           new (remove (::warned hs #{}) dropped)]
       (doseq [k new]
-        (emit! {:event :worker/warning :message (warning k)}))
+        (emit! {:event :worker/warning :message (filters/missing-meta-warning k)}))
       [(update hs ::warned (fnil into #{}) new) select])
     [hs select]))
 
@@ -480,7 +469,7 @@
       [hs e :setup]
       (let [ns-obj (find-ns ns)
             [hs select] (settle-select hs emit! (:select cmd) preload)
-            select (@prepare-select select)
+            select (filters/prepare select)
             {:keys [run skipped]}
             (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]
@@ -529,7 +518,7 @@
 (defn run-assignment!
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
   `(fn [select ns-sym ns-meta var-sym var-meta] {:run? bool :reason kw})`,
-  normally `brisk.select/decide`; it gets the namespace's real metadata.
+  normally `brisk.filters/decide`; it gets the namespace's real metadata.
   `hs` is the worker's hook state (`brisk.shell.hooks/init`); the 3-arity
   runs without hooks. Returns the next hook state.
 
@@ -548,11 +537,6 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Process entry point
-
-(defn- resolve-decide []
-  (or (try (requiring-resolve 'brisk.select/decide)
-           (catch Throwable _ nil))
-      run-everything))
 
 (defn- utf8-writer [^java.io.OutputStream out]
   (java.io.OutputStreamWriter. out "UTF-8"))
@@ -597,7 +581,7 @@
         stray (java.io.PrintStream. System/err true "UTF-8")
         ^java.io.Writer stray-writer (utf8-writer stray)
         emit! (make-emit proto-out (protocol/prefix-for nonce))
-        decide (resolve-decide)
+        decide filters/decide
         in (java.io.BufferedReader.
             (java.io.InputStreamReader. System/in "UTF-8"))]
     ;; stdin carries the parent's commands. A test that reads System/in

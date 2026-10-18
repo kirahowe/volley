@@ -1,6 +1,7 @@
 (ns brisk.select-test
   (:require
    [brisk.config :as config]
+   [brisk.filters :as filters]
    [brisk.gen.compat :as g]
    [brisk.select :as select]
    [clojure.set :as set]
@@ -79,7 +80,7 @@
                       :let [{:keys [vars ns]} (by-ns (:id ns-node))
                             var-sym (symbol (name (:id v)))
                             spec {:passes (:passes suite) :ns-meta (:meta ns-node)}
-                            {:keys [reason]} (select/decide spec ns var-sym (get vars var-sym))]
+                            {:keys [reason]} (filters/decide spec ns var-sym (get vars var-sym))]
                       :when (#{:selected :pending} reason)]
                   (:id v))))))))
 
@@ -137,10 +138,10 @@
     ;; :absent is never a generated metadata key
     (let [config (cfg {:skip-meta []} {:focus-meta [:absent]})
           plan (select/plan config corpus [])
-          used (select/used-meta (mapcat #(cons (:meta %) (vals (g/real-vars %))) corpus))]
+          used (filters/used-meta (mapcat #(cons (:meta %) (vals (g/real-vars %))) corpus))]
       (and (= (all-ids corpus) (selected plan corpus))
            (= (set (map :ns corpus)) (set (map :ns (:preload plan))))
-           (every? #(= [:absent] (:dropped (select/resolve-focus-meta (:select %) used)))
+           (every? #(= [:absent] (:dropped (filters/resolve-focus-meta (:select %) used)))
                    (mapcat :namespaces (:suites plan)))))))
 
 (defspec focus-on-an-invisible-var-selects-it 200
@@ -187,7 +188,7 @@
       (is (not (contains? ids :app.a-test/three)))
       (is (contains? ids :app.a-test/one))
       (is (= {:run? false :reason :pending}
-             (select/decide (:select (first (:namespaces (first (:suites plan))))) 'app.a-test 'four {:kaocha/pending true}))
+             (filters/decide (:select (first (:namespaces (first (:suites plan))))) 'app.a-test 'four {:kaocha/pending true}))
           "kaocha.testable/run-testable: :kaocha/pending is reported, not run"))))
 
 (deftest skip-beats-pending-test
@@ -196,7 +197,7 @@
           plan (select/plan config infos [])
           spec (:select (first (:namespaces (first (:suites plan)))))]
       (is (= {:run? false :reason :skip}
-             (select/decide spec 'app.a-test 'four {:kaocha/pending true}))))))
+             (filters/decide spec 'app.a-test 'four {:kaocha/pending true}))))))
 
 (deftest skip-by-id-test
   (testing "filter-testable: --skip of a ns skips all its vars, of ns/var only that var"
@@ -263,11 +264,11 @@
       (is (= [:nobody-has-this] (:resolve-focus-meta spec)) "no visible test has it: workers settle it")
       (is (= ['app.a-test 'app.b-test 'app.c-test] (map :ns (:preload plan))))
       (is (= {:select (dissoc spec :resolve-focus-meta :pass-inputs) :dropped []}
-             (select/resolve-focus-meta spec #{:nobody-has-this}))
+             (filters/resolve-focus-meta spec #{:nobody-has-this}))
           "a macro-defined test carries it after all")
-      (is (= [:nobody-has-this] (:dropped (select/resolve-focus-meta spec #{:slow}))))
+      (is (= [:nobody-has-this] (:dropped (filters/resolve-focus-meta spec #{:slow}))))
       (is (= "No tests found with metadata key :nobody-has-this. Ignoring --focus-meta :nobody-has-this."
-             (select/missing-meta-warning :nobody-has-this)))))
+             (filters/missing-meta-warning :nobody-has-this)))))
   (testing "a key a visible test carries needs no settling"
     (let [plan (select/plan (cfg {} {:focus-meta [:slow]}) infos [])]
       (is (nil? (:preload plan)))
@@ -335,12 +336,12 @@
       (is (= spec (read-string (pr-str spec)))))))
 
 (deftest prepare-compiles-the-var-pattern-once
-  (let [spec (select/prepare {:passes [] :ns-meta {} :var-pattern "^add"})]
+  (let [spec (filters/prepare {:passes [] :ns-meta {} :var-pattern "^add"})]
     (is (instance? java.util.regex.Pattern (:var-re spec)))
-    (is (= {:run? true :reason :selected} (select/decide spec 'a-test 'add-one {})))
-    (is (= {:run? false :reason :not-focused} (select/decide spec 'a-test 'sub-one {})))
-    (is (= (select/decide {:passes [] :ns-meta {} :var-pattern "^add"} 'a-test 'sub-one {})
-           (select/decide spec 'a-test 'sub-one {}))
+    (is (= {:run? true :reason :selected} (filters/decide spec 'a-test 'add-one {})))
+    (is (= {:run? false :reason :not-focused} (filters/decide spec 'a-test 'sub-one {})))
+    (is (= (filters/decide {:passes [] :ns-meta {} :var-pattern "^add"} 'a-test 'sub-one {})
+           (filters/decide spec 'a-test 'sub-one {}))
         "deciding without prepare gives the same answer")))
 
 (deftest unknown-focus-meta-keys-cost-linear-time

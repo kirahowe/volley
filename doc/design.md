@@ -67,7 +67,8 @@ Pure core:
 | `brisk.cli` | argv → options map, or a list of errors. Kaocha flags plus brisk's own. |
 | `brisk.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
 | `brisk.discover` | File path + file text → namespace info (name, requires). Path filtering by `ns-patterns`. |
-| `brisk.select` | Config + namespace infos → the plan's namespaces; var metadata → run/skip decision. |
+| `brisk.select` | Config + namespace infos → the plan's namespaces. |
+| `brisk.filters` | Kaocha's filter rules for one var (`decide`), and the focus-meta keys a worker settles. The only selection code a worker loads; `brisk.select` uses it too. |
 | `brisk.deps-graph` | Namespace infos → dependency graph; changed files → affected test namespaces. |
 | `brisk.schedule` | Pure scheduler state machine: queue, workers, assignments. |
 | `brisk.protocol` | Encode and decode messages between parent and worker. |
@@ -76,7 +77,8 @@ Pure core:
 | `brisk.engine` | The parent's event loop: `(step state input) → {:state :effects}`, composing schedule, run-state and render; `preflight` for everything before the loop. |
 | `brisk.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
 | `brisk.junit` | Run state → the Ant JUnit XML report `kaocha.plugin/junit-xml` writes. |
-| `brisk.hooks` | Kaocha's hooks plugin and `:brisk/worker-setup` as data: reading them from tests.edn, the `:configure` message, the Kaocha-shaped testables, test plan and result hooks receive. |
+| `brisk.hooks` | Kaocha's hooks plugin and `:brisk/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
+| `brisk.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
 | `brisk.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
@@ -196,7 +198,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
 {:op :run :ns 'my.app-test :run-id 3
  :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
                     :suite-focused? bool :suite-skipped? bool}]  ; :suite-skipped? only when true
-          :ns-meta {...}    ; from brisk.select/plan; workers call select/decide
+          :ns-meta {...}    ; from brisk.select/plan; workers call filters/decide
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
           :pass-inputs {:suite {:id kw} :own filters :global filters}}  ; visible statically (see below)
  :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
@@ -233,9 +235,9 @@ and metadata:
   each select spec carries `:resolve-focus-meta` and `:pass-inputs`: the
   suite and the suite's and global filters the passes are built from. A
   worker requires every namespace in `:preload` before its first test,
-  computes the keys its loaded tests carry (`brisk.select/used-meta`),
+  computes the keys its loaded tests carry (`brisk.filters/used-meta`),
   removes the others from both filter sets and rebuilds the passes
-  (`brisk.select/resolve-focus-meta`), and warns, once per worker, about
+  (`brisk.filters/resolve-focus-meta`), and warns, once per worker, about
   each dropped key with Kaocha's message (`:worker/warning`; the parent
   prints each text once). The plan keeps the namespaces the filters keep
   with every key in place. Dropping a key no test carries never brings
@@ -291,7 +293,7 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
 - `:ns/error` is always followed by `:ns/end`, so every namespace has exactly
   one terminal event. `:ns/error` covers load errors and a `:once` or `:each`
   fixture that throws.
-- `:var/skipped :reason` is whatever `brisk.select/decide` returned.
+- `:var/skipped :reason` is whatever `brisk.filters/decide` returned.
   Only `:pending` vars are part of the run (`brisk.run-state/in-run?`):
   they count as tests and as "skipped" in the summary, `<skipped/>` in
   the junit-xml report. A var skipped for any other reason (a filter, a
@@ -344,7 +346,7 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   run-state attributes it to whatever the worker is running when the line
   arrives, for the failure report; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.
-- The worker calls the 5-arity `brisk.select/decide` with the loaded
+- The worker calls the 5-arity `brisk.filters/decide` with the loaded
   namespace's real metadata (merged over the static `:ns-meta` copy).
 - `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
   error is in `:error`.
@@ -743,7 +745,10 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
     run (parent JVM plus worker JVM), and each worker loads the project's
     source again, so the engine already starts every worker at once, workers
     are kept across namespaces, and a worker loads `clojure.test` and
-    `brisk.select` before it sends `:worker/ready`. `--isolate` is allowed
+    `brisk.filters` before it sends `:worker/ready`. A worker loads
+    nothing that reads source files (`brisk.select` and `brisk.discover`
+    pull in edamame) or folds run state, which keeps a JVM worker's start
+    to ready near 0.4s on a 16-core Mac. `--isolate` is allowed
     with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.brisk/timings.edn`).

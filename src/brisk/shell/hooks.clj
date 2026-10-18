@@ -20,7 +20,7 @@
   with `:kaocha.testable/skip` skips a var) and `wrap-run` (the wrapped
   run function). `:brisk/worker-setup` fns take no arguments."
   (:require
-   [brisk.hooks :as hooks]
+   [brisk.testable :as testable]
    [clojure.test :as t]))
 
 (set! *warn-on-reflection* true)
@@ -135,12 +135,12 @@
   "The test plan hooks see: the config with the namespaces this worker has
   loaded so far, under their suites."
   [hs]
-  (hooks/test-plan (config hs)
+  (testable/test-plan (config hs)
                    (for [[suite nses] (:loaded hs)]
                      (assoc (suite-testable hs suite) :kaocha.test-plan/tests nses))))
 
 (defn- result-plan [hs]
-  (hooks/test-plan (config hs)
+  (testable/test-plan (config hs)
                    (for [[suite nses] (:results hs)]
                      (assoc (suite-testable hs suite) :kaocha.result/tests nses))
                    :kaocha.result/tests))
@@ -193,7 +193,7 @@
   Throws when a hook does."
   [hs ns-sym]
   (when (active? hs)
-    (run-chain :pre-load-test (top hs :pre-load-test) (hooks/ns-testable ns-sym) (config hs))))
+    (run-chain :pre-load-test (top hs :pre-load-test) (testable/ns-testable ns-sym) (config hs))))
 
 (defn post-load-ns
   "After `ns-sym` loaded with test vars `vars`: `post-load-test` for it (and
@@ -202,10 +202,10 @@
   [hs suite ns-sym ns-obj vars]
   (if-not (active? hs)
     hs
-    (let [t (assoc (hooks/ns-testable ns-sym)
+    (let [t (assoc (testable/ns-testable ns-sym)
                    :kaocha.ns/ns ns-obj
                    :kaocha.testable/meta (meta ns-obj)
-                   :kaocha.test-plan/tests (mapv #(hooks/var-testable ns-sym (:name (meta %)) (meta %)) vars))
+                   :kaocha.test-plan/tests (mapv #(testable/var-testable ns-sym (:name (meta %)) (meta %)) vars))
           t (run-chain :post-load-test (top hs :post-load-test) t (config hs))
           hs (update-in hs [:loaded suite] (fnil conj []) t)
           hs (if (contains? (:suites-loaded hs) suite)
@@ -246,7 +246,7 @@
   (if-not (active? hs)
     [hs (run) true]
     (let [p (plan hs)
-          t (assoc (hooks/ns-testable ns-sym) :kaocha.ns/ns ns-obj :kaocha.testable/meta (meta ns-obj))
+          t (assoc (testable/ns-testable ns-sym) :kaocha.ns/ns ns-obj :kaocha.testable/meta (meta ns-obj))
           t (run-chain :pre-test (top hs :pre-test) t p)
           ;; the one way to learn whether a wrap-run hook called run
           ran? (volatile! false)
@@ -267,15 +267,15 @@
   a hook does."
   [hs ns-sym v test! counts]
   (let [m (meta v)
-        t (assoc (hooks/var-testable ns-sym (:name m) m) :kaocha.var/var v :kaocha.var/test (:test m))]
+        t (assoc (testable/var-testable ns-sym (:name m) m) :kaocha.var/var v :kaocha.var/test (:test m))]
     (if-not (active? hs)
-      (do (test!) (hooks/with-result t (counts)))
+      (do (test!) (testable/with-result t (counts)))
       (let [p (plan hs)
             t (run-chain :pre-test (top hs :pre-test) t p)]
         (if (:kaocha.testable/skip t)
           t
           (do (test!)
-              (run-chain :post-test (top hs :post-test) (hooks/with-result t (counts)) p)))))))
+              (run-chain :post-test (top hs :post-test) (testable/with-result t (counts)) p)))))))
 
 (defn- call-reporters
   "Call the project's reporters with event `m`, as Kaocha calls its

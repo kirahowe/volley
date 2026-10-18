@@ -2,8 +2,8 @@
   "The worker run function in-process against the fixture namespaces in
   dev-resources/exec, compared with plain clojure.test."
   (:require
+   [brisk.filters :as filters]
    [brisk.run-state :as rs]
-   [brisk.select :as select]
    [brisk.shell.hooks :as hooks]
    [brisk.shell.worker :as worker]
    [clojure.string :as str]
@@ -161,7 +161,7 @@
 
 (deftest worker-uses-select-decide-with-real-ns-metadata
   (testing "kaocha.testable/run-testable: pending vars are skipped, skip-meta too, and only pending ones count"
-    (let [events (run-events 'exec.pending-test {:decide select/decide
+    (let [events (run-events 'exec.pending-test {:decide filters/decide
                                                  :select (skip-spec {:skip-meta [:slow]})})
           state (reduce rs/apply-event (rs/init {})
                         (map #(assoc % :worker 0 :at 0) events))]
@@ -170,7 +170,7 @@
       (is (= {:total 2 :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
              (:vars (rs/summary state))))))
   (testing "^:kaocha/pending on the ns form is read from the loaded namespace"
-    (let [events (run-events 'exec.ns-pending-test {:decide select/decide :select (skip-spec {})})]
+    (let [events (run-events 'exec.ns-pending-test {:decide filters/decide :select (skip-spec {})})]
       (is (= [{:event :var/skipped :ns 'exec.ns-pending-test :var 'whole-ns-is-pending :reason :pending}]
              (filter #(= :var/skipped (:event %)) events))))))
 
