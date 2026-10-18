@@ -474,6 +474,12 @@
          [(paint opts :yellow (str "not run: " (str/join ", " (map ext vs))))])
        (when output? (output-section opts (:output f))))))))
 
+(defn stray-lines
+  "Output a test printed outside capture, cleaned and fitted for the live
+  view, which shows it above the frame."
+  [text opts]
+  (finish [(ext text)] opts))
+
 (defn protocol-notice
   "One line saying that a protocol line from `worker` could not be read,
   shown the moment it happens. `ns` is the namespace the worker held."

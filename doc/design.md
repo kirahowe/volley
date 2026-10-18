@@ -288,9 +288,13 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   buffer (as `kaocha.plugin.capture-output` does), so what a test prints
   arrives in its `:var/end`. If a test exits the process, a shutdown hook
   sends what it had printed as an `{:event :output}` protocol line, so it
-  stays ordered after that test's `:var/start`. Output that escapes capture (other threads,
-  `--no-capture-output`) is stray output, attributed to whatever the worker
-  is running when the line arrives; ordering between the stdout and stderr
+  stays ordered after that test's `:var/start`; that event carries
+  `:captured? true`. Output that escapes capture (load-time prints,
+  `--no-capture-output`, JVM warnings) is stray output: the engine prints
+  it as it arrives (on stdout in CI and documentation mode, on stderr with
+  `--print-result`, above the frame in live mode), as Kaocha does, and
+  run-state attributes it to whatever the worker is running when the line
+  arrives, for the failure report; ordering between the stdout and stderr
   pumps is not guaranteed, so that attribution is best effort.
 - The worker calls the 5-arity `brisk.select/decide` with the loaded
   namespace's real metadata (merged over the static `:ns-meta` copy).

@@ -503,7 +503,8 @@
     (.addShutdownHook (Runtime/getRuntime)
                       (Thread. (fn []
                                  (when-let [text (some-> @live-capture capture-text)]
-                                   (emit! {:event :output :text text :stream :stdout})))))
+                                   (emit! {:event :output :text text :stream :stdout
+                                           :captured? true})))))
     (System/setOut stray)
     (alter-var-root #'*out* (constantly stray-writer))
     (alter-var-root #'*err* (constantly stray-writer))

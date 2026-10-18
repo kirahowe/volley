@@ -292,3 +292,14 @@
     (is (= {:status :skipped :reason :fixture-failed :pass 0 :fail 0 :error 0}
            (get-in res [:vars 'et.a-test/c])))
     (is (str/includes? out "not run: c, d"))))
+
+(deftest output-outside-capture-is-printed-as-it-happens
+  (testing "--no-capture-output: everything a test prints shows, as in Kaocha"
+    (let [{:keys [exit out]} (run "no-capture" ["--no-capture-output"])]
+      (is (= 0 exit))
+      (is (str/includes? out "printed at load time"))
+      (is (str/includes? out "debug print from a passing test"))))
+  (testing "with capture, a passing test's output stays hidden but load-time prints show"
+    (let [{:keys [out]} (run "no-capture" [])]
+      (is (str/includes? out "printed at load time"))
+      (is (not (str/includes? out "debug print from a passing test"))))))

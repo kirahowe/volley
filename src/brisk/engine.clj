@@ -249,30 +249,45 @@
                    (render/ci-lines prev run ropts)))])
 
 (defn- notice
-  "Lines to show as soon as `ev` arrives, whatever the reporter: a protocol
-  line that could not be read, or a worker's warning (each text once per
-  run, since every worker may send it)."
-  [state {:keys [protocol-error worker message] :as ev}]
+  "What to show as soon as `ev` arrives, whatever the reporter, as
+  `{:stream :out|:err :line str}` entries: a protocol line that could not
+  be read, a worker's warning (each text once per run, since every worker
+  may send it), and output a test printed that was not captured
+  (`--no-capture-output`, load-time prints, JVM warnings), as Kaocha
+  prints it as it happens. Output a worker rescued from a test that
+  exited (`:captured?`) belongs to that test's failure report only."
+  [state {:keys [protocol-error worker message text captured?] :as ev}]
   (cond
     (and (= :output (:event ev)) protocol-error)
-    [(render/protocol-notice {:worker worker
-                              :ns (sched/holding (:sched state) worker)
-                              :reason protocol-error}
-                             (render-opts state false))]
+    [{:stream :err
+      :line (render/protocol-notice {:worker worker
+                                     :ns (sched/holding (:sched state) worker)
+                                     :reason protocol-error}
+                                    (render-opts state false))}]
+    (= :output (:event ev))
+    (when-not captured? [{:stream :out :text true :line (str text)}])
     (and (= :worker/warning (:event ev)) (not (contains? (:warned state) message)))
-    [(str "WARNING: " message)]))
+    [{:stream :err :line (str "WARNING: " message)}]))
 
 (defn- flush-notices
-  "Append-only reporters print notices at once, on stderr; the live view
-  shows them above the frame at its next redraw."
+  "Append-only reporters print notices at once (test output on stdout,
+  except with `--print-result`, whose stdout is one EDN map); the live
+  view shows them above the frame at its next redraw."
   [state]
-  (let [lines (:notices state)]
-    (if (or (empty? lines) (= :live (mode state)))
+  (let [entries (:notices state)
+        result? (= :result (mode state))]
+    (if (or (empty? entries) (= :live (mode state)))
       [state []]
-      [(assoc state :notices []) [{:effect :print :lines lines :stream :err}]])))
+      [(assoc state :notices [])
+       (for [run (partition-by :stream entries)]
+         {:effect :print :lines (mapv :line run)
+          :stream (if result? :err (:stream (first run)))})])))
 
 (defn- with-notices [state frame]
-  [(assoc state :notices []) (update frame :emit #(into (vec (:notices state)) %))])
+  (let [ropts (render-opts state false)
+        lines (mapcat (fn [{:keys [text line]}] (if text (render/stray-lines line ropts) [line]))
+                      (:notices state))]
+    [(assoc state :notices []) (update frame :emit #(into (vec lines) %))]))
 
 (defn- show
   "Effects that bring the screen up to date with the run state, and the
