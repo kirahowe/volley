@@ -357,19 +357,90 @@
         [(nth inner 1) (nth inner 2)]))))
 
 (defn- comparison
-  "Returns `{:expected str :actual str :pair [e a]}` for an assertion. :pair
-  is present only for a failed `(is (= e a))`, the one case where expected
-  and actual are two values to diff (as in Kaocha's
-  `kaocha.report/fail-summary`). Otherwise `:expected` is the asserted form
-  and `:actual` what it evaluated to, and a diff of the two means nothing."
+  "Returns `{:expected v :actual v :pair [e a]}` for an assertion, values
+  as `{:str :edn}`. :pair is present only for a failed `(is (= e a))`, the
+  one case where expected and actual are two values to diff (as in
+  Kaocha's `kaocha.report/fail-summary`). Otherwise `:expected` is the
+  asserted form and `:actual` what it evaluated to, and a diff of the two
+  means nothing."
   [{:keys [expected actual]}]
   (let [e (normalize-value expected)
         a (normalize-value actual)
         [x y :as args] (when (contains? a :edn) (not-equal-args (:edn a)))]
     (if args
-      {:expected (abbrev x) :actual (abbrev y) :pair [x y]}
-      {:expected (some-> e value-str)
-       :actual   (some-> a value-str)})))
+      {:expected {:edn x} :actual {:edn y} :pair [x y]}
+      {:expected e :actual a})))
+
+;;; Pretty values
+
+(def ^:private max-value-lines
+  "How many lines of one expected or actual value a report shows."
+  80)
+
+(defn- hard-wrap
+  "`s` cut into pieces of at most `width` columns."
+  [s width]
+  (let [width (max 10 width)]
+    (loop [s s out []]
+      (let [[head w] (take-width s width)]
+        (if (or (= head s) (zero? w))
+          (conj out s)
+          (recur (subs s (count head)) (conj out head)))))))
+
+(declare pretty)
+
+(defn- entry-lines
+  "A map entry `k v` within `width` columns: on one line when it fits;
+  else the value's lines start after a one-line key and continue below it
+  when they fit there; else the key's lines and then the value's,
+  indented by two."
+  [k v width]
+  (let [ks (pr-str k)
+        one (str ks " " (pr-str v))
+        room (- width (visible-width ks) 1)
+        beside (when (>= room 10) (pretty v room))]
+    (cond
+      (<= (visible-width one) width) [one]
+      (and beside (every? #(<= (visible-width %) room) beside))
+      (let [pad (spaces (inc (visible-width ks)))]
+        (into [(str ks " " (first beside))] (map #(str pad %)) (rest beside)))
+      :else (into (pretty k width) (map #(str "  " %)) (pretty v (- width 2))))))
+
+(defn pretty
+  "Lines of `v` printed readably within `width` columns where its
+  structure allows, the way `clojure.pprint` lays out code-free data:
+  a collection that does not fit on one line puts each item on a line of
+  its own, indented under the opening bracket. A scalar that is still too
+  wide is left whole for the caller to wrap."
+  [v width]
+  (let [s (pr-str v)]
+    (if (or (<= (visible-width s) width) (not (coll? v)) (empty? v) (record? v))
+      [s]
+      (let [[open close] (cond (map? v) ["{" "}"] (vector? v) ["[" "]"] (set? v) ["#{" "}"] :else ["(" ")"])
+            pad (count open)
+            ;; room for the closing bracket, which ends the last line
+            inner (- width pad (count close))
+            lines (vec (if (map? v)
+                         (mapcat (fn [[k x]] (entry-lines k x inner)) v)
+                         (mapcat #(pretty % inner) v)))]
+        (-> (vec (map-indexed (fn [i l] (str (if (zero? i) open (spaces pad)) l)) lines))
+            (update (dec (count lines)) str close))))))
+
+(defn- value-lines
+  "`label` and value `v` (`{:str :edn}`) pretty-printed and wrapped to the
+  report's width, never cut short: continuation lines line up under the
+  value. At most `max-value-lines` lines, then a count of the rest."
+  [opts label style v]
+  (let [width (- (:width opts default-width) 3 (count label))
+        raw (if (contains? v :edn)
+              (pretty (:edn v) width)
+              (str/split-lines (ext (value-str v))))
+        lines (vec (mapcat #(hard-wrap (ext %) width) raw))
+        shown (take max-value-lines lines)
+        more (- (count lines) (count shown))
+        pad (spaces (count label))]
+    (cond-> (vec (map-indexed (fn [i l] (str (if (zero? i) label pad) (paint opts style l))) shown))
+      (pos? more) (conj (paint opts :gray (str pad "… " more " more lines"))))))
 
 (defn- diff-section [opts [x y]]
   (when (or (coll? x) (coll? y))
@@ -429,23 +500,32 @@
      (paint opts :gray (str "line: " (if (> (count t) 300) (str (subs t 0 300) "…") t)))
      (paint opts :gray "the results of this worker may be incomplete")]))
 
-(defn- output-section [opts output]
+(def ^:private output-tail-lines
+  "How many of the last lines of a test's output a report shows."
+  30)
+
+(defn- output-section
+  "The end of what a test printed: its last lines, after a count of the
+  earlier ones, since the end is where a failure usually shows."
+  [opts output]
   (when-not (str/blank? output)
-    (into [(paint opts :gray "output:")]
-          (map #(paint opts :gray (str "  | " %))
-               (limit-lines (split-text output) 30)))))
+    (let [lines (str/split-lines (str output))
+          earlier (max 0 (- (count lines) output-tail-lines))]
+      (concat [(paint opts :gray "output:")]
+              (when (pos? earlier)
+                [(paint opts :gray (str "  | … " earlier " earlier lines"))])
+              (map #(paint opts :gray (str "  | " (ext %))) (drop earlier lines))))))
 
 (defn- check-lines
   "A failed test.check property: how it failed, the shrunk input, and how
   to replay it with the same seed."
   [opts {:keys [ns var check]}]
-  (let [{:keys [seed num-tests failing-size smallest result]} check
-        first-line (fn [v] (first (split-text (value-str (normalize-value v)))))]
+  (let [{:keys [seed num-tests failing-size smallest result]} check]
     (concat
      [(str "property failed after " (plural num-tests "test")
            " (seed " seed (when failing-size (str ", size " failing-size)) ")")]
-     [(str "smallest failing input: " (paint opts :red (first-line smallest)))]
-     (when result [(str "result: " (paint opts :red (first-line result)))])
+     (value-lines opts "smallest failing input: " :red (normalize-value smallest))
+     (when result (value-lines opts "result: " :red (normalize-value result)))
      (when (and ns var)
        [(paint opts :gray (str "rerun: (" (qualified ns var) " " num-tests " :seed " seed ")"))]))))
 
@@ -464,8 +544,8 @@
          [(paint opts :gray (str "testing: " (str/join " > " (map ext contexts))))])
        (when-not (str/blank? (str message))
          (limit-lines (split-text message) 10))
-       (when expected [(str "expected: " (paint opts :green (first (split-text expected))))])
-       (when actual [(str "actual:   " (paint opts :red (first (split-text actual))))])
+       (when expected (value-lines opts "expected: " :green expected))
+       (when actual (value-lines opts "actual:   " :red actual))
        (when pair (diff-section opts pair))
        (when check (check-lines opts f))
        (when (#{:error :ns-error :worker-error} kind) (error-lines opts error 0))

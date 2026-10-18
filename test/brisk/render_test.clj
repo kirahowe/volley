@@ -366,3 +366,57 @@
     (is (str/includes? report "smallest failing input: [3]"))
     (is (str/includes? report "rerun: (p.prop-test/small 7 :seed 42)"))
     (is (not (str/includes? report "huge map")) "the raw result map is not printed")))
+
+;;; Values in full
+
+(defspec pretty-values-read-back-as-themselves runs
+  (prop/for-all [v gr/edn-value
+                 width (gen/choose 10 120)]
+    (= v (read-string (str/join "\n" (render/pretty v width))))))
+
+(def ^:private small-data
+  "Nested data of short scalars, at most a few levels deep, which can always
+  be laid out within 40 columns."
+  (gen/scale #(min % 12)
+             (gen/recursive-gen
+              (fn [inner]
+                (gen/one-of [(gen/vector inner 0 6) (gen/list inner) (gen/set inner {:max-elements 4})
+                             (gen/map inner inner {:max-elements 4})]))
+              (gen/one-of [(gen/choose -99 99) (gen/elements [:a :bb :ccc "s" "tt" 'x nil true])]))))
+
+(defn- depth [v] (if (and (coll? v) (seq v)) (inc (apply max (map depth (if (map? v) (mapcat identity v) v)))) 0))
+
+(defspec pretty-lines-fit-where-the-structure-allows runs
+  (prop/for-all [v (gen/such-that #(<= (depth %) 4) small-data)
+                 width (gen/choose 40 120)]
+    (every? #(<= (count %) width) (render/pretty v width))))
+
+(defn- one-failure [assertion output]
+  (reduce rs/apply-event (rs/init {:namespaces '[v-test]})
+          [(ev {:event :ns/start :ns 'v-test})
+           (ev {:event :var/start :ns 'v-test :var 'x})
+           (ev (merge {:event :assertion :ns 'v-test :var 'x :type :fail} assertion))
+           (ev {:event :var/end :ns 'v-test :var 'x :pass 0 :fail 1 :duration-ms 1 :output output})
+           (ev {:event :ns/end :ns 'v-test})]))
+
+(deftest values-are-shown-in-full-and-wrapped
+  (let [big (vec (range 60))
+        long-str (apply str (repeat 200 "x"))
+        report (render/failure-report
+                (one-failure {:expected {:str (pr-str big) :edn big}
+                              :actual {:str (pr-str long-str) :edn long-str}}
+                             nil)
+                {:width 60 :color? false})
+        lines (str/split-lines report)]
+    (is (every? #(<= (count %) 60) lines) "wrapped to the width, not cut")
+    (is (not (str/includes? report "…")))
+    (is (str/includes? report "59]") "the end of the vector is there")
+    (is (str/includes? (str/replace report #"\n\s+" "") long-str) "every character of the string is there")))
+
+(deftest the-tail-of-long-output-is-shown-with-the-right-count
+  (let [output (str/join "\n" (map #(str "line " %) (range 100)))
+        report (render/failure-report (one-failure {:message "boom"} output) {:width 80 :color? false})]
+    (is (str/includes? report "  | … 70 earlier lines"))
+    (is (str/includes? report "  | line 99"))
+    (is (str/includes? report "  | line 70"))
+    (is (not (str/includes? report "  | line 69")))))
