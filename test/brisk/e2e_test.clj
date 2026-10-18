@@ -109,7 +109,7 @@
     (is (str/includes? out "CRASH  boom.exit-test/exits-the-process  worker exited with code 3"))
     (is (str/includes? out "| about to exit"))
     (is (str/includes? out " ✓ boom.survivor-test (1 test)"))
-    (is (str/starts-with? (e2e/summary-line out) "3 tests | 2 passed | 0 failed | 1 errors"))))
+    (is (str/starts-with? (e2e/summary-line out) "3 tests | 2 passed | 0 failed | 1 error |"))))
 
 (deftest a-worker-that-exits-0-mid-namespace-is-a-crash
   (let [{:keys [exit out]} (run "exit-zero" ["--workers" "1"])]
@@ -204,7 +204,7 @@
     (let [{:keys [exit out]} (e2e/brisk (e2e/copy-project "print-vars") ["--workers" "3"]
                                         {:timeout-ms 60000})]
       (is (= 6 exit))
-      (is (str/starts-with? (e2e/summary-line out) "7 tests | 1 passed | 5 failed | 1 errors"))
+      (is (str/starts-with? (e2e/summary-line out) "7 tests | 1 passed | 5 failed | 1 error |"))
       (is (str/includes? out "actual:   [1 2 4]") "the value printed in full")
       (is (not (str/includes? out "could not be read"))))))
 

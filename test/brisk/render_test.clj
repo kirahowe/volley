@@ -420,3 +420,37 @@
     (is (str/includes? report "  | line 99"))
     (is (str/includes? report "  | line 70"))
     (is (not (str/includes? report "  | line 69")))))
+
+(defn- failing-vars [n]
+  (reduce rs/apply-event (rs/init {:namespaces '[r-test]})
+          (concat [(ev {:event :ns/start :ns 'r-test})]
+                  (mapcat (fn [i]
+                            (let [v (symbol (str "t" i))]
+                              [(ev {:event :var/start :ns 'r-test :var v})
+                               (ev {:event :assertion :ns 'r-test :var v :type :fail})
+                               (ev {:event :var/end :ns 'r-test :var v :pass 0 :fail 1 :duration-ms 1})]))
+                          (range n))
+                  [(ev {:event :ns/end :ns 'r-test})])))
+
+(deftest the-rerun-hint-says-what-it-leaves-out
+  (let [text (render/summary (failing-vars 23) {:width 80 :color? false :invocation "bb test"})]
+    (is (str/includes? text "  bb test \\"))
+    (is (= 20 (count (re-seq #"--focus r-test/t" text))))
+    (is (str/includes? text "… and 3 more failures not listed")))
+  (testing "the summary says 1 error, 1 test"
+    (let [text (render/summary (failing-vars 1) {:width 200 :color? false})]
+      (is (str/includes? text "1 test | 0 passed | 1 failed | 0 errors"))
+      (is (str/includes? text "  brisk --focus r-test/t0") "brisk when the shell did not say"))))
+
+(deftest a-qualified-equals-is-taken-apart-too
+  (let [actual (list 'not (list 'clojure.core/= 1 2))
+        report (render/failure-report
+                (reduce rs/apply-event (rs/init {:namespaces '[q-test]})
+                        [(ev {:event :ns/start :ns 'q-test})
+                         (ev {:event :var/start :ns 'q-test :var 'x})
+                         (ev {:event :assertion :ns 'q-test :var 'x :type :fail
+                              :expected {:str "(clojure.core/= 1 2)" :edn (list 'clojure.core/= 1 2)}
+                              :actual {:str (pr-str actual) :edn actual}})])
+                {:width 80 :color? false})]
+    (is (str/includes? report "expected: 1\n"))
+    (is (str/includes? report "actual:   2"))))

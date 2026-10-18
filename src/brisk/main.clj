@@ -234,7 +234,8 @@
         plan (when-not (or (:read-error loaded) (seq (:errors config)))
                (select/plan config (discover-all config) (:suites cli)))
         {:keys [effects]} (engine/preflight (assoc loaded :plan plan
-                                                   :help (cli/help-text) :version version))
+                                                   :help (cli/help-text (runtime/invocation))
+                                                   :version version))
         code (run-effects! {} effects)]
     (or code
         (let [tty? (term/tty?)
@@ -245,6 +246,7 @@
                      :fail-fast? (:fail-fast? config)
                      :isolate? (:isolate? config)
                      :preload? (:preload? config)
+                     :invocation (runtime/invocation)
                      :bindings (:bindings config)
                      :capture-output? (:capture-output? config)
                      :reporter mode

@@ -153,8 +153,9 @@
     (is (true? (:color (:options (cli/parse-args ["--color=1"])))))))
 
 (deftest help-text-test
-  (let [text (cli/help-text)]
-    (is (str/starts-with? text "USAGE:"))
+  (let [text (cli/help-text "bin/brisk")]
+    (is (str/starts-with? text "USAGE:\n\nbin/brisk [OPTIONS]... [TEST-SUITE]..."))
+    (is (not (str/includes? text "Defaults to true")) "colour depends on the terminal")
     (doseq [flag ["--config-file" "--print-config" "--print-test-plan" "--[no-]fail-fast"
                   "--[no-]color" "--[no-]watch" "--reporter" "--plugin" "--focus"
                   "--skip" "--focus-meta" "--skip-meta" "--[no-]capture-output"

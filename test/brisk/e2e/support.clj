@@ -72,4 +72,4 @@
 (defn summary-line
   "The `N tests | ...` line of brisk's CI output."
   [out]
-  (first (filter #(re-find #"^\d+ tests \|" %) (str/split-lines out))))
+  (first (filter #(re-find #"^\d+ tests? \|" %) (str/split-lines out))))

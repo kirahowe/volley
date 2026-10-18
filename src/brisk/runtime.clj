@@ -16,6 +16,20 @@
   [requested bb-parent?]
   (or requested (if bb-parent? :bb :jvm)))
 
+(defn invocation
+  "How the user ran brisk, for the command in the rerun hint: `command`
+  (the `BRISK_COMMAND` environment variable, which `bin/brisk` sets), else
+  `bb <task>` inside a babashka task, else `bb -m brisk.main` on babashka,
+  else the Clojure CLI with the aliases of the JVM's basis (and `-m
+  brisk.main` unless one of them runs it through `:main-opts`)."
+  [{:keys [command bb? task aliases main-opts]}]
+  (cond
+    (not (str/blank? command)) command
+    (and bb? task) (str "bb " task)
+    bb? "bb -m brisk.main"
+    :else (str "clojure -M" (str/join (map str aliases))
+               (when-not (some #{"brisk.main"} main-opts) " -m brisk.main"))))
+
 (def ^:private max-workers {:bb 8 :jvm 4})
 
 (defn default-workers

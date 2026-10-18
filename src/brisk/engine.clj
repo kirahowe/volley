@@ -238,7 +238,8 @@
 ;; Output
 
 (defn- render-opts [{:keys [opts now]} final?]
-  {:width (:width opts 80) :color? (boolean (:color? opts)) :now now :final? final?})
+  (cond-> {:width (:width opts 80) :color? (boolean (:color? opts)) :now now :final? final?}
+    (:invocation opts) (assoc :invocation (:invocation opts))))
 
 (defn- mode [state] (get-in state [:opts :reporter] :ci))
 

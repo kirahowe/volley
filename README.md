@@ -157,7 +157,10 @@ On a terminal brisk redraws a live view: one line per running namespace,
 a line for each namespace as it finishes, and failures as they happen.
 When stdout is not a terminal it prints append-only lines instead, one per
 finished namespace followed by its failures. Both end with a summary, the
-slowest tests and a `--focus` command to rerun the failures.
+slowest tests and a `--focus` command to rerun the failures. That command
+starts the way you ran brisk: `bb test` inside a babashka task,
+`bin/brisk` through the binstub, `clojure -M:test` on the JVM. Set
+`BRISK_COMMAND` to choose it yourself.
 `--reporter documentation` prints one line per test var, grouped by
 namespace.
 

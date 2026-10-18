@@ -169,3 +169,11 @@
               (:warnings (config/normalize nil {:runtime :jvm :isolate true} {:bb? true}))))
     (is (not-any? #(re-find #"slow" %)
                   (:warnings (config/normalize nil {:isolate true} {:bb? true}))))))
+
+(deftest invocation-is-what-the-user-ran
+  (is (= "bin/brisk" (runtime/invocation {:command "bin/brisk" :bb? true :task "test"})))
+  (is (= "bb test" (runtime/invocation {:bb? true :task "test"})))
+  (is (= "bb -m brisk.main" (runtime/invocation {:bb? true})))
+  (is (= "clojure -M:test -m brisk.main" (runtime/invocation {:aliases [:test] :main-opts nil})))
+  (is (= "clojure -M:test:brisk" (runtime/invocation {:aliases [:test :brisk] :main-opts ["-m" "brisk.main"]})))
+  (is (= "clojure -M -m brisk.main" (runtime/invocation {}))))

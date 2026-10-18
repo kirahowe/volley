@@ -58,7 +58,8 @@
    {:long "print-test-plan" :doc "Load tests, build up a test plan, then print out the test plan and exit."}
    {:long "print-result" :doc "Print the test result map as returned by the Kaocha API."}
    {:long "fail-fast" :toggle? true :doc "Stop testing after the first failure."}
-   {:long "color" :toggle? true :doc "Enable/disable ANSI color codes in output. Defaults to true."}
+   {:long "color" :toggle? true
+    :doc "Enable/disable ANSI color codes in output. Defaults to on when stdout is a terminal; NO_COLOR turns it off."}
    {:long "watch" :toggle? true :doc "Watch filesystem for changes and re-run tests."}
    {:long "reporter" :arg "SYMBOL" :multi? true :parse parse-reporter
     :doc "Change the test reporter, can be specified multiple times."}
@@ -81,9 +82,10 @@
    {:long "focus-meta" :arg "SYM" :multi? true :parse parse-kw
     :doc "Only run tests where this metadata key is truthy."}
    ;; kaocha.plugin/randomize
-   {:long "randomize" :toggle? true :doc "Run test namespaces and vars in random order."}
+   {:long "randomize" :toggle? true
+    :doc "Accepted for Kaocha; brisk does not randomize (it runs the slowest namespaces first)."}
    {:long "seed" :arg "SEED" :parse parse-int
-    :doc "Provide a seed to determine the random order of tests."}
+    :doc "Accepted for Kaocha and ignored, like --randomize."}
    ;; kaocha.plugin/capture-output
    {:long "capture-output" :toggle? true :doc "Capture output during tests."}
    ;; kaocha.plugin/profiling and friends: accepted so existing invocations
@@ -288,14 +290,15 @@
    doc])
 
 (defn help-text
-  "Usage text for `--help`, in the shape of Kaocha's own."
-  []
+  "Usage text for `--help`, in the shape of Kaocha's own. `invocation` is
+  how brisk was run (`brisk.runtime/invocation`)."
+  [invocation]
   (let [rows (map format-row option-specs)
         w1 (apply max (map (comp count first) rows))
         w2 (apply max (map (comp count #(or % "") second) rows))
         pad (fn [s w] (str s (apply str (repeat (- w (count (or s ""))) \space))))]
     (str "USAGE:\n\n"
-         "bb brisk [OPTIONS]... [TEST-SUITE]...\n\n"
+         invocation " [OPTIONS]... [TEST-SUITE]...\n\n"
          (->> rows
               (map (fn [[flag default doc]]
                      (str "  " (pad flag w1) "  " (pad default w2) "  " doc)))

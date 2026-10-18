@@ -9,6 +9,7 @@
    [babashka.fs :as fs]
    [babashka.process :as p]
    [brisk.runtime :as runtime]
+   [clojure.edn :as edn]
    [clojure.string :as str]))
 
 (def ^:private sep java.io.File/pathSeparator)
@@ -56,6 +57,18 @@
 
 ;; ---------------------------------------------------------------------------
 ;; JVM parent: forward its JVM options and classpath
+
+(defn invocation
+  "The command the user ran brisk with (`brisk.runtime/invocation`)."
+  []
+  (let [basis (when-not (bb?)
+                (try (some-> (System/getProperty "clojure.basis") slurp edn/read-string)
+                     (catch Exception _ nil)))]
+    (runtime/invocation {:command (System/getenv "BRISK_COMMAND")
+                         :bb? (bb?)
+                         :task (System/getProperty "babashka.task")
+                         :aliases (get-in basis [:basis-config :aliases])
+                         :main-opts (get-in basis [:argmap :main-opts])})))
 
 (defn input-arguments
   "This JVM's launch options (`-Xmx...`, `-D...`, `--add-opens ...`)."

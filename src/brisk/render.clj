@@ -349,11 +349,12 @@
 
 (defn- not-equal-args
   "For clojure.test's `(not (= a b))` actual form (Kaocha's
-  `kaocha.report/fail-summary` takes it apart the same way), returns [a b]."
+  `kaocha.report/fail-summary` takes it apart the same way), returns [a b].
+  The `=` may be qualified, as it is when a macro expands to the `is`."
   [form]
   (when (and (seq? form) (= 'not (first form)))
     (let [inner (second form)]
-      (when (and (seq? inner) (= '= (first inner)) (= 3 (count inner)))
+      (when (and (seq? inner) (contains? #{'= 'clojure.core/=} (first inner)) (= 3 (count inner)))
         [(nth inner 1) (nth inner 2)]))))
 
 (defn- comparison
@@ -687,7 +688,7 @@
      (row "Tests"
           (str (count-parts opts [[(:passed vars) "passed" :green]
                                   [(:failed vars) "failed" :red]
-                                  [(:errored vars) "errors" :red]
+                                  [(:errored vars) (if (= 1 (:errored vars)) "error" "errors") :red]
                                   [(:skipped vars) "skipped" :yellow]
                                   [(:running vars) "running" :cyan]])
                (paint opts :gray (str " (" (:total vars) ")"))))
@@ -777,17 +778,29 @@
        distinct
        sort))
 
-(defn- rerun-lines [opts ids]
-  (let [ids    (take 20 ids)
+(def ^:private max-rerun-ids 20)
+
+(defn- rerun-lines
+  "The command to rerun the failures: `(:invocation opts)` (how the user
+  ran brisk, default `brisk`) with a `--focus` per failure, at most
+  `max-rerun-ids` of them, then how many were left out."
+  [opts ids]
+  (let [cmd    (:invocation opts "brisk")
+        shown  (take max-rerun-ids ids)
+        more   (- (count ids) (count shown))
         flag   (fn [id] (str "--focus " id))
-        single (str "  brisk " (str/join " " (map flag ids)))]
-    (cons (paint opts :yellow "Rerun failures:")
-          (if (<= (visible-width single) (:width opts default-width))
-            [single]
-            (concat ["  brisk \\"]
-                    (map-indexed (fn [i id]
-                                   (str "    " (flag id) (when (< i (dec (count ids))) " \\")))
-                                 ids))))))
+        single (str "  " cmd " " (str/join " " (map flag shown)))]
+    (concat
+     [(paint opts :yellow "Rerun failures:")]
+     (if (<= (visible-width single) (:width opts default-width))
+       [single]
+       (cons (str "  " cmd " \\")
+             (map-indexed (fn [i id]
+                            (str "    " (flag id) (when (< i (dec (count shown))) " \\")))
+                          shown)))
+     (when (pos? more)
+       [(paint opts :gray (str "  … and " more " more " (if (= 1 more) "failure" "failures")
+                               " not listed"))]))))
 
 (defn- slowest-lines [opts state]
   (let [tests (rs/slowest state 5)
@@ -866,8 +879,8 @@
         ok?   (zero? (rs/exit-code state))
         style (if ok? :green :red)
         ids   (focus-ids state)
-        parts (cond-> [(str (:total vars) " tests") (str (:passed vars) " passed")
-                       (str (:failed vars) " failed") (str (:errored vars) " errors")
+        parts (cond-> [(plural (:total vars) "test") (str (:passed vars) " passed")
+                       (str (:failed vars) " failed") (plural (:errored vars) "error")
                        (str (:skipped vars) " skipped")]
                 (pos? (:errored namespaces)) (conj (str (:errored namespaces) " ns failed to run"))
                 (pos? (:pending namespaces)) (conj (str (:pending namespaces) " ns not run")))
