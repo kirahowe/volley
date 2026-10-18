@@ -283,14 +283,14 @@
 
 (defn- count-and-emit!
   "Count a `:pass`/`:fail`/`:error` against the open var, or, outside any
-  var (in a `:once` fixture), count a pass in `outside`, and emit the
-  assertion event for failures."
-  [acc outside emit! ns-sym m]
+  var (in a `:once` fixture), count a pass in `(:outside @progress)`, and
+  emit the assertion event for failures."
+  [acc progress emit! ns-sym m]
   (let [kind (:type m)
         open (:var @acc)]
     (cond
       open (swap! acc update kind inc)
-      (= :pass kind) (swap! outside inc))
+      (= :pass kind) (vswap! progress update :outside inc))
     (when (#{:fail :error} kind)
       (emit! (assertion-event ns-sym open (reverse t/*testing-contexts*) m)))))
 
@@ -298,18 +298,18 @@
   "A `clojure.test/report` replacement. clojure.test reports through a
   callback with no return channel, so the open var's counters live in `acc`,
   an atom local to one `run-vars!` call, and passes outside any var in
-  `outside`. A var opens before its `:each` fixtures run and closes after
+  `progress`. A var opens before its `:each` fixtures run and closes after
   them (`run-vars!`), so what a fixture asserts counts for the var it
   wraps, as in Kaocha; `:begin-test-var` and `:end-test-var` are ignored.
   It runs inside the test's dynamic scope, so values are printed with
   `safely`."
-  [acc outside emit! ns-sym]
+  [acc progress emit! ns-sym]
   (fn [m]
     (safely
      #(case (:type m)
-        (:pass :fail :error) (count-and-emit! acc outside emit! ns-sym m)
+        (:pass :fail :error) (count-and-emit! acc progress emit! ns-sym m)
         :kaocha.type.var/zero-assertions
-        (count-and-emit! acc outside emit! ns-sym
+        (count-and-emit! acc progress emit! ns-sym
                          (assoc m :type :fail :message zero-assertions-message ::zero? true))
         nil))))
 
@@ -328,20 +328,21 @@
   `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
   inside the `:each` fixtures, and returns its result; after each var
   `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
-  still finish). Returns the results."
-  [ns-obj vars run-var stop?]
+  still finish). Each result is added to `(:results @progress)`, since a
+  `:once` fixture does not hand back what the tests return. Returns the
+  results."
+  [ns-obj vars run-var stop? progress]
   (let [m (meta ns-obj)
         once (t/join-fixtures (:clojure.test/once-fixtures m))
-        each (t/join-fixtures (:clojure.test/each-fixtures m))
-        results (volatile! [])]
+        each (t/join-fixtures (:clojure.test/each-fixtures m))]
     (once (fn []
             (reduce (fn [_ v]
                       (let [r (run-var v #(each (fn [] (t/test-var v))))]
-                        (vswap! results conj r)
+                        (vswap! progress update :results conj r)
                         (when (stop? r) (reduced nil))))
                     nil
                     vars)))
-    @results))
+    (:results @progress)))
 
 (defn- failed? [{:kaocha.result/keys [fail error]}]
   (pos? (+ (or fail 0) (or error 0))))
@@ -354,15 +355,21 @@
   Throwable that escaped (a failing fixture or hook, for instance). The
   vars it kept from running are sent as skipped with reason
   `:fixture-failed`, so none of them vanishes. The third element is the
-  number of passing assertions made outside any var."
+  number of passing assertions made outside any var.
+
+  clojure.test reports through a callback and fixtures return nothing of
+  the tests they wrap, so two mutable cells carry what the run learns out
+  of them: `acc`, the open var's counters, which the report callback
+  updates, and `progress`, the vars reached, their results and the passes
+  outside any var, which must survive a fixture that throws."
   [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
   (let [acc (atom nil)
-        outside (atom 0)
-        reached (volatile! #{})
+        progress (volatile! {:reached #{} :results [] :outside 0})
+        outside #(:outside @progress)
         counts #(:ended @acc)
         run-var (fn [v test!]
                   (reset! acc nil)
-                  (vswap! reached conj v)
+                  (vswap! progress update :reached conj v)
                   (let [test! (fn []
                                 (start-var! acc emit! ns-sym capture? v)
                                 (try (test!)
@@ -374,25 +381,26 @@
                     r))
         stop? (fn [r] (and fail-fast? (failed? r)))
         abandon! (fn []
-                   (doseq [v vars :when (not (contains? @reached v))]
+                   (doseq [v vars :when (not (contains? (:reached @progress) v))]
                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
     (try
-      (binding [t/report (hooks/report-fn hs (make-report acc outside emit! ns-sym))
+      (binding [t/report (hooks/report-fn hs (make-report acc progress emit! ns-sym))
                 *out* *out*
                 *err* *err*]
         (try
-          (let [[hs _ ran?] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop?))]
-            (when-not ran?
+          (let [[hs _] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
+            ;; vars is never empty, so a run that reached none was never started
+            (when (empty? (:reached @progress))
               (emit! {:event :worker/warning
                       :message (str "the wrap-run hook did not call run for " ns-sym
                                     ", so its " (count vars) " test" (when (next vars) "s")
                                     " did not run (Kaocha does not run them either)")}))
-            [hs nil @outside])
+            [hs nil (outside)])
           (catch ^:sci/error Throwable e
             (safely #(end-var! acc emit! ns-sym))
             (abandon!)
-            [hs e @outside])))
-      (catch ^:sci/error Throwable e (abandon!) [hs e @outside]))))
+            [hs e (outside)])))
+      (catch ^:sci/error Throwable e (abandon!) [hs e (outside)]))))
 
 (defn- hook-of
   "`{:kind kw :entry entry}` when `e` (or what it wraps) is the error of a
