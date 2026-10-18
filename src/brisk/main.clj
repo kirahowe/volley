@@ -169,8 +169,9 @@
 
 (defn- watch-tests!
   "Watch mode: run `brisk.shell.watch` with this namespace's effect carrier.
-  `reload` re-reads tests.edn for the loop."
-  [command cfg loaded opts reload]
+  `reload` re-reads tests.edn for the loop; `worker-command` rebuilds the
+  worker command for a reloaded config."
+  [command cfg loaded opts reload worker-command]
   (let [ctx {:queue (pool/new-queue)
              :command command
              :handles (volatile! {})
@@ -179,6 +180,7 @@
                       :run-effects! run-effects!
                       :print! print-lines!
                       :reload-config reload
+                      :worker-command worker-command
                       :config cfg
                       :config-file (:config-file loaded)
                       :cli-suites (:suites (:cli loaded))
@@ -214,7 +216,8 @@
                     :started-at (System/currentTimeMillis)}]
           (cond
             error (do (print-lines! {:lines [(str "brisk: " error)] :stream :err}) 250)
-            (:watch? config) (watch-tests! command config loaded opts #(reload-config args env))
+            (:watch? config) (watch-tests! command config loaded opts #(reload-config args env)
+                                           #(runtime/worker-command % (:aliases (:options cli))))
             :else (run-tests! plan command opts))))))
 
 (defn -main

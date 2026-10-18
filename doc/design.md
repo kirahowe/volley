@@ -351,8 +351,11 @@ the live frame height.
    part of it, produces one run and loses no change.
 4. A change to tests.edn makes the selection "everything, reload the
    config first". The shell re-reads the file, re-normalizes it and
-   rebuilds the graph and snapshot; an invalid file keeps the old config
-   and prints the error.
+   rebuilds the graph, the snapshot and the worker command (whose
+   classpath holds the suites' test paths, on either runtime); an invalid
+   file, or a JVM classpath that cannot be computed, keeps the old config
+   and prints the error. deps.edn is not watched: after changing it,
+   restart watch mode.
 
 **Selections.** The state machine emits `{:effect :start-run :selection s}`
 where `s` is `{:all? :failed? :namespaces :reload-config? :ns-pattern

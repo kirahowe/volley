@@ -154,7 +154,10 @@ suites' `:test-paths` and `:source-paths`, and of `tests.edn`, every 200ms.
 When files change it works out which test namespaces depend on them (from
 the `ns` forms) and reruns just those in fresh worker processes, so no
 state survives between runs. New and deleted test files are picked up. A
-change to `tests.edn` reloads the config and reruns everything. If a run is
+change to `tests.edn` reloads the config, rebuilds the workers' classpath
+from its test paths, and reruns everything. Watch mode works with JVM
+workers too (`--runtime jvm`, or a JVM parent). It does not watch
+`deps.edn`; restart it after changing dependencies. If a run is
 still going when files change, it is cancelled and replaced.
 
 Each run ends with a status line such as

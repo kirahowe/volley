@@ -18,6 +18,10 @@
   * `:run-effects!`   carries out engine effects, returns an exit code or nil
   * `:print!`         `(fn [{:lines :stream}])`
   * `:reload-config`  `(fn [])` returning `{:config c}` or `{:error msg}`
+  * `:worker-command` `(fn [config])` returning `{:command argv}` or
+                      `{:error msg}`, for a reloaded config
+  * `:ctx`'s `:command` is only the first run's worker command; the session
+    keeps the current one
   * `:config`, `:config-file`, `:cli-suites`
   * `:engine-opts`    options for `brisk.engine/init`, without clock or timings
   * `:keys?`          read the keyboard (stdin is a terminal)
@@ -106,17 +110,24 @@
     (let [{:keys [event worker]} input
           _ (when (= :worker/exit event) (vswap! (:handles ctx) dissoc worker))
           {state :state effects :effects} (engine/step state input)
-          code (run-effects! ctx effects)
+          code (run-effects! (assoc ctx :command (:command sess)) effects)
           sess (assoc sess :engine state)]
       (cond-> sess code finish-run))
     sess))
 
-(defn- reload [env sess]
-  (let [{:keys [config error]} ((:reload-config env))]
-    (if config
-      (assoc sess :config config :infos (read-infos config) :snapshot (take-snapshot env config))
-      (do ((:print! env) {:lines [(str "ERROR: " error " (keeping the previous configuration)")] :stream :err})
-          sess))))
+(defn- reload
+  "Re-read tests.edn. The worker command is rebuilt from the new config,
+  since its classpath includes the suites' test paths."
+  [env sess]
+  (let [{:keys [config error]} ((:reload-config env))
+        cmd (when config ((:worker-command env) config))
+        error (or error (:error cmd))
+        complain! #((:print! env) {:lines [(str "ERROR: " % " (keeping the previous configuration)")]
+                                   :stream :err})]
+    (if (and config (not error))
+      (assoc sess :config config :command (:command cmd)
+             :infos (read-infos config) :snapshot (take-snapshot env config))
+      (do (complain! error) sess))))
 
 (defn- start-run [{:keys [ctx run-effects! engine-opts] :as env} sess selection]
   (let [sess (cond-> sess (:reload-config? selection) (->> (reload env)))
@@ -129,9 +140,9 @@
                    (:live? env) (assoc :width (term/width)))
             {state :state effects :effects} (engine/init plan opts)
             _ (vreset! (:height ctx) 0)
-            _ (run-effects! ctx effects)
+            _ (run-effects! (assoc ctx :command (:command sess)) effects)
             {state :state effects :effects} (engine/start state)
-            code (run-effects! ctx effects)]
+            code (run-effects! (assoc ctx :command (:command sess)) effects)]
         (cond-> (assoc sess :engine state) code finish-run)))))
 
 (defn- cancel-run
@@ -207,6 +218,7 @@
               :infos (read-infos config)
               :snapshot (take-snapshot env config)
               :engine nil
+              :command (:command ctx)
               :next-worker-id 1
               :inbox []}
         kill-workers (fn [] (pool/kill-all! (vals @(:handles ctx))))

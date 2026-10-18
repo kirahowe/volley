@@ -18,9 +18,10 @@
 (defn- start!
   "Start `cmd` in `dir`. Returns `{:proc p :out atom-of-string}`; the atom
   grows as the process prints (stdout and stderr merged)."
-  [dir cmd]
+  ([dir cmd] (start! dir cmd {}))
+  ([dir cmd env]
   (let [proc (p/process cmd {:dir dir :in :pipe :out :pipe :err :out
-                             :extra-env {"NO_COLOR" ""}})
+                             :extra-env (merge {"NO_COLOR" ""} env)})
         out (atom "")]
     (future
       (with-open [rdr (BufferedReader. (InputStreamReader. (:out proc) "UTF-8"))]
@@ -28,7 +29,7 @@
           (when-let [line (.readLine rdr)]
             (swap! out str line "\n")
             (recur)))))
-    {:proc proc :out out}))
+    {:proc proc :out out})))
 
 (defn- runs-finished [{:keys [out]}]
   (count (re-seq (re-pattern marker) @out)))
@@ -37,7 +38,7 @@
   "Wait until `n` runs have finished. Returns the output since run `n - 1`
   finished, or throws with everything printed so far."
   [{:keys [out] :as w} n]
-  (let [deadline (+ (System/currentTimeMillis) 60000)]
+  (let [deadline (+ (System/currentTimeMillis) 120000)]
     (loop []
       (cond
         (>= (runs-finished w) n)
@@ -133,3 +134,48 @@
         (finally
           (when (.isAlive ^Process (:proc (:proc w))) (stop! w)))))
     (is true "needs macOS script(1)")))
+
+(def ^:private more-test
+  "(ns jvmfix.more-test\n  (:require [clojure.test :refer [deftest is]]))\n\n(deftest more-runs (is true))\n")
+
+(defn- jvm-watch-session
+  "Drive a watch process on a copy of the `jvm` fixture: the first run, a
+  test change, and a tests.edn change that adds a test path, which only
+  works if the worker classpath is rebuilt."
+  [dir w]
+  (testing "the initial run"
+    (let [text (await-run! w 1)]
+      (is (= #{"jvmfix.runtime-test"} (ran text)) text)
+      (is (str/includes? text "PASS  Waiting for file changes"))))
+  (testing "a changed test reruns in fresh JVM workers"
+    (write! dir "test/jvmfix/runtime_test.clj"
+            (str (slurp (str (fs/path dir "test/jvmfix/runtime_test.clj")))
+                 "\n(deftest added-later (is (= 2 (inc 1))))\n"))
+    (let [text (await-run! w 2)]
+      (is (str/includes? text " ✓ jvmfix.runtime-test (5 tests)") text)))
+  (testing "a new test path in tests.edn reaches the workers' classpath"
+    (fs/create-dirs (fs/path dir "more/jvmfix"))
+    (spit (str (fs/path dir "more/jvmfix/more_test.clj")) more-test)
+    (write! dir "tests.edn" "#kaocha/v1 {:tests [{:id :unit :test-paths [\"test\" \"more\"]}]}\n")
+    (let [text (await-run! w 3)]
+      (is (= #{"jvmfix.runtime-test" "jvmfix.more-test"} (ran text)) text)
+      (is (str/includes? text "PASS  Waiting for file changes")))))
+
+(deftest watch-with-jvm-workers-from-a-bb-parent
+  (let [dir (e2e/copy-project "jvm")
+        w (start! dir (brisk-command "--watch" "--runtime" "jvm") {"EXPECT_FIXTURE_PROP" "alias"})]
+    (try
+      (jvm-watch-session dir w)
+      (finally
+        (is (not= ::timeout (stop! w)))))))
+
+(deftest watch-with-a-jvm-parent
+  (let [dir (e2e/copy-project "jvm")
+        deps (pr-str {:paths ["src" "extra"]
+                      :deps {'brisk/brisk {:local/root (str (fs/absolutize "."))}}})
+        w (start! dir ["clojure" "-Sdeps" deps "-J-Dbrisk.fixture=parent" "-M" "-m" "brisk.main" "--watch"]
+                  {"EXPECT_FIXTURE_PROP" "parent"})]
+    (try
+      (jvm-watch-session dir w)
+      (finally
+        (is (not= ::timeout (stop! w)))))))
