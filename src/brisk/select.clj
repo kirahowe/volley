@@ -110,14 +110,28 @@
   (into [] (remove #(contains? used (keyword %))) focus-meta))
 
 (defn- pass-params
-  "The filter options of one pass, as sent to workers."
+  "The filter options of one pass, as sent to workers. `:suite-skipped?`
+  is true when the pass skips the whole suite (`filter-node` checks a
+  skip against the suite only when the pass has no focus); a plan never
+  holds such a suite, but passes a worker rebuilds after dropping
+  focus-meta keys can (`resolve-focus-meta`)."
   [{:keys [focus skip focus-meta skip-meta]} suite]
-  {:focus (vec focus) :skip (vec skip) :focus-meta (vec focus-meta) :skip-meta (vec skip-meta)
-   :suite-focused? (boolean (and (or (seq focus) (seq focus-meta))
-                                 (matches? suite focus focus-meta)))})
+  (let [focus? (or (seq focus) (seq focus-meta))]
+    (cond-> {:focus (vec focus) :skip (vec skip) :focus-meta (vec focus-meta) :skip-meta (vec skip-meta)
+             :suite-focused? (boolean (and focus? (matches? suite focus focus-meta)))}
+      (and (not focus?) (matches? suite skip skip-meta)) (assoc :suite-skipped? true))))
 
 (defn- empty-pass? [{:keys [focus skip focus-meta skip-meta]}]
   (not (or (seq focus) (seq skip) (seq focus-meta) (seq skip-meta))))
+
+(defn- suite-passes
+  "The passes workers apply for `suite` with its own filters `own` and the
+  global ones: the suite's filters first, then the global ones, which see
+  the suite's skip keys too."
+  [suite own global]
+  (let [pass1 (merge-filters {} own)
+        pass2 (merge-filters global (assoc own :focus nil :focus-meta nil))]
+    (into [] (remove empty-pass?) [(pass-params pass1 suite) (pass-params pass2 suite)])))
 
 (defn- filter-suite
   "The `post-load` filtering of one suite: its own filters first, then the
@@ -125,17 +139,14 @@
   and the focus-meta keys only workers can resolve."
   [suite global used]
   (let [own (:filters suite)
-        suite1 (assoc suite :filters own)
-        pass1 (merge-filters {} own)
         stripped (assoc own :focus nil :focus-meta nil)
-        filtered (-> suite1
+        filtered (-> suite
                      (filter-node {})
                      (assoc :filters stripped)
-                     (filter-node global))
-        pass2 (merge-filters global stripped)]
+                     (filter-node global))]
     (assoc filtered
            :unresolved (unresolved-focus-meta (:focus-meta own) used)
-           :passes (into [] (remove empty-pass?) [(pass-params pass1 suite) (pass-params pass2 suite)]))))
+           :passes (suite-passes suite own global))))
 
 (defn apply-filters
   "Run Kaocha's filter plugin over a static tree. `suites` are suite nodes
@@ -185,16 +196,18 @@
 (defn- decide-pass
   "The closed form of one `filter-node` pass for a single var. Returns nil
   to run it or a reason keyword."
-  [{:keys [focus skip focus-meta skip-meta suite-focused?]} ns-node var-node]
+  [{:keys [focus skip focus-meta skip-meta suite-focused? suite-skipped?]} ns-node var-node]
   (let [skip-ns #(skip-reason ns-node skip skip-meta)
         skip-var #(skip-reason var-node skip skip-meta)]
-    (if (or (seq focus) (seq focus-meta))
+    (cond
+      suite-skipped? :skip
+      (or (seq focus) (seq focus-meta))
       (cond
         suite-focused? (or (skip-ns) (skip-var))
         (matches? ns-node focus focus-meta) (skip-var)
         (matches? var-node focus focus-meta) nil
         :else :not-focused)
-      (or (skip-ns) (skip-var)))))
+      :else (or (skip-ns) (skip-var)))))
 
 (defn- var-pattern-reason
   "Watch mode's test-name filter: `:not-focused` unless the var's name
@@ -230,8 +243,7 @@
   ([select-spec ns-sym ns-meta var-sym var-meta]
    (let [ns-node {:id (keyword (str ns-sym)) :meta ns-meta}
          var-node {:id (keyword (str ns-sym) (str var-sym)) :meta var-meta}
-         reason (or (when (:excluded? select-spec) :not-focused)
-                    (some #(decide-pass % ns-node var-node) (:passes select-spec))
+         reason (or (some #(decide-pass % ns-node var-node) (:passes select-spec))
                     (var-pattern-reason select-spec var-sym))]
      (cond
        reason {:run? false :reason reason}
@@ -245,25 +257,25 @@
   [metas]
   (into #{} (comp (mapcat seq) (keep (fn [[k v]] (when v (keyword k))))) metas))
 
-(defn- variant-key [ks] (vec (sort-by str (distinct (map keyword ks)))))
+(declare without-focus-meta)
 
 (defn resolve-focus-meta
   "Settle the select spec's `:resolve-focus-meta` keys once the worker has
   loaded every namespace of the run: keys in `used` (see `used-meta`) stay,
   the others are dropped, as Kaocha's `remove-missing-metadata-keys` drops
-  them, and the spec takes the passes the plan computed for that case
-  (`:excluded?` when the namespace has no test to run then). Returns
-  `{:select spec :dropped [k]}`; a spec with nothing to resolve comes back
-  unchanged."
+  them from the suite's filters and the global ones, and the spec's passes
+  are rebuilt from its `:pass-inputs` without them. Returns `{:select spec
+  :dropped [k]}`; a spec with nothing to resolve comes back unchanged."
   [select-spec used]
   (let [pending (:resolve-focus-meta select-spec)
         dropped (vec (remove #(contains? used (keyword %)) pending))
-        choice (get (:variants select-spec) (variant-key dropped))
-        spec (dissoc select-spec :resolve-focus-meta :variants)]
-    {:select (cond
-               (empty? pending) spec
-               (or (nil? choice) (= :excluded choice)) (assoc spec :passes [] :excluded? true)
-               :else (-> spec (assoc :passes choice) (dissoc :excluded?)))
+        {:keys [suite own global]} (:pass-inputs select-spec)
+        d (set (map keyword dropped))
+        spec (dissoc select-spec :resolve-focus-meta :pass-inputs)]
+    {:select (if (empty? dropped)
+               spec
+               (assoc spec :passes (suite-passes suite (without-focus-meta own d)
+                                                 (without-focus-meta global d))))
      :dropped dropped}))
 
 ;; ---------------------------------------------------------------------------
@@ -303,41 +315,40 @@
         passes))
 
 (defn- kept-namespaces
-  "`{ns-id passes}` for the namespaces of a filtered suite that may hold a
-  selected test."
+  "The ids of the namespaces of a filtered suite that may hold a selected
+  test."
   [filtered]
-  (into {}
+  (into #{}
         (keep (fn [ns-node]
                 (when (and (not (:skip? ns-node)) (some (complement :skip?) (:children ns-node)))
-                  [(:id ns-node) (:passes filtered)])))
+                  (:id ns-node))))
         (when-not (:skip? filtered) (:children filtered))))
 
 (defn- plan-suite
-  "The plan entry of one suite. `variants` maps each set of focus-meta keys
-  that may turn out to be carried by no test (sorted keyword vectors; `[]`
-  when they all are) to the suite as filtered under that assumption. A
-  namespace is planned when some variant keeps it; its spec carries the
-  passes of every variant (`:excluded` where it is dropped) when there is
-  more than one."
-  [suite infos variants unresolved]
-  (let [kept (update-vals variants kept-namespaces)
-        base-passes (:passes (get variants []))
-        keys* (relevant-meta-keys base-passes)]
+  "The plan entry of one suite: `filtered` is the suite as Kaocha's
+  filters leave it when every focus-meta key is carried by some test.
+  Dropping a key no test carries can only narrow what a suite keeps, so
+  the namespaces kept here are the most any outcome needs. With
+  `unresolved` keys each spec carries them and the `:pass-inputs`
+  (`resolve-focus-meta`) a worker rebuilds its passes from."
+  [suite infos filtered global unresolved]
+  (let [kept (kept-namespaces filtered)
+        keys* (relevant-meta-keys (:passes filtered))]
     {:id (:id suite)
      :namespaces
      (into []
            (keep (fn [info]
-                   (let [id (keyword (str (:ns info)))
-                         per-variant (update-vals kept #(get % id :excluded))]
-                     (when (some #(not= :excluded %) (vals per-variant))
-                       {:ns (:ns info)
-                        :file (:file info)
-                        :serial? (serial? info)
-                        :select (cond-> {:passes (let [p (get per-variant [])] (if (= :excluded p) [] p))
-                                         :ns-meta (select-keys (:meta info) keys*)}
-                                  (= :excluded (get per-variant [])) (assoc :excluded? true)
-                                  (seq unresolved) (assoc :resolve-focus-meta unresolved
-                                                          :variants per-variant))}))))
+                   (when (contains? kept (keyword (str (:ns info))))
+                     {:ns (:ns info)
+                      :file (:file info)
+                      :serial? (serial? info)
+                      :select (cond-> {:passes (:passes filtered)
+                                       :ns-meta (select-keys (:meta info) keys*)}
+                                (seq unresolved)
+                                (assoc :resolve-focus-meta unresolved
+                                       :pass-inputs {:suite (select-keys suite [:id :meta])
+                                                     :own (:filters suite)
+                                                     :global global}))})))
            infos)
      :load-errors []}))
 
@@ -347,11 +358,6 @@
               (filter #(discover/suite-member? suite %))
               (map #(select-keys % [:file :error])))
         infos))
-
-(defn- subsets
-  "Every subset of `xs`, as vectors, the empty one first."
-  [xs]
-  (reduce (fn [acc x] (into acc (map #(conj % x)) acc)) [[]] xs))
 
 (defn- without-focus-meta
   "`filters` without the focus-meta keys in `dropped` (keywords)."
@@ -396,23 +402,11 @@
                     suites)
         global (:filters config)
         {filtered :suites pre-loaded :loaded :keys [warnings unresolved]} (apply-filters nodes global)
-        ;; With focus-meta keys only workers can settle, filter once per
-        ;; set of keys that may turn out unused (Kaocha drops those).
-        variants (into {[] filtered}
-                       (map (fn [ks]
-                              (let [d (set ks)]
-                                [(variant-key ks)
-                                 (:suites (apply-filters (mapv #(update % :filters without-focus-meta d) nodes)
-                                                         (without-focus-meta global d)))])))
-                       (rest (subsets (map keyword unresolved))))
-        suites-by-id (zipmap (map :id suites) suites)
-        loaded (filter (fn [i] (some #(not (:skip? (nth % i))) (vals variants)))
-                       (range (count nodes)))]
+        suites-by-id (zipmap (map :id suites) suites)]
     (cond->
-     {:suites (vec (for [i loaded
-                         :let [node (nth nodes i)]
-                         :when (= :kaocha.type/clojure.test (:type node))]
-                     (assoc (plan-suite node (:infos node) (update-vals variants #(nth % i)) unresolved)
+     {:suites (vec (for [[node f] (map vector nodes filtered)
+                         :when (and (not (:skip? f)) (= :kaocha.type/clojure.test (:type node)))]
+                     (assoc (plan-suite node (:infos node) f global unresolved)
                             :load-errors (load-errors (suites-by-id (:id node)) ns-infos))))
       :warnings warnings
       :errors (if (seq unknown) [(unknown-suite-error unknown all-ids)] [])}

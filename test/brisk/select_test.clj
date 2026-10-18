@@ -262,7 +262,7 @@
       (is (= (all-ids infos) (conj (selected plan infos) :app.a-test/three :app.a-test/four)))
       (is (= [:nobody-has-this] (:resolve-focus-meta spec)) "no visible test has it: workers settle it")
       (is (= ['app.a-test 'app.b-test 'app.c-test] (map :ns (:preload plan))))
-      (is (= {:select (dissoc spec :resolve-focus-meta :variants) :dropped []}
+      (is (= {:select (dissoc spec :resolve-focus-meta :pass-inputs) :dropped []}
              (select/resolve-focus-meta spec #{:nobody-has-this}))
           "a macro-defined test carries it after all")
       (is (= [:nobody-has-this] (:dropped (select/resolve-focus-meta spec #{:slow}))))
@@ -342,3 +342,32 @@
     (is (= (select/decide {:passes [] :ns-meta {} :var-pattern "^add"} 'a-test 'sub-one {})
            (select/decide spec 'a-test 'sub-one {}))
         "deciding without prepare gives the same answer")))
+
+(deftest unknown-focus-meta-keys-cost-linear-time
+  ;; one pass input per spec, however many keys only workers can settle
+  (let [corpus [{:ns 'a.one-test :file "test/a/one_test.clj" :test? true :requires #{} :meta {}
+                 :vars '{t1 {} t2 {:k0 true}}}
+                {:ns 'a.two-test :file "test/a/two_test.clj" :test? true :requires #{} :meta {}
+                 :vars '{t3 {}}}]
+        plan-of (fn [k] (select/plan (config/normalize {:tests [{:id :unit}]}
+                                                      {:focus-meta (mapv #(keyword (str "u" %)) (range k))})
+                                    corpus []))
+        size (fn [k] (count (pr-str (plan-of k))))
+        t0 (System/nanoTime)
+        big (plan-of 16)]
+    (is (< (/ (- (System/nanoTime) t0) 1e6) 1000) "16 keys used to take 2^16 filter runs")
+    (is (= 16 (count (:resolve-focus-meta (:select (first (:namespaces (first (:suites big)))))))))
+    (is (< (size 16) (* 4 (size 1))))))
+
+(deftest a-dropped-focus-meta-key-can-let-a-suite-skip-itself
+  ;; kaocha.plugin.filter/filter-testable checks :skip against the suite
+  ;; only when no focus is left: suite :a skips itself once :slow, which
+  ;; no test carries, is dropped (found by selection-matches-kaocha-filter-plugin)
+  (let [infos [{:file "test/a/aa.clj" :ns 'aa :requires #{} :meta {} :vars '{a {} aa {}} :hidden {}}
+               {:file "test/b/ab.clj" :ns 'ab :requires #{} :meta {} :vars '{a {}} :hidden {}}]
+        suite (fn [id m] (merge {:id id :type :kaocha.type/clojure.test :test-paths [(str "test/" (name id))]
+                                 :ns-patterns ["."] :focus [] :skip [] :focus-meta [] :skip-meta [:kaocha/skip]}
+                                m))
+        config {:tests [(suite :a {:skip [:a] :focus-meta [:slow]}) (suite :b {})]
+                :filters {:focus [] :skip [] :focus-meta [:slow] :skip-meta []}}]
+    (is (= #{:ab/a} (g/worker-selected (select/plan config infos []) infos)))))

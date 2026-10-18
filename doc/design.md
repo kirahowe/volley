@@ -195,10 +195,10 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
 ```clojure
 {:op :run :ns 'my.app-test :run-id 3
  :select {:passes [{:focus [...] :skip [...] :focus-meta [...] :skip-meta [...]
-                    :suite-focused? bool}]
+                    :suite-focused? bool :suite-skipped? bool}]  ; :suite-skipped? only when true
           :ns-meta {...}    ; from brisk.select/plan; workers call select/decide
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
-          :variants {[k ...] passes-or-:excluded}}  ; visible statically (see below)
+          :pass-inputs {:suite {:id kw} :own filters :global filters}}  ; visible statically (see below)
  :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
  :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
@@ -230,15 +230,20 @@ and metadata:
   (`remove-missing-metadata-keys`). When some key is carried by no test
   the parser can see, only the loaded tests can tell, so the plan has a
   `:preload` list (every namespace of the suites Kaocha would load) and
-  each select spec carries `:resolve-focus-meta` and `:variants`: the
-  passes for each set of keys that might turn out unused, computed by
-  running the filters once per set (`:excluded` where the namespace has
-  nothing left to run). A worker requires every namespace in `:preload`
-  before its first test, computes the keys its loaded tests carry
-  (`brisk.select/used-meta`), picks the variant
-  (`brisk.select/resolve-focus-meta`) and warns, once per worker, about
+  each select spec carries `:resolve-focus-meta` and `:pass-inputs`: the
+  suite and the suite's and global filters the passes are built from. A
+  worker requires every namespace in `:preload` before its first test,
+  computes the keys its loaded tests carry (`brisk.select/used-meta`),
+  removes the others from both filter sets and rebuilds the passes
+  (`brisk.select/resolve-focus-meta`), and warns, once per worker, about
   each dropped key with Kaocha's message (`:worker/warning`; the parent
-  prints each text once).
+  prints each text once). The plan keeps the namespaces the filters keep
+  with every key in place. Dropping a key no test carries never brings
+  back a namespace those filters left out (`bb test:diff` checks this
+  against Kaocha's filter plugin), but once a pass has no focus left, a
+  `:skip` naming the suite applies to the whole suite, so each pass
+  carries `:suite-skipped?`. The plan's size and the worker's work are
+  linear in the number of keys.
 - A namespace that finishes with every var skipped by a filter (or with
   no vars) is not listed or counted (`brisk.run-state/unselected?`), as
   Kaocha does not report it.
