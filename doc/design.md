@@ -166,6 +166,28 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 
 Passing assertions are counted in `:var/end`, not sent one by one.
 
+Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
+
+- `:ns/error` is always followed by `:ns/end`, so every namespace has exactly
+  one terminal event. `:ns/error` covers load errors and a `:once` or `:each`
+  fixture that throws.
+- `:var/skipped :reason` is whatever `brisk.select/decide` returned.
+- The pool turns every line into a flat event: worker events plus `:worker`
+  and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
+  A line with the `#brisk/event ` prefix whose payload does not parse stays
+  an `:output` event and gains `:protocol-error msg`.
+- The pool emits `{:event :worker/exit :worker id :code n}` after both
+  streams close. When the worker held a namespace, `brisk.schedule/crash-events`
+  yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
+  :exit-code n}`) and `:ns/end` (`:crashed? true`), both with `:synthetic? true`.
+- The worker keeps the original stdout for protocol lines and points
+  `System/out` and the root `*out*`/`*err*` at stderr, so everything a test
+  prints is stray output. Stray lines are attributed per stream: ordering
+  between stdout and stderr lines is not guaranteed.
+- `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
+  error is in `:error`. Values are cut at 100 items, 8 levels and 10000
+  characters; a cut value has no `:edn`.
+
 Values (`:expected`, `:actual`) are sent as
 `{:str "(pr-str value)" :edn value-or-absent}`. `:edn` is present only when
 the value survives an EDN round trip; `brisk.render` uses it for structural
