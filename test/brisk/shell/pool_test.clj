@@ -77,10 +77,11 @@
       (is (= #{'exec.load-error-test 'exec.exit-test}
              (set (map :ns (events-of r :ns/error)))))
       (is (true? (:crashed? (ends 'exec.exit-test)))))
-    (testing "output captured per var; direct System/out is stray output"
-      (let [out (first (filter #(= 'prints-via-println (:var %)) (events-of r :var/end)))]
-        (is (= "hello from println\nhello on err\n" (:output out))))
-      (is (some #(= "direct system out" (:text %)) (events-of r :output))))
+    (testing "output captured per var, System/out included"
+      (let [out (fn [v] (:output (first (filter #(= v (:var %)) (events-of r :var/end)))))]
+        (is (= "hello from println\nhello on err\n" (out 'prints-via-println)))
+        (is (= "direct system out\npartial " (out 'prints-via-system-out))))
+      (is (not-any? #(= "direct system out" (:text %)) (events-of r :output))))
     (testing "no protocol line was damaged"
       (is (not-any? :protocol-error (events-of r :output))))
     (testing "workers exit cleanly except the one the test killed"

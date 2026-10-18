@@ -299,3 +299,29 @@
   (testing "unchanged entries around a change stay as context"
     (is (= ["  {" "    :a 1" "-   :b 2" "+   :b 3" "  }"]
            (render/diff-lines (render/diff {:a 1 :b 2} {:a 1 :b 3}) {:color? false})))))
+
+(deftest documentation-lines-example
+  (testing "kaocha.report/documentation: one line per var, grouped by namespace"
+    (let [skipped (rs/apply-event state (ev {:event :var/skipped :ns 'my.app-test :var 'later-test
+                                             :reason :pending}))]
+      (is (= ["my.app-test 352ms"
+              "  ✓ add-test 12ms"
+              "  - later-test (skipped: pending)"
+              "  ✗ merge-test 340ms"
+              ""]
+             (render/documentation-lines nil skipped opts)))
+      (is (empty? (render/documentation-lines skipped skipped opts)) "append-only"))))
+
+(defspec documentation-emits-each-finished-namespace-once runs
+  (prop/for-all [r gr/run]
+    (let [events (gr/events r 0)
+          opts {:width 300 :color? false}
+          lines (loop [prev nil st (rs/init (:plan r)) evs events out []]
+                  (let [out (into out (render/documentation-lines prev st opts))]
+                    (if-let [[e & more] (seq evs)]
+                      (recur st (rs/apply-event st e) more out)
+                      out)))
+          final (gr/fold (:plan r) events)
+          done (filter #(not= :running (rs/ns-result %)) (vals (:namespaces final)))]
+      (every? (fn [rec] (= 1 (count (filter #(re-find (re-pattern (str "^" (:ns rec) "( |$)")) %) lines))))
+              done))))

@@ -98,7 +98,7 @@
                 output maybe-text
                 duration (gen/choose 0 5000)]
         (concat [{:event :var/start :ns ns :var var :file "test/gen_test.clj" :line 1}]
-                (map (fn [t] {:kind :output :text t}) strays)
+                (map (fn [t] {:event :output :text t :stream :stderr}) strays)
                 as
                 [{:event :var/end :ns ns :var var :pass pass
                   :fail (count (filter #(= :fail %) types))
@@ -114,16 +114,39 @@
               duration (gen/choose 1 9000)]
       (if load-error?
         [{:event :ns/start :ns ns :run-id i}
-         {:event :ns/error :ns ns :run-id i :error err}]
+         {:event :ns/error :ns ns :run-id i :error err}
+         {:event :ns/end :ns ns :run-id i :duration-ms duration}]
         (concat [{:event :ns/start :ns ns :run-id i}]
                 (apply concat vars)
                 [{:event :ns/end :ns ns :run-id i :duration-ms duration}])))))
 
 (defn- stamp [worker start events]
-  (vec (map-indexed (fn [k e]
-                      (cond-> (assoc e :worker worker)
-                        (not= :output (:kind e)) (assoc :at (+ start (* 10 k)))))
+  (vec (map-indexed (fn [k e] (assoc e :worker worker :at (+ start (* 10 k))))
                     events)))
+
+(defn- open-ns
+  "The namespace a worker is inside after `events`, or nil."
+  [events]
+  (reduce (fn [open {:keys [event ns]}]
+            (case event
+              :ns/start ns
+              :ns/end nil
+              open))
+          nil events))
+
+(defn crash-tail
+  "What follows a worker dying with `code` after `events`: the scheduler's
+  synthetic `:ns/error` and `:ns/end` when it held a namespace (see
+  `brisk.schedule/crash-events`), then the pool's `:worker/exit`."
+  [events code]
+  (let [ns (open-ns events)]
+    (cond-> []
+      ns (into [{:event :ns/error :ns ns :synthetic? true
+                 :error {:class "brisk.WorkerCrashed"
+                         :message (str "worker process exited with code " code)
+                         :data nil :trace [] :exit-code code}}
+                {:event :ns/end :ns ns :synthetic? true :crashed? true}])
+      true (conj {:event :worker/exit :code code}))))
 
 (defn worker-stream
   "A generator of one worker's events for the namespaces numbered `ns-ids`:
@@ -137,10 +160,10 @@
             code (gen/choose 1 255)]
     (let [body (vec (cons {:event :worker/ready} (apply concat scripts)))
           events (case ending
-                   :exit  (conj body {:event :worker/exit :exit-code 0})
+                   :exit  (conj body {:event :worker/exit :code 0})
                    :none  body
-                   :crash (conj (vec (take (mod cut (inc (count body))) body))
-                                {:event :worker/exit :exit-code code}))]
+                   :crash (let [prefix (vec (take (mod cut (inc (count body))) body))]
+                            (into prefix (crash-tail prefix code))))]
       (stamp worker start events))))
 
 (defn interleave-streams

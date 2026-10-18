@@ -41,10 +41,7 @@
   (prop/for-all [r gr/run]
     (let [events (all-events r)
           state (gr/fold (:plan r) events)
-          bad? (some #(or (= :assertion (:event %))
-                          (= :ns/error (:event %))
-                          (and (= :worker/exit (:event %)) (pos? (:exit-code %))))
-                     events)]
+          bad? (some #(#{:assertion :ns/error} (:event %)) events)]
       (and (= (boolean bad?) (pos? (rs/exit-code state)))
            (= (zero? (rs/exit-code state)) (empty? (rs/failures state)))
            (<= (rs/exit-code state) 255)))))
@@ -74,22 +71,36 @@
 (defn- ev [m] (merge {:worker 0 :at 1000} m))
 
 (deftest stray-output-goes-to-the-running-test
-  (let [state (reduce rs/apply-event (rs/init plan)
-                      [(ev {:event :ns/start :ns 'a-test})
-                       (ev {:event :var/start :ns 'a-test :var 'x})
-                       {:kind :output :worker 0 :text "hello"}
-                       (ev {:event :assertion :ns 'a-test :var 'x :type :fail})
-                       (ev {:event :var/end :ns 'a-test :var 'x :pass 0 :duration-ms 5
-                            :output "captured"})])]
-    (is (= "hello\ncaptured" (:output (first (rs/failures state)))))))
+  (testing "the pool's flat {:event :output} form is what run-state folds"
+    (let [state (reduce rs/apply-event (rs/init plan)
+                        [(ev {:event :ns/start :ns 'a-test})
+                         (ev {:event :var/start :ns 'a-test :var 'x})
+                         (ev {:event :output :text "hello" :stream :stderr})
+                         (ev {:event :assertion :ns 'a-test :var 'x :type :fail})
+                         (ev {:event :var/end :ns 'a-test :var 'x :pass 0 :duration-ms 5
+                              :output "captured"})])]
+      (is (= "hello\ncaptured" (:output (first (rs/failures state))))))))
+
+(defn- crash-events
+  "What the engine folds when worker 0 dies while running `a-test`: stray
+  output, the scheduler's synthetic `:ns/error` and `:ns/end`, then the
+  pool's `:worker/exit`."
+  [code]
+  [(ev {:event :output :text "boom" :stream :stderr})
+   (ev {:event :ns/error :ns 'a-test :synthetic? true :at 2000
+        :error {:class "brisk.WorkerCrashed" :message "worker process exited with code 137"
+                :data nil :trace [] :exit-code code}})
+   (ev {:event :ns/end :ns 'a-test :synthetic? true :crashed? true :at 2000})
+   (ev {:event :worker/exit :code code :at 2000})])
 
 (deftest crash-mid-test
   (let [state (reduce rs/apply-event (rs/init plan)
-                      [(ev {:event :ns/start :ns 'a-test})
-                       (ev {:event :var/start :ns 'a-test :var 'x})
-                       {:kind :output :worker 0 :text "boom"}
-                       (ev {:event :worker/exit :exit-code 137 :at 2000})])
-        [f] (rs/failures state)]
+                      (concat [(ev {:event :ns/start :ns 'a-test})
+                               (ev {:event :var/start :ns 'a-test :var 'x})]
+                              (crash-events 137)))
+        fs (rs/failures state)
+        [f] fs]
+    (is (= 1 (count fs)) "the synthetic :ns/error is the only source of the crash")
     (is (= :crash (:kind f)))
     (is (= 137 (:exit-code f)))
     (is (= 'x (:var f)))
@@ -98,6 +109,34 @@
     (is (= {:total 2 :passed 0 :failed 0 :errored 1 :running 0 :pending 1}
            (:namespaces (rs/summary state))))
     (is (empty? (rs/running state)))))
+
+(deftest worker-exit-is-informational
+  (testing "an idle worker exiting non-zero is not a failure"
+    (let [state (reduce rs/apply-event (rs/init plan)
+                        [(ev {:event :worker/ready})
+                         (ev {:event :worker/exit :code 1})])]
+      (is (empty? (rs/failures state)))
+      (is (zero? (rs/exit-code state)))))
+  (testing "a bare :worker/exit mid-namespace does not invent a crash"
+    (let [state (reduce rs/apply-event (rs/init plan)
+                        [(ev {:event :ns/start :ns 'a-test})
+                         (ev {:event :worker/exit :code 0})])]
+      (is (empty? (rs/failures state)))
+      (is (empty? (rs/running state))))))
+
+(deftest file-errors-and-not-run-namespaces-are-failures
+  (let [state (reduce rs/apply-event (rs/init plan)
+                      [(ev {:event :file/error :file "test/bad_test.clj" :error "EOF"})
+                       (ev {:event :run/not-run :namespaces '[a-test b-test] :reason :no-workers})])
+        kinds (map :kind (rs/failures state))]
+    (is (= #{:file-error :not-run} (set kinds)))
+    (is (= 3 (rs/exit-code state)))
+    (is (= '{a-test :no-workers b-test :no-workers} (rs/not-run state))))
+  (testing "fail-fast leftovers are reported but do not count"
+    (let [state (rs/apply-event (rs/init plan)
+                                (ev {:event :run/not-run :namespaces '[b-test] :reason :fail-fast}))]
+      (is (empty? (rs/failures state)))
+      (is (= '{b-test :fail-fast} (rs/not-run state))))))
 
 (deftest exit-code-matches-kaocha-cap
   (testing "kaocha.runner/-main*: (min (+ error fail) 255)"
@@ -116,6 +155,6 @@
                        (ev {:event :var/start :ns 'a-test :var 'x})
                        (ev {:event :var/end :ns 'a-test :var 'x :pass 3 :duration-ms 7})
                        (ev {:event :ns/end :ns 'a-test :duration-ms 9})
-                       (ev {:event :worker/exit :exit-code 0})])]
+                       (ev {:event :worker/exit :code 0})])]
     (is (zero? (rs/exit-code state)))
     (is (= 1 (get-in (rs/summary state) [:namespaces :pending])))))

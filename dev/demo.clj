@@ -17,7 +17,7 @@
     [(concat
       [(at 0 {:event :var/start :file file :line line})]
       (map-indexed (fn [i s] [(+ t (* (inc i) (quot ms (+ 2 (count strays)))))
-                              {:kind :output :worker w :text s}])
+                              {:event :output :worker w :text s :stream :stderr}])
                    strays)
       (map (fn [f] (at (dec ms) (merge {:event :assertion :file file :line line} f))) failures)
       [(at ms {:event :var/end :pass pass :duration-ms ms :output output})])
@@ -97,8 +97,14 @@
         w3 (let [start [[300 {:event :ns/start :worker 3 :ns 'demo.crash-test}]
                         [320 {:event :var/start :worker 3 :ns 'demo.crash-test :var 'native-test
                               :file "test/demo/crash_test.clj" :line 4}]
-                        [1500 {:kind :output :worker 3 :text "#  SIGSEGV (0xb) at pc=0x00007f"}]
-                        [1900 {:event :worker/exit :worker 3 :exit-code 139}]]]
+                        [1500 {:event :output :worker 3 :stream :stderr
+                               :text "#  SIGSEGV (0xb) at pc=0x00007f"}]
+                        [1900 {:event :ns/error :worker 3 :ns 'demo.crash-test :synthetic? true
+                               :error {:class "brisk.WorkerCrashed" :exit-code 139 :trace []
+                                       :message "worker process exited with code 139"}}]
+                        [1900 {:event :ns/end :worker 3 :ns 'demo.crash-test :synthetic? true
+                               :crashed? true}]
+                        [1900 {:event :worker/exit :worker 3 :code 139}]]]
              start)
         ready (for [w (range 4)] [0 {:event :worker/ready :worker w}])]
     (vec (sort-by first (concat ready w0 w1 w2 w3)))))

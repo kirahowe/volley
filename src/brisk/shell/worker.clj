@@ -23,7 +23,7 @@
 
 (defn run-everything
   "A `decide` that selects every var. Used when `brisk.select` is absent."
-  [_select _ns-sym _var-sym _var-meta]
+  [_select _ns-sym _ns-meta _var-sym _var-meta]
   {:run? true :reason nil})
 
 (defn test-vars-of
@@ -36,12 +36,13 @@
        (filter (comp :test meta))))
 
 (defn partition-vars
-  "Ask `decide` about each var. Returns `{:run [var ...] :skipped [[var
-  reason] ...]}`, both in input order."
-  [decide select ns-sym vars]
+  "Ask `decide` (the 5-arity of `brisk.select/decide`) about each var, with
+  the namespace's metadata `ns-meta`. Returns `{:run [var ...] :skipped
+  [[var reason] ...]}`, both in input order."
+  [decide select ns-sym ns-meta vars]
   (reduce (fn [acc v]
             (let [m (meta v)
-                  {:keys [run? reason]} (decide select ns-sym (:name m) m)]
+                  {:keys [run? reason]} (decide select ns-sym ns-meta (:name m) m)]
               (if run?
                 (update acc :run conj v)
                 (update acc :skipped conj [v reason]))))
@@ -97,32 +98,56 @@
 
 (defn- empty->nil [s] (when-not (= "" s) s))
 
+(defn- open-capture
+  "One sink for everything a test prints: `*out*`, `*err*`, `System/out`
+  and `System/err` all write to the same buffer, in order, as
+  `kaocha.plugin.capture-output` does."
+  []
+  (let [bytes (java.io.ByteArrayOutputStream.)
+        stream (java.io.PrintStream. bytes true "UTF-8")]
+    {:bytes bytes
+     :stream stream
+     :writer (java.io.OutputStreamWriter. stream "UTF-8")}))
+
+(defn- capture-text
+  "Everything captured so far, or nil when nothing was printed."
+  [{:keys [bytes stream ^java.io.Writer writer]}]
+  (.flush writer)
+  (.flush ^java.io.PrintStream stream)
+  (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
+
 (defn- start-var!
   "Open the accumulator for var `v`, redirecting output when capturing."
   [acc emit! ns-sym capture? v]
-  (let [writer (when capture? (java.io.StringWriter.))
+  (let [capture (when capture? (open-capture))
         m (meta v)]
     (reset! acc {:var v :pass 0 :fail 0 :error 0
-                 :t0 (System/nanoTime) :writer writer
-                 :saved-out *out* :saved-err *err*})
-    (when writer
-      (set! *out* writer)
-      (set! *err* writer))
+                 :t0 (System/nanoTime) :capture capture
+                 :saved-out *out* :saved-err *err*
+                 :saved-system-out System/out :saved-system-err System/err})
+    (when capture
+      (set! *out* (:writer capture))
+      (set! *err* (:writer capture))
+      (System/setOut (:stream capture))
+      (System/setErr (:stream capture)))
     (emit! {:event :var/start :ns ns-sym :var (:name m)
             :file (:file m) :line (:line m)})))
 
 (defn- end-var!
   "Close the open var (if any), restoring output, and emit `:var/end`."
   [acc emit! ns-sym]
-  (when-let [{:keys [var pass fail error t0 writer saved-out saved-err]} @acc]
-    (when writer
+  (when-let [{:keys [var pass fail error t0 capture saved-out saved-err
+                     saved-system-out saved-system-err]} @acc]
+    (when capture
       (set! *out* saved-out)
-      (set! *err* saved-err))
+      (set! *err* saved-err)
+      (System/setOut saved-system-out)
+      (System/setErr saved-system-err))
     (reset! acc nil)
     (emit! {:event :var/end :ns ns-sym :var (:name (meta var))
             :pass pass :fail fail :error error
             :duration-ms (duration-ms t0 (System/nanoTime))
-            :output (some-> writer str empty->nil)})))
+            :output (some-> capture capture-text)})))
 
 (defn- count-and-emit!
   "Count a `:pass`/`:fail`/`:error` against the open var and emit the
@@ -168,9 +193,16 @@
   {:event :ns/error :ns ns-sym :run-id run-id
    :error (protocol/encode-error (Throwable->map e))})
 
+(defn- ns-metadata
+  "The loaded namespace's metadata, over the static copy the parent read
+  from the ns form (Kaocha reads the real one, `kaocha.type.ns`)."
+  [select ns-obj]
+  (merge (:ns-meta select) (meta ns-obj)))
+
 (defn run-assignment!
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
-  `(fn [select ns-sym var-sym var-meta] {:run? bool :reason kw})`.
+  `(fn [select ns-sym ns-meta var-sym var-meta] {:run? bool :reason kw})`,
+  normally `brisk.select/decide`; it gets the namespace's real metadata.
 
   Emits `:ns/start`, then `:ns/error` if loading or a fixture fails, the
   `:var/*` and `:assertion` events, and always a final `:ns/end`. Does not
@@ -183,8 +215,9 @@
           run-error
           (if load-error
             load-error
-            (let [{:keys [run skipped]}
-                  (partition-vars decide select ns (test-vars-of (find-ns ns)))]
+            (let [ns-obj (find-ns ns)
+                  {:keys [run skipped]}
+                  (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
               (doseq [[v reason] skipped]
                 (emit! {:event :var/skipped :ns ns :var (:name (meta v))
                         :reason reason}))

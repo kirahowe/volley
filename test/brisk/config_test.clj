@@ -219,6 +219,15 @@
   (testing "the CLI reporter beats the config one"
     (is (= :live (:reporter (config/normalize {:reporter ['kaocha.report/documentation]}
                                               {:reporter ['kaocha.report/dots]})))))
+  (testing "the implicit default does not warn"
+    (is (not-any? #(str/includes? % "reporter") (:warnings (config/normalize nil {})))))
+  (testing "an explicit Kaocha reporter maps to the closest brisk one and warns"
+    (doseq [r ['kaocha.report/dots 'kaocha.report.progress/report 'kaocha.report/report]]
+      (let [c (config/normalize nil {:reporter [r]})]
+        (is (= :live (:reporter c)))
+        (is (some #(str/includes? % (str r)) (:warnings c)) (str r))))
+    (is (some #(str/includes? % "kaocha.report/dots")
+              (:warnings (config/normalize {:kaocha/reporter ['kaocha.report/dots]} {})))))
   (testing "custom reporters fall back to :live with a warning"
     (let [c (config/normalize {:reporter ['my.ns/reporter]} {})]
       (is (= :live (:reporter c)))

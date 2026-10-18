@@ -195,9 +195,16 @@ Execution details (`brisk.protocol`, `brisk.shell.worker`, `brisk.shell.pool`):
   yields a synthetic `:ns/error` (`:error {:class "brisk.WorkerCrashed" ...
   :exit-code n}`) and `:ns/end` (`:crashed? true`), both with `:synthetic? true`.
 - The worker keeps the original stdout for protocol lines and points
-  `System/out` and the root `*out*`/`*err*` at stderr, so everything a test
-  prints is stray output. Stray lines are attributed per stream: ordering
-  between stdout and stderr lines is not guaranteed.
+  `System/out` and the root `*out*`/`*err*` at stderr, so nothing a test
+  prints can corrupt a protocol line. With `:capture-output?` the worker
+  points `*out*`, `*err*`, `System/out` and `System/err` at one per-test
+  buffer (as `kaocha.plugin.capture-output` does), so what a test prints
+  arrives in its `:var/end`. Output that escapes capture (other threads,
+  `--no-capture-output`) is stray output, attributed to whatever the worker
+  is running when the line arrives; ordering between the stdout and stderr
+  pumps is not guaranteed, so that attribution is best effort.
+- The worker calls the 5-arity `brisk.select/decide` with the loaded
+  namespace's real metadata (merged over the static `:ns-meta` copy).
 - `:actual` of an `:error` assertion is `{:str "Class: message"}`; the full
   error is in `:error`. Values are cut at 100 items, 8 levels and 10000
   characters; a cut value has no `:edn`.
@@ -218,6 +225,24 @@ A plain map built only by folding events. It must not depend on the
 interleaving of events from different workers beyond each worker's own order.
 Derived values (`summary`, `exit-code`, `slowest`) are functions of the state,
 not stored.
+
+Every message in the parent loop is a map with an `:event` key. Besides the
+worker events above, run-state folds:
+
+```clojure
+{:event :output :worker id :text str :stream kw}     ; from the pool
+{:event :worker/exit :worker id :code n}              ; from the pool, informational
+{:event :file/error :file path :error msg}            ; from the engine: unreadable ns form
+{:event :run/not-run :namespaces [ns ...]             ; from the engine, at the end
+ :reason (:fail-fast | :no-workers | :interrupted)}
+```
+
+A crash is counted once, from the scheduler's synthetic `:ns/error`
+(class `brisk.WorkerCrashed`); it renders as CRASH. `:worker/exit` never
+creates a failure, whatever its code. A file whose ns form cannot be read
+counts as one error, as Kaocha's `load-error-testable` does. Namespaces that
+never ran are listed in the summary; they count as failures unless the
+reason is `:fail-fast`.
 
 ## Behaviour notes
 

@@ -6,9 +6,16 @@
   state depends only on each worker's own event order and not on how events
   from different workers interleave.
 
-  Event shapes are defined in doc/design.md. Besides those, this namespace
-  accepts `{:kind :output :worker id :text str}` for stray worker output and
-  `{:event :worker/exit :worker id :exit-code n}` when a worker process ends."
+  Event shapes are defined in doc/design.md: the worker events plus what the
+  pool adds (`{:event :output ...}` for stray output, `{:event :worker/exit
+  :code n}`), the scheduler's synthetic crash events, and two the engine
+  emits: `{:event :file/error :file path :error msg}` for a test file whose
+  ns form cannot be read, and `{:event :run/not-run :namespaces [ns ...]
+  :reason kw}` for planned namespaces that never ran.
+
+  A worker crash is recorded once, from the synthetic `:ns/error` whose
+  error class is `brisk.WorkerCrashed`. `:worker/exit` only marks the worker
+  as gone."
   (:require
    [clojure.string :as str]))
 
@@ -23,7 +30,9 @@
    :started-at (:started-at plan-summary)
    :now        nil
    :workers    {}
-   :namespaces {}})
+   :namespaces {}
+   :file-errors {}
+   :not-run    {}})
 
 (defn- min* [a b] (cond (nil? a) b (nil? b) a :else (min a b)))
 (defn- max* [a b] (cond (nil? a) b (nil? b) a :else (max a b)))
@@ -55,12 +64,28 @@
                  #(merge ((ns-record ns) %) {:worker worker :start-at at}))
       (set-worker worker {:ns ns :var nil :ns-at at :var-at nil})))
 
+(def crash-class
+  "Error class of the synthetic `:ns/error` the scheduler emits when a
+  worker dies holding a namespace."
+  "brisk.WorkerCrashed")
+
+(defn- crash-error? [error] (= crash-class (:class error)))
+
+(defn- crash-running-vars
+  "Vars of a crashed namespace that were still running died with it."
+  [vars]
+  (update-vals vars #(cond-> % (= :running (:phase % :running)) (assoc :phase :crashed))))
+
 (defn- on-ns-error [state {:keys [worker ns at error]}]
-  (-> state
-      (update-in [:namespaces ns]
-                 #(merge ((ns-record ns) %)
-                         {:status :error :error error :worker worker :end-at at}))
-      (set-worker worker idle)))
+  (let [crash? (crash-error? error)]
+    (-> state
+        (update-in [:namespaces ns]
+                   #(cond-> (merge ((ns-record ns) %)
+                                   {:status (if crash? :crashed :error) :error error
+                                    :worker worker :end-at at})
+                      crash? (-> (assoc :exit-code (:exit-code error))
+                                 (update :vars crash-running-vars))))
+        (set-worker worker idle))))
 
 (defn- on-ns-end [state {:keys [worker ns at duration-ms]}]
   (-> state
@@ -102,25 +127,17 @@
                    :else        [:workers worker :stray])]
     (update-in state path (fnil conj []) text)))
 
-(defn- crash-var [v]
-  (cond-> v (= :running (:phase v :running)) (assoc :phase :crashed)))
+(defn- on-worker-exit
+  "Informational: the worker is gone. Crashes are reported through the
+  synthetic `:ns/error`, never from here."
+  [state {:keys [worker code]}]
+  (set-worker state worker (merge idle {:exited? true :code code})))
 
-(defn- crash-ns [state {:keys [worker at exit-code]} {:keys [ns var]}]
-  (cond-> (update-in state [:namespaces ns]
-                     #(assoc ((ns-record ns) %)
-                             :status :crashed :exit-code exit-code
-                             :worker worker :end-at at))
-    var (update-in [:namespaces ns :vars var] #(crash-var (or % {:ns ns :var var})))))
+(defn- on-file-error [state {:keys [file error]}]
+  (assoc-in state [:file-errors file] error))
 
-(defn- on-worker-exit [state {:keys [worker exit-code] :as e}]
-  (let [current (get-in state [:workers worker])
-        in-ns?  (some? (:ns current))]
-    (-> (if in-ns? (crash-ns state e current) state)
-        (set-worker worker (merge idle {:exited? true :exit-code exit-code
-                                        :crashed-ns (when in-ns? (:ns current))})))))
-
-(defn- event-key [{:keys [event kind]}]
-  (or event (when (= :output kind) :output)))
+(defn- on-not-run [state {:keys [namespaces reason]}]
+  (update state :not-run into (map (fn [ns] [ns reason])) namespaces))
 
 (defn apply-event
   "Folds one event into `state`. Events from one worker must arrive in that
@@ -128,7 +145,7 @@
   Unknown events leave the state unchanged apart from the clock."
   [state event]
   (let [state (touch-clock state (:at event))]
-    (case (event-key event)
+    (case (:event event)
       :worker/ready  (on-ready state event)
       :ns/start      (on-ns-start state event)
       :ns/error      (on-ns-error state event)
@@ -139,6 +156,8 @@
       :var/skipped   (on-var-skipped state event)
       :output        (on-output state event)
       :worker/exit   (on-worker-exit state event)
+      :file/error    (on-file-error state event)
+      :run/not-run   (on-not-run state event)
       state)))
 
 ;;; Derived values
@@ -197,10 +216,10 @@
          pending  (count (remove seen (:planned state)))
          v        (fn [k] (get var-freq k 0))
          n        (fn [k] (get ns-freq k 0))]
-     {:namespaces {:total   (+ (count nses) pending)
+     {:namespaces {:total   (+ (count nses) pending (count (:file-errors state)))
                    :passed  (n :passed)
                    :failed  (n :failed)
-                   :errored (+ (n :error) (n :crashed))
+                   :errored (+ (n :error) (n :crashed) (count (:file-errors state)))
                    :running (n :running)
                    :pending pending}
       :vars       {:total   (reduce + (vals var-freq))
@@ -237,22 +256,32 @@
                  :output (str/join "\n" (concat stray (when v [(var-output v)])))}])
     []))
 
-(defn- idle-crashes [state]
-  (for [[id w] (:workers state)
-        :when (and (:exited? w) (not (:crashed-ns w))
-                   (not (zero? (or (:exit-code w) 0))))]
-    {:kind :crash :worker id :exit-code (:exit-code w) :idx id
-     :output (str/join "\n" (:stray w))}))
+(defn- file-failures [state]
+  (for [[file error] (:file-errors state)]
+    {:kind :file-error :file file :message error}))
+
+(def counted-not-run?
+  "Reasons a planned namespace did not run that make the run fail. Fail-fast
+  leftovers do not count: Kaocha stops the same way and counts only what
+  ran."
+  (complement #{:fail-fast}))
+
+(defn- not-run-failures [state]
+  (for [[ns reason] (:not-run state)
+        :when (counted-not-run? reason)]
+    {:kind :not-run :ns ns :reason reason}))
 
 (defn failures
-  "Every failed assertion, errored assertion, namespace load error and worker
-  crash, ordered by namespace, var, line. Each carries :kind, :ns, and for
-  assertions :var, :line, :message, :contexts, :expected, :actual, :error and
-  the var's captured :output."
+  "Every failed assertion, errored assertion, namespace load error, worker
+  crash, unreadable test file (`:file-error`) and namespace that could not
+  be run (`:not-run`, except after fail-fast), ordered by namespace, var,
+  line. Each carries :kind, :ns, and for assertions :var, :line, :message,
+  :contexts, :expected, :actual, :error and the var's captured :output."
   [state]
   (->> (concat (mapcat assertion-failures (vals (:namespaces state)))
                (mapcat ns-failures (vals (:namespaces state)))
-               (idle-crashes state))
+               (file-failures state)
+               (not-run-failures state))
        (sort-by (juxt sort-key #(str (:kind %))))
        vec))
 
@@ -277,9 +306,15 @@
                :vars-done (count (remove #(= :running (var-status %))
                                          (vals (get-in state [:namespaces ns :vars]))))}))))
 
+(defn not-run
+  "Planned namespaces that never ran, `{ns reason}`."
+  [state]
+  (:not-run state))
+
 (defn exit-code
   "0 when nothing failed, otherwise the number of failures capped at 255,
-  like Kaocha (`kaocha.runner/-main*`: `(min (+ error fail) 255)`). Load
-  errors and crashed workers each count as one."
+  like Kaocha (`kaocha.runner/run`: `(min (+ error fail) 255)`). Load
+  errors, unreadable files, crashed workers and namespaces that could not be
+  run each count as one."
   [state]
   (min 255 (count (failures state))))

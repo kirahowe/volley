@@ -2,6 +2,8 @@
   "The worker run function in-process against the fixture namespaces in
   dev-resources/exec, compared with plain clojure.test."
   (:require
+   [brisk.run-state :as rs]
+   [brisk.select :as select]
    [brisk.shell.worker :as worker]
    [clojure.test :as t :refer [deftest is testing]]))
 
@@ -101,7 +103,7 @@
 
 (deftest decide-controls-which-vars-run
   (let [seen (volatile! [])
-        decide (fn [select ns-sym var-sym var-meta]
+        decide (fn [select ns-sym _ns-meta var-sym var-meta]
                  (vswap! seen conj [select ns-sym var-sym (boolean (:slow var-meta))])
                  (if (:slow var-meta)
                    {:run? false :reason :skip-meta}
@@ -120,7 +122,7 @@
     (is (= [:ns/start :var/skipped :var/skipped :ns/end] (map :event events)))))
 
 (deftest output-is-captured-per-var
-  (let [events (run-events 'exec.output-test {:decide (fn [_ _ v _] {:run? (= v 'prints-via-println)})})
+  (let [events (run-events 'exec.output-test {:decide (fn [_ _ _ v _] {:run? (= v 'prints-via-println)})})
         end (first (filter #(= :var/end (:event %)) events))]
     (is (= "hello from println\nhello on err\n" (:output end)))
     (testing "without capture there is no :output"
@@ -129,11 +131,33 @@
                                                   *err* (java.io.StringWriter.)]
                                           (run-events 'exec.output-test
                                                       {:capture-output? false
-                                                       :decide (fn [_ _ v _] {:run? (= v 'prints-via-println)})}))))))))))
+                                                       :decide (fn [_ _ _ v _] {:run? (= v 'prints-via-println)})}))))))))))
 
 (deftest pure-helpers
   (is (= 1.5 (worker/duration-ms 1000000 2500000)))
   (is (= {:run [#'inc] :skipped [[#'dec :no]]}
-         (worker/partition-vars (fn [_ _ v _] (if (= v 'inc) {:run? true} {:run? false :reason :no}))
-                                nil 'x [#'inc #'dec]))
+         (worker/partition-vars (fn [_ _ _ v _] (if (= v 'inc) {:run? true} {:run? false :reason :no}))
+                                nil 'x {} [#'inc #'dec]))
       "partition-vars hands decide the var's name and metadata"))
+
+(defn- skip-spec
+  "A `:select` spec as `brisk.select/plan` builds it, with an empty static
+  copy of the namespace metadata so only the real metadata can matter."
+  [pass]
+  {:passes [(merge {:focus [] :skip [] :focus-meta [] :skip-meta [] :suite-focused? false} pass)]
+   :ns-meta {}})
+
+(deftest worker-uses-select-decide-with-real-ns-metadata
+  (testing "kaocha.testable/run-testable: pending vars are skipped, skip-meta too"
+    (let [events (run-events 'exec.pending-test {:decide select/decide
+                                                 :select (skip-spec {:skip-meta [:slow]})})
+          state (reduce rs/apply-event (rs/init {})
+                        (map #(assoc % :worker 0 :at 0) events))]
+      (is (= '{not-written-yet :pending marked-slow :skip-meta}
+             (into {} (keep (fn [e] (when (= :var/skipped (:event e)) [(:var e) (:reason e)]))) events)))
+      (is (= {:total 3 :passed 1 :failed 0 :errored 0 :skipped 2 :running 0}
+             (:vars (rs/summary state))))))
+  (testing "^:kaocha/pending on the ns form is read from the loaded namespace"
+    (let [events (run-events 'exec.ns-pending-test {:decide select/decide :select (skip-spec {})})]
+      (is (= [{:event :var/skipped :ns 'exec.ns-pending-test :var 'whole-ns-is-pending :reason :pending}]
+             (filter #(= :var/skipped (:event %)) events))))))

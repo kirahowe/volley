@@ -398,18 +398,22 @@
   (when (symbol? sym) [(namespace sym) (name sym)]))
 
 (defn- brisk-reporter
-  "Map Kaocha reporter symbols to the closest brisk reporter keyword.
-  Returns `[reporter warnings]`."
+  "Map explicitly requested Kaocha reporter symbols to the closest brisk
+  reporter keyword. Returns `[reporter warnings]`. `kaocha.report/documentation`
+  has a brisk equivalent; every other reporter (dots, progress, custom ones)
+  becomes `:live`, which the shell turns into `:ci` when stdout is not a
+  terminal, with a warning. nil (nothing requested) is `:live` silently."
   [reporter]
-  (if (keyword? reporter)
-    [reporter []]
+  (if (or (nil? reporter) (keyword? reporter))
+    [(or reporter :live) []]
     (let [syms (->vec reporter)
           mapped (map (fn [r]
                         (let [[ns n] (reporter-name r)]
                           (cond
                             (and (= ns "kaocha.report") (= n "documentation")) [:documentation nil]
-                            (contains? #{"kaocha.report" "kaocha.report.progress" "clojure.test"} ns) [:live nil]
-                            :else [:live (str "reporter " (pr-str r) " is not supported, using :live")])))
+                            (contains? #{"kaocha.report" "kaocha.report.progress" "clojure.test"} ns)
+                            [:live (str "reporter " (pr-str r) " has no brisk equivalent, using brisk's live/CI output")]
+                            :else [:live (str "reporter " (pr-str r) " is not supported, using brisk's live/CI output")])))
                       syms)]
       [(or (first (remove #{:live} (map first mapped))) :live)
        (vec (keep second mapped))])))
@@ -473,7 +477,7 @@
          [reporter reporter-warnings]
          (brisk-reporter (pick (when (seq (:reporter cli-options)) (:reporter cli-options))
                                (:reporter raw)
-                               (:kaocha/reporter cfg)))
+                               (:kaocha/reporter raw)))
          suites (->vec (:kaocha/tests cfg))
          tests (mapv suite-view suites)]
      {:tests tests

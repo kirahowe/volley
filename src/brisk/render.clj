@@ -402,6 +402,7 @@
     :error    (paint opts :red " ERROR ")
     :ns-error (paint opts :red " ERROR ")
     :crash    (paint opts :red " CRASH ")
+    :file-error (paint opts :red " ERROR ")
     (paint opts :red (str " " (name kind) " "))))
 
 (defn- header-text [{:keys [kind ns var] :as f}]
@@ -409,6 +410,7 @@
     :ns-error (str (qualified ns nil) "  failed to load")
     :crash    (str (if ns (qualified ns var) (str "worker " (:worker f)))
                    "  worker exited with code " (:exit-code f))
+    :file-error "ns form could not be read"
     (qualified ns var)))
 
 (defn- output-section [opts output]
@@ -438,19 +440,34 @@
        (when (#{:error :ns-error} kind) (error-lines opts error 0))
        (when output? (output-section opts (:output f))))))))
 
+(defn- reported-failures
+  "Failures that get a detailed entry. Namespaces that never ran are listed
+  by `summary` instead."
+  [state]
+  (into [] (remove #(= :not-run (:kind %))) (rs/failures state)))
+
+(defn- report-lines [fs opts]
+  (let [last-of-var? (fn [f g] (not= [(:ns f) (:var f)] [(:ns g) (:var g)]))
+        output?      (map-indexed (fn [i f] (last-of-var? f (get fs (inc i)))) fs)]
+    (->> (concat
+          [(paint opts :red "━━━ Failed Tests ━━━")]
+          (mapcat (fn [f o?] (cons "" (failure-lines opts f o?))) fs output?))
+         (#(finish % opts))
+         (str/join "\n"))))
+
+(defn orphan-report
+  "Detailed report for failures that belong to no namespace that ran (test
+  files whose ns form could not be read), which `ci-lines` never shows. \"\"
+  when there are none."
+  [state opts]
+  (let [fs (filterv #(not (contains? (:namespaces state) (:ns %))) (reported-failures state))]
+    (if (empty? fs) "" (report-lines fs opts))))
+
 (defn failure-report
   "Detailed report for every failure in `state`, or \"\" when there are none."
   [state opts]
-  (let [fs (rs/failures state)]
-    (if (empty? fs)
-      ""
-      (let [last-of-var? (fn [f g] (not= [(:ns f) (:var f)] [(:ns g) (:var g)]))
-            output?      (map-indexed (fn [i f] (last-of-var? f (get fs (inc i)))) fs)]
-        (->> (concat
-              [(paint opts :red "━━━ Failed Tests ━━━")]
-              (mapcat (fn [f o?] (cons "" (failure-lines opts f o?))) fs output?))
-             (#(finish % opts))
-             (str/join "\n"))))))
+  (let [fs (reported-failures state)]
+    (if (empty? fs) "" (report-lines fs opts))))
 
 ;;; Namespace lines and live view
 
@@ -582,6 +599,40 @@
                                    (map vector nfs (concat (rest nfs) [nil])))))))
          (#(finish % opts)))))
 
+;;; Documentation reporter
+
+(defn- doc-var-line [opts v]
+  (let [status (rs/var-status v)
+        name*  (ext (:var v))
+        dur    (when (number? (:duration-ms v)) (paint opts :gray (str " " (fmt-ms (:duration-ms v)))))]
+    (case status
+      :passed  (str "  " (paint opts :green (str "✓ " name*)) dur)
+      :skipped (str "  " (paint opts :yellow (str "- " name*))
+                    (paint opts :gray (str " (skipped" (when-let [r (:reason v)] (str ": " (name r))) ")")))
+      (str "  " (paint opts :red (str "✗ " name*)) dur
+           (when (= :crashed status) (paint opts :red " (worker crashed)"))))))
+
+(defn- doc-ns-lines [opts rec]
+  (concat
+   [(str (paint opts :bold (ext (:ns rec)))
+         (when-let [d (ns-duration rec)] (paint opts :gray (str " " (fmt-ms d)))))]
+   (map #(doc-var-line opts %) (sort-by (comp str :var) (vals (:vars rec))))
+   (case (rs/ns-result rec)
+     :error   [(str "  " (paint opts :red "✗ failed to load"))]
+     :crashed (when (empty? (:vars rec))
+                [(str "  " (paint opts :red "✗ worker crashed"))])
+     nil)
+   [""]))
+
+(defn documentation-lines
+  "Append-only lines for the documentation reporter (Kaocha's
+  `kaocha.report/documentation`): for each namespace that finished since
+  `prev` (or nil), its name and one line per test var with ✓, ✗ or - and
+  its duration. Namespaces are printed whole when they finish, so lines of
+  namespaces running in parallel never interleave."
+  [prev state opts]
+  (finish (mapcat #(doc-ns-lines opts %) (newly-finished prev state)) opts))
+
 ;;; Final summary
 
 (defn- focus-ids [state]
@@ -612,9 +663,24 @@
                        (qualified (:ns %) (:var %)))
                  tests)))))
 
+(def ^:private not-run-reasons
+  {:fail-fast  "stopped by fail-fast"
+   :no-workers "no worker process could be started"
+   :interrupted "interrupted"})
+
+(defn- not-run-lines [opts state]
+  (let [by-reason (group-by val (rs/not-run state))]
+    (when (seq by-reason)
+      (cons (paint opts :yellow "Not run:")
+            (for [[reason entries] (sort-by (comp str key) by-reason)
+                  :let [nses (sort (map (comp str key) entries))]]
+              (str "  " (get not-run-reasons reason (name reason)) ": "
+                   (str/join ", " (take 20 nses))
+                   (when (> (count nses) 20) (str " … " (- (count nses) 20) " more"))))))))
+
 (defn summary
-  "Final block: the counts line, the five slowest tests, and a command to
-  rerun the failures. The counts line has the shape
+  "Final block: the counts line, namespaces that never ran, the five slowest
+  tests, and a command to rerun the failures. The counts line has the shape
   `N tests | P passed | F failed | E errors | S skipped (2.31s)`. The time
   is the span of the events in `state`, so it does not depend on a clock."
   [state opts]
@@ -632,6 +698,7 @@
                    " (" (fmt-ms wall-ms) ")")]
     (->> (concat [""
                   (paint opts style line)]
+                 (when-let [s (seq (not-run-lines opts state))] (cons "" s))
                  (when-let [s (seq (slowest-lines opts state))] (cons "" s))
                  (when (seq ids) (cons "" (rerun-lines opts ids))))
          (#(finish % opts))
