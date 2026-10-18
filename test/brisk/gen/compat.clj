@@ -233,7 +233,7 @@
             ns-patterns (gen/vector (gen/elements ["-test$" "^app\\." ".*"]) 1 2)
             skip-meta (gen/vector meta-key 0 2)
             focus (gen/vector (gen/elements ['app.core-test 'app.core-test/foo :app.x]) 0 2)
-            with-keys (gen/vector (gen/elements [:paths :patterns :skip-meta :focus :hooks]) 0 5)
+            with-keys (gen/vector (gen/elements [:paths :patterns :skip-meta :focus :hooks :skip]) 0 5)
             hooks raw-hooks]
     (let [ks (set with-keys)
           q (fn [unq qual] (if qualified? qual unq))]
@@ -242,6 +242,7 @@
         (:patterns ks) (assoc (q :ns-patterns :kaocha/ns-patterns) ns-patterns)
         (:skip-meta ks) (assoc (q :skip-meta :kaocha.filter/skip-meta) skip-meta)
         (:focus ks) (assoc (q :focus :kaocha.filter/focus) focus)
+        (:skip ks) (assoc :kaocha.testable/skip true)
         (:hooks ks) (merge hooks)))))
 
 (def raw-config

@@ -132,7 +132,8 @@
               (rename-key :skip :kaocha.filter/skip)
               (rename-key :focus :kaocha.filter/focus)
               (rename-key :skip-meta :kaocha.filter/skip-meta)
-              (rename-key :focus-meta :kaocha.filter/focus-meta))]
+              (rename-key :focus-meta :kaocha.filter/focus-meta)
+              (rename-key :skip? :kaocha.testable/skip))]
     (merge-config (first (:kaocha/tests kaocha-defaults)) m)))
 
 (defn- kaocha-normalize
@@ -358,7 +359,7 @@
   #{:kaocha.testable/id :kaocha.testable/type :kaocha.testable/desc
     :kaocha/test-paths :kaocha/source-paths :kaocha/ns-patterns
     :kaocha.filter/skip :kaocha.filter/focus :kaocha.filter/skip-meta
-    :kaocha.filter/focus-meta :kaocha.testable/skip})
+    :kaocha.filter/focus-meta :kaocha.testable/skip :skip?})
 
 (defn- silent-key? [k]
   (or (contains? known-keys k)
@@ -383,15 +384,19 @@
 (defn- suite-view [suite]
   (let [{:kaocha.testable/keys [id type] :kaocha/keys [test-paths source-paths ns-patterns]
          :kaocha.filter/keys [skip focus skip-meta focus-meta]} suite]
-    {:id id
-     :type type
-     :test-paths (->vec test-paths)
-     :source-paths (->vec source-paths)
-     :ns-patterns (->vec ns-patterns)
-     :focus (->vec focus)
-     :skip (->vec skip)
-     :focus-meta (->vec focus-meta)
-     :skip-meta (->vec (distinct (->vec skip-meta)))}))
+    (cond->
+     {:id id
+      :type type
+      :test-paths (->vec test-paths)
+      :source-paths (->vec source-paths)
+      :ns-patterns (->vec ns-patterns)
+      :focus (->vec focus)
+      :skip (->vec skip)
+      :focus-meta (->vec focus-meta)
+      :skip-meta (->vec (distinct (->vec skip-meta)))}
+      ;; kaocha.testable/run-testable never runs a suite marked skipped,
+      ;; even one named on the command line
+      (:kaocha.testable/skip suite) (assoc :skip? true))))
 
 (defn- suite-warnings [suite]
   (let [id (:kaocha.testable/id suite)

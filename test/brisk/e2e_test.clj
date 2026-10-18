@@ -49,6 +49,11 @@
       (is (= 254 exit))
       (is (str/includes? out "No such suite: :nope, valid options: :integration, :unit.")))))
 
+(deftest a-suite-marked-skipped-does-not-run
+  (let [[exit res] (result "skipped-suite" [])]
+    (is (= 0 exit))
+    (is (= '#{app.parse-test/parses-ints app.parse-test/parses-nil} (set (keys (executed res)))))))
+
 (deftest focus-skip-and-meta-filters
   (let [ran (fn [& args] (set (keys (executed (second (result "filters" args))))))]
     (testing "tests.edn :skip-meta, :skip and the default :kaocha/skip"

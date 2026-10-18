@@ -281,6 +281,12 @@
     (is (= #{} (selected plan infos)))
     (is (some #(re-find #"did not match any tests" %) (:warnings plan)))))
 
+(deftest skipped-suite-test
+  (testing "kaocha.testable/run-testable: a suite with :kaocha.testable/skip never runs, even when named"
+    (let [config (update (cfg) :tests conj (assoc (first (:tests (cfg))) :id :other :skip? true))]
+      (is (= [:unit] (mapv :id (:suites (select/plan config infos [])))))
+      (is (= [] (mapv :id (:suites (select/plan config infos [:other]))))))))
+
 (deftest cli-suites-test
   (testing "kaocha.config/apply-cli-args: positional suite ids restrict the run"
     (let [config (update (cfg) :tests conj (assoc (first (:tests (cfg))) :id :other))]

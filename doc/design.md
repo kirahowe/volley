@@ -100,6 +100,7 @@ then in code.
 
 ```clojure
 {:tests            [{:id           :unit            ; keyword
+                     :skip?        true             ; only with :kaocha.testable/skip: never runs
                      :type         :kaocha.type/clojure.test
                      :test-paths   ["test"]
                      :source-paths ["src"]

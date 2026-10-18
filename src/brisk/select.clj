@@ -380,7 +380,7 @@
         unknown (remove all-ids wanted)
         nodes (mapv (fn [s]
                       (cond-> (suite-node s (suite-infos s ns-infos))
-                        (and (seq wanted) (not (contains? wanted (:id s)))) (assoc :skip? true)))
+                        (or (:skip? s) (and (seq wanted) (not (contains? wanted (:id s))))) (assoc :skip? true)))
                     suites)
         global (:filters config)
         {filtered :suites pre-loaded :loaded :keys [warnings unresolved]} (apply-filters nodes global)

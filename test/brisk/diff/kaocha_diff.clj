@@ -73,7 +73,7 @@
 
 (defn- kaocha-view [kconfig cli-options]
   (let [flag (:capture-output cli-options)]
-    {:tests (mapv (fn [s] {:id (:kaocha.testable/id s)
+    {:tests (mapv (fn [s] (cond-> {:id (:kaocha.testable/id s)
                            :type (:kaocha.testable/type s)
                            :test-paths (vec (:kaocha/test-paths s))
                            :source-paths (vec (:kaocha/source-paths s))
@@ -81,7 +81,8 @@
                            :focus (vec (:kaocha.filter/focus s))
                            :skip (vec (:kaocha.filter/skip s))
                            :focus-meta (vec (:kaocha.filter/focus-meta s))
-                           :skip-meta (vec (distinct (:kaocha.filter/skip-meta s)))})
+                           :skip-meta (vec (distinct (:kaocha.filter/skip-meta s)))}
+                            (:kaocha.testable/skip s) (assoc :skip? true)))
                   (:kaocha/tests kconfig))
      :plugins (vec (distinct (map plugin/normalize-name (:kaocha/plugins kconfig))))
      :fail-fast? (boolean (:kaocha/fail-fast? kconfig))
