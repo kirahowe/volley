@@ -5,6 +5,8 @@ Treat them as indications, not a controlled comparison.
 
 ## Conditions
 
+These hold for every section up to "JVM, 2026-10-19", which lists its own.
+
 - Machine: a 16-core Mac.
 - The machine was shared and loaded during every run. The load average was
   12 to 17 for the JVM runs, so the spread between runs is wide.
@@ -59,14 +61,117 @@ both projects. The reader numbers are lower than in the table above for
 both runners; the two sets were taken on different days under different
 load, so compare within a row, not across tables.
 
+## JVM, 2026-10-19
+
+Before and after volley#2 (short JVM suites in the parent's JVM) and
+volley#12 (hook support loaded only when configured).
+
+### Method
+
+- Copies of hosted-clay, reader and secrets in a temporary directory,
+  without `.git`, `.jj`, `.cpcache`, `target`, `node_modules` and
+  `.volley`. Each copy's `deps.edn` got three aliases: Kaocha 1.91.1392
+  (`clojure -M:test:kaocha`), volley at d4e3ef2, before the change
+  (`-M:test:vbase`), and volley with the change (`-M:test:vnew`). The
+  volley aliases override the `:test` alias's volley with a
+  `:local/root`.
+- The parent runs on the JVM, so the workers are JVM processes.
+- Wall time of the whole `clojure` command, from a babashka script that
+  runs the commands one after another and records every run. "Back to
+  back" means five runs of one command, then five of the next.
+  "Alternating" means the two commands take turns, in the order ABBA.
+- Before the measured runs of volley with the change, one run that
+  writes `.volley/history.edn` and `.volley/ns-infos.edn`, as any earlier
+  run on a developer's machine does. Without them the first run starts
+  worker JVMs as before: 9.1s on hosted-clay.
+- In the secrets copy, `init_test.clj` and `coordinate_test.clj` were
+  moved out of `test/`. They need a git checkout, and when a namespace
+  fails to load, Kaocha fails the whole suite. Both runners then reported
+  322 tests and the same two failing tests (three failed assertions),
+  which check the copy's `deps.edn` aliases and a copied rendered book.
+  Both runners reported the same counts as each other on all three
+  projects.
+- No other agent ran. Other processes still kept three to four of the 16
+  cores busy (two `yes` processes, Finder, BTLEServer): the load average
+  was 8 to 10 during the hosted-clay runs and up to 19 during reader.
+
+### hosted-clay (70 tests, 320 assertions)
+
+Back to back, five runs each:
+
+| | Kaocha | volley before | volley after |
+|---|---|---|---|
+| median | 6.19s | 9.86s | 6.13s |
+| runs | 6.46, 6.17, 6.19, 6.15, 6.21 | 9.72, 9.97, 9.71, 9.86, 9.99 | 6.28, 6.09, 6.26, 6.10, 6.13 |
+
+Alternating with Kaocha, seven rounds: Kaocha 6.29s median (6.26 to
+6.37), volley after 6.24s (6.21 to 6.37).
+
+Where the time went before the change. Every worker JVM loads the app,
+and the first test in each worker also starts its lazy setup, about 5s
+per worker; four workers did that at once. With one worker the run took
+9.0s. On top of the tests, the parent JVM took 1.2s from its start to
+loading volley, a worker took 0.44s from spawn to ready, and its exit
+took another 0.3s.
+
+After the change the run stays in the parent's JVM (`volley.runtime/worker-plan`).
+The parent's own load, measured per file, went from 0.81s to 0.58s: on a
+run where no test file changed it no longer loads the parser (edamame and
+tools.reader, about 0.35s), and it loads watch mode and `clojure.pprint`
+only when it needs them. hosted-clay gets part of that back because the
+app loads tools.reader itself.
+
+### Large suites
+
+| Project | Kaocha (one run) | volley before | volley after |
+|---|---|---|---|
+| reader (244 tests, 1440 assertions) | 103.9s | 40.3, 40.5, 43.4s | 38.6, 39.7, 40.6s |
+| secrets (322 tests, 3455 assertions) | 104.1s | 69.8, 69.9s | 69.5, 69.6s |
+
+volley before and after alternated. Their recent runs take more than 10
+seconds, so both projects keep four worker JVMs and their gains.
+
+### JIT flag
+
+Workers start with `-XX:TieredStopAtLevel=1`. Medians of three runs of
+volley before the change, with the flag and without it
+(`-J-XX:TieredStopAtLevel=4`, which the workers then inherit), and of
+Kaocha with the flag added and without:
+
+| Run | C1 only | full JIT |
+|---|---|---|
+| hosted-clay, 1 worker | 8.98s | 7.83s |
+| hosted-clay, 4 workers | 9.66s | 10.45s |
+| reader, 4 workers (two runs) | 39.7s | 39.7s |
+| secrets, 4 workers (two runs) | 69.9s | 70.9s |
+| Kaocha on hosted-clay, one JVM | 8.18s | 6.36s |
+
+With one JVM the full JIT wins; with four, the C2 compiler threads compete
+for the cores. The flag stays: it is applied only to worker processes, and
+an in-process run uses the parent's own JVM settings.
+
+### Worker start-to-ready (volley#12)
+
+Time from spawning a JVM worker on the hosted-clay classpath to its
+`:worker/ready` line, 15 runs of each variant, alternating:
+
+| JVM options | before | after |
+|---|---|---|
+| `-XX:TieredStopAtLevel=1` (the default) | 428ms | 408ms |
+| none | 495ms | 473ms |
+
+A worker that gets no `:configure` message no longer loads
+`volley.shell.hooks`, which saves about 20ms per JVM worker.
+
 ## Conclusions
 
-- On small suites volley gains little. On a short JVM suite it is slower
-  than Kaocha by about half a second, because the parent and a worker each
-  start a JVM. The 23-test app is the example: 2.2 to 2.8s with Kaocha, 2.7s
-  with volley. A suite that takes Kaocha under about 10 seconds may be no
-  faster: hosted-clay took 9.3s with volley in the adoption test against
-  6.3 and 9.8s with Kaocha.
+- On small suites volley gains little. On a short JVM suite volley used
+  to be slower than Kaocha, because the parent and every worker each
+  start a JVM and load the project: hosted-clay took 9.9s against
+  Kaocha's 6.2s. Since volley#2, a JVM run whose recent runs took at most
+  10 seconds runs in the parent's JVM and takes about as long as Kaocha
+  (6.1s). The first run in a checkout, or in CI without a cached
+  `.volley/`, still starts worker JVMs.
 - Gains come from overlapping namespaces that take a long time. In secrets
   the one 62-second test sets the floor; in reader, embedded Postgres setup
   in several namespaces overlaps.
@@ -78,7 +183,9 @@ load, so compare within a row, not across tables.
 
 ## Not measured
 
-- No quiet-machine runs.
+- No runs on an idle machine. The quietest ones, on 2026-10-19, still had
+  three to four cores busy with other processes.
+- The 23-test app since volley#2.
 - No comparison with Kaocha on babashka.
 - No memory measurements. N JVM workers can use N times the parent's
   `-Xmx`.
