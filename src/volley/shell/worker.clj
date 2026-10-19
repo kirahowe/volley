@@ -545,6 +545,13 @@
                    v]))
         bindings))
 
+(defn- bindings-of
+  "`[bmap error]`: `cmd`'s `:kaocha/bindings` as a `with-bindings` map, or
+  why they could not be made."
+  [cmd]
+  (try [(binding-map (:bindings cmd)) nil]
+       (catch Throwable e [nil e])))
+
 (defn- run-bound
   "The part of `run-assignment!` inside `:kaocha/bindings`: setup, load,
   run, and the namespace's terminal events. `bind-error` is why the
@@ -580,8 +587,7 @@
   ([emit! decide hs {:keys [ns run-id] :as cmd}]
    (let [t0 (System/nanoTime)]
      (emit! {:event :ns/start :ns ns :run-id run-id})
-     (let [[bmap bind-error] (try [(binding-map (:bindings cmd)) nil]
-                                  (catch Throwable e [nil e]))]
+     (let [[bmap bind-error] (bindings-of cmd)]
        (with-bindings* (or bmap {})
          #(run-bound emit! decide hs cmd t0 bind-error))))))
 
@@ -609,29 +615,24 @@
     (emit! (cond-> {:event :worker/error :phase :shutdown :error (safely #(encode-throwable e))}
              (hook-of e) (assoc :hook (hook-of e))))))
 
-(defn- setup-bound
-  "`volley.shell.hooks/setup` for `cmd`'s suite inside its
-  `:kaocha/bindings`, as `run-assignment!` does it. When the bindings
-  cannot be made, `hs` unchanged: `run-assignment!` reports that."
-  [hs {:keys [suite bindings]}]
-  (if-let [bmap (try (binding-map bindings) (catch Throwable _ nil))]
-    (with-bindings* bmap #(hooks/setup hs suite))
-    hs))
-
 (defn- run-command!
   "Run `{:op :run}` command `cmd`. The first one of a suite runs inside the
   suite's `wrap-run` hooks, followed there by the rest of the worker's
   commands (`(more hs)`, which returns the final state), so the suite is
   wrapped once per worker; that returns the final state as `(reduced
   hs)`. Returns the next state."
-  [emit! decide more hs cmd]
-  (if-not (hooks/wrap-suite? hs (:suite cmd))
-    (run-assignment! emit! decide hs cmd)
-    (let [[hs ran?] (hooks/wrap-suite (setup-bound hs cmd) (:suite cmd)
-                                      #(more (run-assignment! emit! decide % cmd)))]
-      (if ran?
-        (reduced hs)
-        (run-assignment! emit! decide hs cmd)))))
+  [emit! decide more hs {:keys [suite] :as cmd}]
+  ;; bmap is nil when the bindings cannot be made: run-assignment! reports it
+  (let [[bmap] (bindings-of cmd)]
+    (if-not (and bmap (hooks/wrap-suite? hs suite))
+      (run-assignment! emit! decide hs cmd)
+      ;; inside :kaocha/bindings, as Kaocha's api/run binds the whole run
+      (let [[hs ran?] (with-bindings* bmap
+                        #(hooks/wrap-suite (hooks/setup hs suite) suite
+                                           (fn [hs] (more (run-assignment! emit! decide hs cmd)))))]
+        (if ran?
+          (reduced hs)
+          (run-assignment! emit! decide hs cmd))))))
 
 (defn- handle-line!
   "Handle one stdin line with hook state `hs`; `more` serves the commands

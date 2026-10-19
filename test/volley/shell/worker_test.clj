@@ -370,3 +370,21 @@
     (is (= 1 (count errors)))
     (is (str/includes? (ex-message (first errors)) "wrap-run hook"))
     (is (= "after suite" (ex-message (ex-cause (first errors)))))))
+
+(def ^:dynamic *bound*
+  "Bound by `:kaocha/bindings` in the wrap-run tests."
+  :root)
+
+(deftest a-suite-wrap-run-runs-inside-the-bindings
+  ;; kaocha.api/run binds :kaocha/bindings around the whole run
+  (reset! wrap-log [])
+  (let [hook '(fn [run]
+                (fn [t p]
+                  (swap! volley.shell.worker-test/wrap-log conj
+                         [(:kaocha.testable/id t) volley.shell.worker-test/*bound*])
+                  (run t p)))]
+    (serve-lines [{:op :configure :hooks {:wrap-run [hook]} :config {}}
+                  {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit
+                   :bindings {'volley.shell.worker-test/*bound* :bound}}
+                  {:op :shutdown}])
+    (is (= [:unit :bound] (first @wrap-log)))))
