@@ -150,7 +150,12 @@
   (is (= {:run [#'inc] :skipped [[#'dec :no]]}
          (worker/partition-vars (fn [_ _ _ v _] (if (= v 'inc) {:run? true} {:run? false :reason :no}))
                                 nil 'x {} [#'inc #'dec]))
-      "partition-vars hands decide the var's name and metadata"))
+      "partition-vars hands decide the var's name and metadata")
+  (testing "runs-namespace?: something to run, or a pending var, in a namespace that is not pending"
+    (is (worker/runs-namespace? {} {:run [#'inc] :skipped []}))
+    (is (worker/runs-namespace? {} {:run [] :skipped [[#'inc :skip] [#'dec :pending]]}))
+    (is (not (worker/runs-namespace? {} {:run [] :skipped [[#'inc :skip]]})))
+    (is (not (worker/runs-namespace? {:kaocha/pending true} {:run [] :skipped [[#'inc :pending]]})))))
 
 (defn- skip-spec
   "A `:select` spec as `volley.select/plan` builds it, with an empty static
@@ -172,7 +177,17 @@
   (testing "^:kaocha/pending on the ns form is read from the loaded namespace"
     (let [events (run-events 'exec.ns-pending-test {:decide filters/decide :select (skip-spec {})})]
       (is (= [{:event :var/skipped :ns 'exec.ns-pending-test :var 'whole-ns-is-pending :reason :pending}]
-             (filter #(= :var/skipped (:event %)) events))))))
+             (filter #(= :var/skipped (:event %)) events)))
+      (is (not-any? #(= :ns/error (:event %)) events) "and its :once fixture does not run"))))
+
+(deftest all-pending-namespace-runs-its-once-fixtures
+  (testing "kaocha.testable/run-testable runs a namespace unless every test in it is skipped, and pending is not skipped"
+    (let [runs @(requiring-resolve 'exec.all-pending-test/once-runs)
+          _ (reset! runs 0)
+          events (run-events 'exec.all-pending-test {:decide filters/decide :select (skip-spec {})})]
+      (is (= 1 @runs))
+      (is (= [:ns/start :var/skipped :var/skipped :ns/end] (map :event events))
+          "no :each fixture runs, so nothing fails, and no hook warning"))))
 
 (deftest a-failing-defspec-reports-its-check-at-the-var
   (let [events (run-events 'exec.property-test)

@@ -8,27 +8,36 @@
   fail-fast inside a var) are listed under Decisions in doc/design.md and
   checked here for exactly that difference."
   (:require
+   [babashka.fs :as fs]
    [volley.diff.kaocha-result :as kr]
    [volley.e2e.support :as e2e]
    [clojure.test :refer [deftest is testing]]))
 
-(defn- kaocha
-  "Run Kaocha in a copy of `project`; returns `[exit summary]` where summary
-  is what `volley.diff.kaocha-result` printed."
-  [project args]
-  (let [dir (e2e/copy-project project)
-        cp (e2e/classpath (e2e/parent-classpath) "src")
+(defn- kaocha-in
+  "Run Kaocha in project directory `dir`; returns `[exit summary]` where
+  summary is what `volley.diff.kaocha-result` printed."
+  [dir args]
+  (let [cp (e2e/classpath (e2e/parent-classpath) "src")
         {:keys [exit out err]} (e2e/sh dir (into ["bb" "-cp" cp "-m" "kaocha.runner/-main"
                                                   "--plugin" "volley.diff.kaocha-result/plugin"]
                                                  args))]
     [exit (or (e2e/last-edn-line out kr/marker true)
               (throw (ex-info "Kaocha printed no result" {:out out :err err})))]))
 
-(defn- volley
+(defn- kaocha
+  "`kaocha-in` a copy of `project`."
   [project args]
-  (let [{:keys [exit out err]} (e2e/volley (e2e/copy-project project) (conj (vec args) "--print-result"))]
+  (kaocha-in (e2e/copy-project project) args))
+
+(defn- volley-in
+  [dir args]
+  (let [{:keys [exit out err]} (e2e/volley dir (conj (vec args) "--print-result"))]
     [exit (or (e2e/print-result out)
               (throw (ex-info "volley printed no result" {:out out :err err})))]))
+
+(defn- volley
+  [project args]
+  (volley-in (e2e/copy-project project) args))
 
 (defn- comparable
   "Executed vars with status and counts, plus the pending ones."
@@ -85,6 +94,17 @@
                           ;; kaocha.type.var: a var with no assertion fails
                           ["zero-assertions" []]]]
     (same-run? project args)))
+
+(deftest once-fixtures-of-an-all-pending-namespace-run-like-kaocha
+  (testing "kaocha.testable/run-testable runs a namespace whose vars are all pending, but not a pending namespace"
+    (let [kdir (e2e/copy-project "pending-fixtures")
+          bdir (e2e/copy-project "pending-fixtures")
+          [kexit kres] (kaocha-in kdir [])
+          [bexit bres] (volley-in bdir [])
+          ran (fn [dir] (set (for [f ["all-pending.ran" "whole-ns.ran"] :when (fs/exists? (fs/path dir f))] f)))]
+      (is (= #{"all-pending.ran"} (ran kdir) (ran bdir)) "which :once fixtures ran")
+      (is (= (comparable kres) (comparable bres)))
+      (is (= 0 kexit bexit)))))
 
 (deftest fail-fast-stops-after-the-failing-var-like-kaocha
   (testing "kaocha.testable/run-testables stops at the first failed var; so does volley's worker"

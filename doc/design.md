@@ -406,9 +406,11 @@ A test var opens (`:var/start`) before its `:each` fixtures run and
 closes (`:var/end`) after them, so an assertion in an `:each` fixture
 counts for that var, as in Kaocha. An assertion in a `:once` fixture has
 `:var nil` and counts for the namespace; the passing ones arrive as
-`:pass` in the namespace's `:ns/end`. A namespace with no var to run
-(all skipped by the filters, or pending) runs no fixtures, as Kaocha
-does not run a namespace whose tests are all skipped.
+`:pass` in the namespace's `:ns/end`. A namespace whose vars the filters
+all skip runs no fixtures, and neither does a `^:kaocha/pending`
+namespace, as Kaocha does not run either. A pending var is not skipped
+in Kaocha (`kaocha.testable/run-testable`), so a namespace whose vars
+are all pending still runs its `:once` fixtures (but no `:each` ones).
 
 `:capture-output?` means the worker binds `*out*`/`*err*` per test and
 returns the text in `:var/end`; the parent shows it only for failed tests.

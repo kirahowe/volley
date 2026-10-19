@@ -54,6 +54,17 @@
           {:run [] :skipped []}
           vars))
 
+(defn runs-namespace?
+  "Whether a namespace with metadata `ns-meta` and vars split by
+  `partition-vars` is run at all: its hooks and `:once` fixtures around
+  the vars in `run`. `kaocha.testable/run-testable` runs a namespace
+  unless it is pending itself or every test in it is skipped, and a
+  pending var is not skipped, so a namespace whose vars are all pending
+  still runs its `:once` fixtures."
+  [ns-meta {:keys [run skipped]}]
+  (boolean (and (not (:kaocha/pending ns-meta))
+                (or (seq run) (some (fn [[_ reason]] (= :pending reason)) skipped)))))
+
 (defn- throwable? [x] (instance? Throwable x))
 
 (defn safely
@@ -389,8 +400,8 @@
                 *err* *err*]
         (try
           (let [[hs _] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
-            ;; vars is never empty, so a run that reached none was never started
-            (when (empty? (:reached @progress))
+            ;; with vars to run, a run that reached none was never started
+            (when (and (seq vars) (empty? (:reached @progress)))
               (emit! {:event :worker/warning
                       :message (str "the wrap-run hook did not call run for " ns-sym
                                     ", so its " (count vars) " test" (when (next vars) "s")
@@ -502,18 +513,17 @@
       (let [ns-obj (find-ns ns)
             [hs select] (settle-select hs emit! (:select cmd) preload)
             select (filters/prepare select)
-            {:keys [run skipped]}
-            (partition-vars decide select ns (ns-metadata select ns-obj) (test-vars-of ns-obj))]
+            ns-meta (ns-metadata select ns-obj)
+            {:keys [run skipped] :as parts}
+            (partition-vars decide select ns ns-meta (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
-        (if (empty? run)
-          ;; Nothing selected: like Kaocha, which does not run a namespace
-          ;; whose tests are all skipped, run no fixtures either.
-          [hs nil :run 0]
+        (if (runs-namespace? ns-meta parts)
           (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
                                                                 :fail-fast? (boolean fail-fast?)}
                                        run)]
-            [hs e :run pass]))))))
+            [hs e :run pass])
+          [hs nil :run 0])))))
 
 (defn- binding-map
   "Kaocha's `:kaocha/bindings` (`{var-sym value}`) as a var -> value map for
