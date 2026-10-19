@@ -674,7 +674,9 @@ impossible.
 **Run state across runs.** The UI keeps the failures of the last run per
 namespace, replaces them for the namespaces a run covered, and carries the
 rest, so PASS means nothing in the project failed, not that the affected
-subset passed. Failures of namespaces that no longer exist are dropped.
+subset passed. A namespace the filters left unselected (none of its vars
+ran) does not count as covered, so its failures carry over. Failures of
+namespaces that no longer exist are dropped.
 
 **Cancel.** When a debounced change (or `a`, `f`, `Enter`, `c`) arrives
 during a run, the shell kills the workers by handle, waits for their exit
@@ -729,8 +731,11 @@ set.
 Inputs: `{:event :start}`, `{:event :key :char c}`,
 `{:event :files-changed ...}`, `{:event :tick :at ms}` and
 `{:event :run/finished :outcome o :known #{ns} :empty? bool}`. An empty plan
-(nothing affected, or a filter that matches nothing) finishes at once with
-`:empty? true` and prints `No test namespaces matched.`
+(nothing affected, or a namespace filter that matches nothing) finishes at
+once with `:empty? true` and prints `No test namespaces matched.` A test-name
+filter never empties the plan; when it matches nothing, every namespace
+loads and finishes unselected, and the run ends with Kaocha's `All N tests
+were skipped` warning (`rs/all-skipped`).
 
 ## Behaviour notes
 
