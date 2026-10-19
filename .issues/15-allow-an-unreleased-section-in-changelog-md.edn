@@ -1,6 +1,6 @@
 {:id 15
  :title "Allow an Unreleased section in CHANGELOG.md"
- :status :ready
+ :status :review
  :type :chore
  :priority :p3
  :created "2026-10-18"

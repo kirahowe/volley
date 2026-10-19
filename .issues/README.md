@@ -18,7 +18,6 @@
 | [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
 | [13](13-keep-failures-of-vars-a-watch-t-filter-skips.md) | Keep failures of vars a watch t filter skips | bug | P3 |
 | [14](14-recompute-the-randomize-seed-when-tests-edn-changes-in.md) | Recompute the randomize seed when tests.edn changes in watch mode | bug | P3 |
-| [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |
 
 ### Review
 
@@ -31,6 +30,7 @@
 | [7](7-exit-249-when-a-plugin-namespace-defines-no-plugin.md) | Exit 249 when a plugin namespace defines no plugin | bug | P3 |
 | [10](10-notice-deps-edn-changes-in-watch-mode-and-the-jvm-classpath.md) | Notice deps.edn changes in watch mode and the JVM classpath cache | feature | P3 |
 | [11](11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md) | Run a namespace found under two test paths twice, as Kaocha does | bug | P3 |
+| [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |
 
 ## Done
 
