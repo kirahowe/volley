@@ -20,7 +20,7 @@
    :post-load      {:where :worker :when "after each namespace the worker loads"}
    :pre-run        {:where :worker :when "once per worker, before the tests of its first namespace"}
    :post-run       {:where :worker :when "once per worker, when it is shut down cleanly"}
-   :wrap-run       {:where :worker :when "around the run of each namespace and each var"}
+   :wrap-run       {:where :worker :when "around the run of each namespace and each var, and of each suite once per worker"}
    :pre-test       {:where :worker :when "before each namespace and each var; a suite's own: once per worker"}
    :post-test      {:where :worker :when "after each var and each namespace; a suite's own: at shutdown"}
    :pre-load-test  {:where :worker :when "before each namespace is required; for the suite once per worker"}

@@ -4,6 +4,7 @@
   (:require
    [volley.filters :as filters]
    [volley.order :as order]
+   [volley.protocol :as protocol]
    [volley.run-state :as rs]
    [volley.shell.hooks :as hooks]
    [volley.shell.worker :as worker]
@@ -322,3 +323,50 @@
             (str "the wrap-run hook did not call run for exec.pass-test/strings,"
                  " so it did not run (Kaocha does not run it either)")]
            (keep #(when (= :worker/warning (:event %)) (:message %)) @events)))))
+
+(defn- serve-lines
+  "Serve `commands` to the worker's command loop. Returns its events and
+  final hook state."
+  [commands]
+  (let [lines (volatile! (map protocol/encode-command commands))
+        events (volatile! [])
+        read-line (fn [] (let [[l & more] @lines] (vreset! lines more) l))
+        hs (worker/serve #(vswap! events conj %) worker/run-everything read-line)]
+    [@events hs]))
+
+(deftest a-suite-is-wrapped-once-per-worker-around-all-its-namespaces
+  (reset! wrap-log [])
+  (let [[events hs] (serve-lines [{:op :configure :hooks {:wrap-run [logging-wrap-run]} :config {}}
+                                  {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit}
+                                  {:op :run :ns 'exec.sync-test :run-id 2 :suite :unit}
+                                  {:op :shutdown}])
+        log @wrap-log]
+    (is (= [[:in :unit] [:out :unit]] (filter #(= :unit (second %)) log)) "once per worker")
+    (is (= [[:in :unit] [:out :unit]] [(first log) (last log)]) "around both namespaces")
+    (is (some #{[:in :exec.sync-test]} log))
+    (is (= 2 (count (filter #(= :ns/end (:event %)) events))))
+    (is (= [] (hooks/shutdown hs)))))
+
+(deftest a-suite-wrap-run-that-throws-before-running-is-a-setup-error
+  (let [hook '(fn [run] (fn [t p] (if (= :unit (:kaocha.testable/id t)) (throw (ex-info "no suite" {})) (run t p))))
+        [events] (serve-lines [{:op :configure :hooks {:wrap-run [hook]} :config {}}
+                               {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit}
+                               {:op :shutdown}])
+        error (first (filter #(= :ns/error (:event %)) events))]
+    (is (= :setup (:phase error)))
+    (is (str/includes? (:message (:error error)) "no suite"))
+    (is (not-any? #(= :var/start (:event %)) events))))
+
+(deftest a-suite-wrap-run-that-throws-after-running-fails-at-shutdown
+  (let [hook '(fn [run]
+                (fn [t p]
+                  (let [r (run t p)]
+                    (if (= :unit (:kaocha.testable/id t)) (throw (ex-info "after suite" {})) r))))
+        [events hs] (serve-lines [{:op :configure :hooks {:wrap-run [hook]} :config {}}
+                                  {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit}
+                                  {:op :shutdown}])
+        errors (hooks/shutdown hs)]
+    (is (= {:pass 4 :fail 0 :error 0} (counts events)))
+    (is (= 1 (count errors)))
+    (is (str/includes? (ex-message (first errors)) "wrap-run hook"))
+    (is (= "after suite" (ex-message (ex-cause (first errors)))))))

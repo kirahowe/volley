@@ -62,6 +62,9 @@
    :suites-set-up #{}
    :suites-loaded #{}
    :suites-tested #{}
+   :suites-wrapped #{}
+   :suites-unrun #{}
+   :late-errors []
    :loaded {}
    :results {}})
 
@@ -236,14 +239,60 @@
                           (run-chain :pre-test (own hs suite :pre-test) t (plan hs)))
                         (update hs :suites-tested conj suite))))))))
 
+(defn wrap-suite?
+  "True when `suite` still has to be wrapped by the `wrap-run` hooks in
+  this worker: there are some, and its first namespace has not run."
+  [hs suite]
+  (boolean (and (active? hs)
+                (seq (get-in hs [:msg :hooks :wrap-run]))
+                (not (contains? (:suites-wrapped hs) suite)))))
+
+(defn- wrap-error
+  "`e`, thrown by calling the wrapped run function, named as a `wrap-run`
+  hook error unless a hook error already names it."
+  [hs e]
+  (if (keyword? (:hook (ex-data (unwrap e))))
+    e
+    (let [entries (get-in hs [:msg :hooks :wrap-run])]
+      (hook-error :wrap-run (if (next entries) entries (first entries)) e))))
+
+(defn wrap-suite
+  "Call the `wrap-run` hooks once with the testable of `suite` around
+  `(body hs)`, which does the rest of this worker's work and returns the
+  final state, as Kaocha wraps the run of a suite. Returns `[hs ran?]`:
+  with `ran?`, the state `body` returned (plus what a hook threw after it,
+  kept for `shutdown`); without, `hs` with `suite` marked unrun, or with
+  the setup error when the hooks did not resolve or one threw first."
+  [hs suite body]
+  (if (setup-error hs)
+    [hs false]
+    (let [hs (update hs :suites-wrapped conj suite)
+          end (volatile! nil)
+          base (fn [testable _plan]
+                 (let [final (vreset! end (body hs))]
+                   (assoc testable :kaocha.result/tests (get-in final [:results suite] []))))]
+      (try ((run-chain :wrap-run (top hs :wrap-run) base) (suite-testable hs suite) (plan hs))
+           (if-let [final @end]
+             [final true]
+             [(update hs :suites-unrun conj suite) false])
+           (catch ^:sci/error Throwable e
+             (let [e (wrap-error hs e)]
+               (if-let [final @end]
+                 [(update final :late-errors conj e) true]
+                 [(assoc hs :setup-error e) false])))))))
+
 (defn run-ns
   "Run a namespace: `pre-test` with its testable, `run` (a fn of no
   arguments returning the var results) wrapped by the `wrap-run` hooks,
   then `post-test` with the result. Returns `[hs result]`; throws when a
-  hook does."
+  hook does. In a suite whose `wrap-run` did not call run it runs
+  nothing."
   [hs suite ns-sym ns-obj run]
-  (if-not (active? hs)
-    [hs (run)]
+  (cond
+    (not (active? hs)) [hs (run)]
+    ;; the suite's wrap-run did not call run, so Kaocha runs nothing in it
+    (contains? (:suites-unrun hs) suite) [hs (assoc (testable/ns-testable ns-sym) :kaocha.result/tests [])]
+    :else
     (let [p (plan hs)
           t (assoc (testable/ns-testable ns-sym) :kaocha.ns/ns ns-obj :kaocha.testable/meta (meta ns-obj))
           t (run-chain :pre-test (top hs :pre-test) t p)
@@ -312,7 +361,8 @@
 (defn shutdown
   "When the worker is shut down cleanly: `post-test` with each suite
   testable this worker ran, then `post-run` with the result. Returns the
-  Throwables hooks threw (it calls every hook regardless)."
+  Throwables hooks threw (it calls every hook regardless), with those a
+  suite's `wrap-run` threw after its run first."
   [hs]
   (if-not (and (active? hs) (:started? hs) (not (setup-error hs)))
     []
@@ -326,7 +376,7 @@
           suite-errors (mapv suite-done (sort-by str (:suites-tested hs)))
           run-error (when (:ran? hs)
                       (attempt #(run-chain :post-run (top hs :post-run) (result-plan hs))))]
-      (vec (remove nil? (conj suite-errors run-error))))))
+      (vec (remove nil? (concat (:late-errors hs) suite-errors [run-error]))))))
 
 (defn post-summary!
   "Run the `post-summary` hooks `entries` in this process (the parent)

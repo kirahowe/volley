@@ -32,6 +32,15 @@
     (is (< (index-of entries #(= :suite-after (second %)))
            (index-of entries #(= :post-run (second %))))
         "the suite's post-test, then post-run, at shutdown")
+    (is (= 1 (count (filter #{:unit} wrapped))) "the suite is wrapped once per worker")
+    (is (< (index-of entries #(= :suite-setup (second %)))
+           (at :wrap-run :unit)
+           (apply min (map #(at :wrap-run %) nses)))
+        "the suite's wrap-run starts after the worker's setup, before its namespaces run")
+    (is (< (apply max (map post-test nses))
+           (at :wrap-run-end :unit)
+           (index-of entries #(= :suite-after (second %))))
+        "and ends after they ran, before the suite's post-test")
     (doseq [n nses]
       (let [order [(at :pre-load-test n) (index-of entries #(and (= :post-load-test (second %)) (= n (first (nth % 2)))))
                    (at :pre-test n) (at :wrap-run n) (at :wrap-run-end n) (post-test n)]]

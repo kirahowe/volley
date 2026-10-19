@@ -574,7 +574,7 @@ worker passes holds only the namespaces that worker has loaded so far.
 | `post-load` | each worker | after every namespace it loads, with the plan so far |
 | `pre-run` | each worker | once, before the tests of its first namespace |
 | `post-run` | each worker | once, when it is shut down cleanly |
-| `wrap-run` | each worker | wraps the run of each namespace and each var, between its `pre-test` and `post-test` (Kaocha also wraps suites) |
+| `wrap-run` | each worker | wraps the run of each namespace and each var, between its `pre-test` and `post-test`; with the suite testable once per worker (see below) |
 | `pre-test` / `post-test` (top level) | each worker | around each namespace and each var; with the suite testable once per worker, before its first namespace of the suite and at shutdown |
 | `pre-test` / `post-test` on a suite (and `before`/`after`) | each worker | with the suite testable, once per worker as above |
 | `pre-load-test` / `post-load-test` | each worker | around each namespace's require; with the suite testable once per worker |
@@ -596,6 +596,20 @@ loaded more than its first namespace, so spec or malli instrumentation
 done there misses what later namespaces define; `post-load` runs after
 each load and covers them.
 
+Kaocha calls `wrap-run` with each suite once per run. No volley process
+runs a whole suite, so each worker calls it with the suite testable
+once, around everything it does for that suite
+(`volley.shell.worker/serve`). The call starts after the worker's setup
+hooks (`:volley/worker-setup`, `pre-load`, the suite's `pre-load-test`)
+and before the suite's first namespace loads, and it returns when the
+worker shuts down, before the suite's `post-test`. In a multi-process
+run a suite-level `wrap-run` is therefore called once per worker, not
+once per run. The worker reads its later commands inside that call, so a
+`binding` the hook makes also covers any other suite the worker runs
+afterwards. The suite's `pre-test` runs inside the call, once the first
+namespace has loaded; Kaocha calls it before. If the suite's `wrap-run`
+never calls `run`, the worker runs none of that suite's namespaces.
+
 Hooks a suite cannot have in Kaocha (`pre-load` on a suite, say), unknown
 hook keys, entries that are neither qualified symbols nor lists, and hook
 keys without the plugin are warnings.
@@ -615,7 +629,9 @@ and counts as one failure per hook and message, however many workers
 it failed in, since Kaocha runs `post-run` once; the report lists the
 workers. A `wrap-run` hook that never calls `run` leaves the namespace's
 (or the var's) tests unrun: Kaocha then reports nothing and exits 0, and
-so does volley, with a warning naming the namespace or var.
+so does volley, with a warning naming the namespace or var. A suite's
+`wrap-run` that throws before calling `run` is a setup error; one that
+throws after it fails at shutdown, like a shutdown hook.
 In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker stopped early, by
 fail-fast or a watch cancel, is asked to shut down and killed only if it

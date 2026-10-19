@@ -609,14 +609,39 @@
     (emit! (cond-> {:event :worker/error :phase :shutdown :error (safely #(encode-throwable e))}
              (hook-of e) (assoc :hook (hook-of e))))))
 
+(defn- setup-bound
+  "`volley.shell.hooks/setup` for `cmd`'s suite inside its
+  `:kaocha/bindings`, as `run-assignment!` does it. When the bindings
+  cannot be made, `hs` unchanged: `run-assignment!` reports that."
+  [hs {:keys [suite bindings]}]
+  (if-let [bmap (try (binding-map bindings) (catch Throwable _ nil))]
+    (with-bindings* bmap #(hooks/setup hs suite))
+    hs))
+
+(defn- run-command!
+  "Run `{:op :run}` command `cmd`. The first one of a suite runs inside the
+  suite's `wrap-run` hooks, followed there by the rest of the worker's
+  commands (`(more hs)`, which returns the final state), so the suite is
+  wrapped once per worker; that returns the final state as `(reduced
+  hs)`. Returns the next state."
+  [emit! decide more hs cmd]
+  (if-not (hooks/wrap-suite? hs (:suite cmd))
+    (run-assignment! emit! decide hs cmd)
+    (let [[hs ran?] (hooks/wrap-suite (setup-bound hs cmd) (:suite cmd)
+                                      #(more (run-assignment! emit! decide % cmd)))]
+      (if ran?
+        (reduced hs)
+        (run-assignment! emit! decide hs cmd)))))
+
 (defn- handle-line!
-  "Handle one stdin line with hook state `hs`. Returns the next state, or
-  :shutdown to stop."
-  [emit! decide hs line]
+  "Handle one stdin line with hook state `hs`; `more` serves the commands
+  after it (see `run-command!`). Returns the next state, `(reduced hs)`
+  when `more` already served the rest, or :shutdown to stop."
+  [emit! decide more hs line]
   (let [{:keys [kind command error]} (protocol/decode-command line)]
     (case kind
       :command (case (:op command)
-                 :run (run-assignment! emit! decide hs command)
+                 :run (run-command! emit! decide more hs command)
                  :configure (hooks/init command)
                  :shutdown :shutdown
                  (do (binding [*out* *err*] (println "volley worker: unknown op" (:op command))) hs))
@@ -634,6 +659,25 @@
           (.put lines line)
           (recur))
       (.put lines ::eof))))
+
+(defn serve
+  "Handle the parent's commands, a line from `(read-line)` at a time, until
+  `{:op :shutdown}` or the end of input (nil). Returns the final hook
+  state. Tests get an empty `*in*`, so a test that reads it cannot block
+  on or swallow a command."
+  ([emit! decide read-line] (serve emit! decide read-line (hooks/init nil)))
+  ([emit! decide read-line hs]
+   (let [more #(serve emit! decide read-line %)]
+     (loop [hs hs]
+       (if-let [line (read-line)]
+         (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
+                         (handle-line! emit! decide more hs line))]
+           (flush)
+           (cond
+             (= :shutdown next-hs) hs
+             (reduced? next-hs) @next-hs
+             :else (recur next-hs)))
+         hs)))))
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
@@ -667,14 +711,7 @@
     (emit! {:event :worker/ready})
     (let [lines (java.util.concurrent.LinkedBlockingQueue.)
           _ (doto (Thread. ^Runnable #(read-commands! in lines)) (.setDaemon true) (.start))
-          hs (loop [hs (hooks/init nil)]
-               (let [line (.take lines)]
-                 (if (= ::eof line)
-                   hs
-                   (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
-                                   (handle-line! emit! decide hs line))]
-                     (.flush stray-writer)
-                     (if (= :shutdown next-hs) hs (recur next-hs))))))
+          hs (serve emit! decide #(let [line (.take lines)] (when-not (= ::eof line) line)))
           errors (hooks/shutdown hs)]
       (report-hook-errors! emit! errors)
       (.flush stray-writer)
