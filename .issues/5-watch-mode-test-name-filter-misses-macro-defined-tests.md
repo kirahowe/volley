@@ -9,3 +9,13 @@ Watch mode's `t` key filters by test-name regex. The planning step drops namespa
 - [ ] A macro-defined test whose name matches the `t` pattern runs.
 - [ ] Namespaces with no visible match are only skipped when they cannot contain hidden tests, or the filter is decided in the worker after loading.
 - [ ] Regression test in the watch e2e or select tests using the `generated` fixture.
+
+## Log
+
+- 2026-10-18: `watch/select-plan` no longer drops namespaces by their
+  visible deftests; the `t` pattern goes to each select spec as
+  `:var-pattern` and the worker decides after loading. `watch/outcome`
+  keeps earlier failures of a namespace whose vars the filter skipped.
+  Regression test on the `generated` fixture in `watch_test.clj`;
+  doc/design.md updated. A filter that skips only some vars of a namespace
+  still drops their failures (QA finding, worth a follow-up issue).
