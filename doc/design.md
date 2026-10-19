@@ -658,15 +658,19 @@ queue, as in a one-shot run.
    printing babashka's classpath for bb.edn, or `clojure -Spath` with the
    JVM parent's basis aliases) and put in front of the parent's own
    (`volley.runtime/refreshed-classpath`), which keeps a bb task's extra
-   paths and deps and volley itself. Later tests.edn reloads keep
-   recomputing it. A command that fails keeps the old config and prints
-   the error.
+   paths and deps and volley itself. Because the parent's entries stay,
+   a dependency or path removed from deps.edn or bb.edn stays on the
+   classpath until restart. Later tests.edn reloads keep recomputing it,
+   and so does the next reload after a failed one. A command that fails
+   keeps the old config and prints the error. Only the project's own
+   deps.edn and bb.edn are watched.
 
 **Selections.** The state machine emits `{:effect :start-run :selection s}`
 where `s` is `{:all? :failed? :namespaces :reload-config? :reload-deps?
-:ns-pattern :test-pattern}`. `watch/select-plan` builds the plan: it takes the normal
-`volley.select/plan` (so the config's suites, ns-patterns, `:focus`,
-`:skip` and meta filters always apply), then keeps only the namespaces that
+:ns-pattern :test-pattern}`. `watch/select-plan` builds the plan: it takes
+the normal `volley.select/plan` (so the config's suites, ns-patterns,
+`:focus`, `:skip` and meta filters always apply), then keeps only the
+namespaces that
 
 - are selected: `:all?`, or `:namespaces` (the affected ones), or with
   `:failed?` the namespaces that failed last time;
@@ -834,7 +838,8 @@ exactly. Each is the conservative option.
   were found" warning instead of waiting for tests to appear.
 - **Classpath cache.** The `--runtime jvm` cache key covers the deps.edn
   files `clojure -Spath` reads and the aliases, not the artifacts they
-  resolve to: a re-published SNAPSHOT goes unnoticed until `.volley/classpath-*.txt` is deleted.
+  resolve to: a re-published SNAPSHOT goes unnoticed until
+  `.volley/classpath-*.txt` is deleted.
   Hashing the output of `clojure -Spath` would need running it each time,
   which is the cost the cache avoids.
 - **Forwarded JVM options.** The parent's options are copied rather than

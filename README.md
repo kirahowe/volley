@@ -275,8 +275,13 @@ When files change it works out which test namespaces depend on them (from
 the `ns` forms) and reruns just those in fresh worker processes, so no
 state survives between runs. New and deleted test files are picked up. A
 change to `tests.edn` reloads the config and reruns everything. A change to
-`deps.edn` or `bb.edn` does the same and also computes the workers'
-classpath again, so new dependencies and paths reach the next run. If a run is
+the project's `deps.edn` or `bb.edn` does the same and also computes the
+workers' classpath again, so new dependencies and paths reach the next run.
+The file that counts is the one the workers' classpath comes from: `bb.edn`
+for babashka workers under a babashka parent, `deps.edn` for a JVM parent or
+`--runtime jvm`. Removed dependencies and paths stay on the classpath until
+you restart. volley watches only the project's own two files, not the
+`deps.edn` of a `:local/root` dependency or your user-level one. If a run is
 still going when files change, volley cancels it and starts a new one.
 
 Each run ends with the counts line of the summary, without the slowest
