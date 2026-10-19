@@ -121,6 +121,30 @@ tools.reader, about 0.35s), and it loads watch mode and `clojure.pprint`
 only when it needs them. hosted-clay gets part of that back because the
 app loads tools.reader itself.
 
+### hosted-clay after the merge
+
+The same measurement on the merged code with the follow-up fixes (the
+worker's stop flag per command loop, the serial-time check in
+`worker-plan`), later on 2026-10-19. A fresh copy as above, with
+`--runtime jvm` passed to volley. Two warm-up runs from an empty
+`.volley/`: the first started worker JVMs (9.9s), the second went in
+process (6.3s). Then five runs of each, back to back. The same three
+to four cores were busy with other processes, the load average 8 to 9,
+and no other test run or agent was running.
+
+| | Kaocha | volley |
+|---|---|---|
+| median | 6.16s | 6.14s |
+| runs | 6.15, 6.16, 6.15, 6.20, 6.25 | 6.14, 6.14, 6.17, 6.10, 6.20 |
+
+Both reported 70 tests and 320 assertions with no failures.
+
+The timings of the first run, with four worker JVMs, add up to 27.8s,
+because each worker pays the app's lazy setup in its first test. In
+process the run takes about 6s. That is why the serial time from
+`.volley/timings.edn` decides only whether a second in-process try
+follows a slow one, and never blocks the first.
+
 ### Large suites
 
 | Project | Kaocha (one run) | volley before | volley after |
