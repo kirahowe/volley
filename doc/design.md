@@ -602,7 +602,10 @@ once, around everything it does for that suite
 (`volley.shell.worker/serve`). The call starts after the worker's setup
 hooks (`:volley/worker-setup`, `pre-load`, the suite's `pre-load-test`)
 and before the suite's first namespace loads, and it returns when the
-worker shuts down, before the suite's `post-test`. In a multi-process
+worker shuts down, before the suite's `post-test`. Those setup hooks run
+before that namespace's `:ns/start`, so its duration leaves them out. The
+call and the setup hooks run inside the first command's
+`:kaocha/bindings`, as Kaocha binds them around the whole run. In a multi-process
 run a suite-level `wrap-run` is therefore called once per worker, not
 once per run. The worker reads its later commands inside that call, so a
 `binding` the hook makes also covers any other suite the worker runs
