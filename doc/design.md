@@ -175,10 +175,15 @@ ignore. Plugins fall in three groups (`volley.config`):
   the source of each candidate namespace (`volley.config/plugin-candidates`)
   from the classpath or the suites' paths, and
   `volley.config/plugin-load-error` decides from that text, without
-  loading anything: a `defplugin` of the plugin's name or its keyword
-  (as `defmethod -register` takes it) counts as a definition. On an error
-  volley exits with Kaocha's code and message. A plugin it finds defined
-  joins the warning line.
+  loading anything. It parses the source with edamame, so comments and
+  `#_` forms do not count, and follows the namespace's requires
+  (skipping `clojure.*` and `kaocha.*`). A `defplugin` of the plugin's
+  name, or a `defmethod -register` of its keyword, in any namespace it
+  reaches counts as a definition. When a definition could hide where
+  volley cannot read it (a required namespace without source, a source
+  that does not parse, a macro that wraps `defplugin`), volley assumes
+  the plugin exists. On an error volley exits with Kaocha's code and
+  message. A plugin it finds, or assumes, defined joins the warning line.
 
 Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`,
 `--profiling`, `--notifications`, `--gc-profiling` and their siblings)

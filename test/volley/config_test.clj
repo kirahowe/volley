@@ -126,6 +126,25 @@
       :my.team/thing {'my.team "(ns my.team)\n(defmethod p/-register :my.team/thing [_ ps] ps)"}
       :my.team/thing {'my.team "(ns my.team)\n(defmethod p/-register ::thing [_ ps] ps)"}
       :my.plugin {'my.plugin "(defmethod kaocha.plugin/-register :my.plugin [_ ps] ps)"}))
+  (testing "a definition in a namespace the candidate requires, directly or not, counts"
+    (are [sources] (nil? (config/plugin-load-error :my.team/thing sources))
+      {'my.team.thing "(ns my.team.thing (:require [my.team.impl]))"
+       'my.team.impl "(ns my.team.impl (:require [kaocha.plugin :refer [defplugin]]))\n(defplugin my.team/thing)"}
+      {'my.team.thing "(ns my.team.thing (:require [my.team.a]))"
+       'my.team.a "(ns my.team.a (:require [my.team.b]))"
+       'my.team.b "(ns my.team.b)\n(do (defplugin my.team/thing))"}))
+  (testing "a definition volley may not see is taken to exist"
+    (are [sources] (nil? (config/plugin-load-error :my.team/thing sources))
+      {'my.team.thing "(ns my.team.thing (:require [my.team.gone]))"}
+      {'my.team.thing "(ns my.team.thing (:require [my.team.macros :refer [defteam]]))\n(defteam thing)"
+       'my.team.macros "(ns my.team.macros)\n(defmacro defteam [n] `(kaocha.plugin/defplugin ~n))"}
+      {'my.team.thing "(ns my.team.thing)\n(def x ["}))
+  (testing "a definition that is commented out is not one"
+    (are [text] (= :plugin-undefined (:error (config/plugin-load-error :my.team/thing {'my.team.thing text})))
+      "(ns my.team.thing)\n;; (p/defplugin my.team/thing)"
+      "(ns my.team.thing)\n#_(p/defplugin my.team/thing)"
+      "(ns my.team.thing)\n(comment (p/defplugin my.team/thing))"
+      "(ns my.team.thing (:require [clojure.string :as str] [kaocha.plugin :as p]))"))
   (testing "a similar name is not a definition"
     (is (= :plugin-undefined
            (:error (config/plugin-load-error :my.team/thing

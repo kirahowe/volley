@@ -24,23 +24,26 @@
    :read-eval true
    :read-cond :allow
    :features #{:clj}
-   :auto-resolve (fn [alias] (if (= :current alias) 'current alias))
    :location? (constantly false)
    :readers (fn [tag] (fn [form] (tagged-literal tag form)))
    :eof ::eof})
 
-(defn- read-forms
-  "Read every top-level form. Returns `{:forms [...] :error nil-or-message}`;
-  on a reader error `:forms` holds everything read before it."
-  [text]
-  (let [rdr (edamame/reader text)]
-    (loop [forms []]
-      (let [step (try {:form (edamame/parse-next rdr read-opts)}
-                      (catch Exception e {:error (or (ex-message e) (str e))}))]
-        (cond
-          (:error step) {:forms forms :error (:error step)}
-          (= ::eof (:form step)) {:forms forms}
-          :else (recur (conj forms (:form step))))))))
+(defn read-forms
+  "Read every top-level form of `text`, never evaluating it. Returns
+  `{:forms [...] :error nil-or-message}`; on a reader error `:forms` holds
+  everything read before it. `::kw` reads as `:current/kw`, or with
+  namespace `current-ns` when given."
+  ([text] (read-forms text 'current))
+  ([text current-ns]
+   (let [rdr (edamame/reader text)
+         opts (assoc read-opts :auto-resolve (fn [alias] (if (= :current alias) current-ns alias)))]
+     (loop [forms []]
+       (let [step (try {:form (edamame/parse-next rdr opts)}
+                       (catch Exception e {:error (or (ex-message e) (str e))}))]
+         (cond
+           (:error step) {:forms forms :error (:error step)}
+           (= ::eof (:form step)) {:forms forms}
+           :else (recur (conj forms (:form step)))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; ns form

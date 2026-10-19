@@ -149,6 +149,7 @@
   (testing "kaocha.plugin/register: same exit code and message for a plugin that does not load"
     (doseq [files [{"src/my/team/thing.clj" "(ns my.team.thing)"}
                    {"src/my/team.clj" "(ns my.team)"}
+                   {"src/my/team.clj" "(ns my.team (:require [kaocha.plugin :as p]))\n;; (p/defplugin my.team/thing)"}
                    {}]]
       (let [dir (e2e/copy-project "default" files)
             cp (e2e/classpath (e2e/parent-classpath) "src")

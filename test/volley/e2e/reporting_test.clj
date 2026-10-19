@@ -73,7 +73,14 @@
     (let [dir (e2e/copy-project "default" {"src/my/team/thing.clj" "(ns my.team.thing)"})
           {:keys [exit err]} (e2e/volley dir ["--plugin" "my.team/thing"])]
       (is (= 249 exit))
-      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. The plugin was not defined after loading namespace my.team.thing. Is the file missing a defplugin?")))))
+      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. The plugin was not defined after loading namespace my.team.thing. Is the file missing a defplugin?"))))
+  (testing "a plugin defined in a namespace the plugin's namespace requires runs with a warning"
+    (let [dir (e2e/copy-project "default" {"src/my/team/thing.clj" "(ns my.team.thing (:require [my.team.impl]))"
+                                           "src/my/team/impl.clj" "(ns my.team.impl (:require [kaocha.plugin :refer [defplugin]]))\n(defplugin my.team/thing)"})
+          {:keys [exit err]} (e2e/volley dir ["--plugin" "my.team/thing"])]
+      (is (= 1 exit) "the project's one failing test")
+      (is (not (str/includes? err "ERROR:")))
+      (is (str/includes? err ":my.team/thing")))))
 
 (deftest output-outside-capture-is-printed-as-it-happens
   (testing "--no-capture-output: everything a test prints shows, as in Kaocha"
