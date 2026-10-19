@@ -1,0 +1,11 @@
+{:id 18
+ :title "Name the wrap-run hook when it throws"
+ :status :inbox
+ :type :feature
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "18-name-the-wrap-run-hook-when-it-throws.md"}
