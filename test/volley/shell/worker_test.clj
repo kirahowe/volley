@@ -8,6 +8,7 @@
    [volley.run-state :as rs]
    [volley.shell.hooks :as hooks]
    [volley.shell.worker :as worker]
+   [babashka.process :as p]
    [clojure.string :as str]
    [clojure.test :as t :refer [deftest is testing]]))
 
@@ -297,7 +298,7 @@
   ;; hooks (kaocha.testable/run), then post-test; a var's :each fixtures
   ;; run inside its -run (kaocha.type.var)
   (reset! wrap-log [])
-  (let [hs (hooks/init {:hooks (assoc logging-test-hooks :wrap-run [logging-wrap-run]) :config {}})
+  (let [hs (worker/configure {:op :configure :hooks (assoc logging-test-hooks :wrap-run [logging-wrap-run]) :config {}})
         events (volatile! [])]
     (worker/run-assignment! #(vswap! events conj %) worker/run-everything hs
                             {:ns 'exec.pass-test :run-id 1 :suite :unit :capture-output? true})
@@ -313,7 +314,7 @@
 
 (deftest a-var-wrap-run-that-never-runs-is-warned-about
   (let [hook '(fn [run] (fn [t p] (if (= :kaocha.type/var (:kaocha.testable/type t)) t (run t p))))
-        hs (hooks/init {:hooks {:wrap-run [hook]} :config {}})
+        hs (worker/configure {:op :configure :hooks {:wrap-run [hook]} :config {}})
         events (volatile! [])]
     (worker/run-assignment! #(vswap! events conj %) worker/run-everything hs
                             {:ns 'exec.pass-test :run-id 1 :suite :unit})
@@ -329,7 +330,7 @@
   [hooks ns-sym]
   (let [events (volatile! [])]
     (worker/run-assignment! #(vswap! events conj %) worker/run-everything
-                            (hooks/init {:hooks hooks :config {}})
+                            (worker/configure {:op :configure :hooks hooks :config {}})
                             {:ns ns-sym :run-id 1 :suite :unit})
     @events))
 
@@ -496,3 +497,18 @@
                  " so its 1 test did not run (Kaocha does not run it either)")]
            (keep #(when (= :worker/warning (:event %)) (:message %)) events)))
     (is (= [] (hooks/shutdown hs)))))
+
+(deftest hook-support-loads-only-with-a-configure-message
+  ;; volley#12: a worker that gets no :configure never loads volley.shell.hooks
+  (let [script (str "(require 'volley.shell.worker)"
+                    "(defn loaded? [] (some? (find-ns 'volley.shell.hooks)))"
+                    "(defn handle [hs line] (#'volley.shell.worker/handle-line! (fn [_]) volley.shell.worker/run-everything identity hs line))"
+                    "(let [at-start (loaded?)"
+                    "      hs (handle {} \"{:op :run :ns exec.pass-test :run-id 1}\")"
+                    "      after-run (loaded?)"
+                    "      hs (handle hs \"{:op :configure :hooks {:pre-run [clojure.core/identity]}}\")]"
+                    "  (prn [at-start after-run (loaded?)]))")
+        {:keys [exit out err]} @(p/process ["bb" "-cp" "src:dev-resources" "-e" script]
+                                           {:out :string :err :string})]
+    (is (= 0 exit) err)
+    (is (= "[false false true]" (str/trim out)))))

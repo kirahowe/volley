@@ -13,7 +13,7 @@
    [volley.filters :as filters]
    [volley.order :as order]
    [volley.protocol :as protocol]
-   [volley.shell.hooks :as hooks]
+   [volley.testable :as testable]
    [clojure.java.io :as io]
    [clojure.test :as t]))
 
@@ -129,14 +129,14 @@
   "`Throwable->map` data `tm` of `e` with the interpreter's wrappers left
   out of `:via` (they repeat their cause's message with the call stack in
   their data) and messages that quote a wrapper rebuilt
-  (`volley.shell.hooks/message`)."
+  (`volley.protocol/message`)."
   [tm e]
   (let [ts (chain e)]
-    (if (or (not= (count ts) (count (:via tm))) (not-any? hooks/sci-wrapper? ts))
+    (if (or (not= (count ts) (count (:via tm))) (not-any? protocol/sci-wrapper? ts))
       tm
       (assoc tm :via (into [] (keep (fn [[t v]]
-                                      (when-not (hooks/sci-wrapper? t)
-                                        (assoc v :message (hooks/message t)))))
+                                      (when-not (protocol/sci-wrapper? t)
+                                        (assoc v :message (protocol/message t)))))
                            (map vector ts (:via tm)))))))
 
 (defn encode-throwable
@@ -152,7 +152,7 @@
         trace-of (fn [t] (when st
                            (seq (protocol/interpreter-trace (try (st t) (catch Throwable _ nil))
                                                             (System/getProperty "user.dir")))))
-        trace (or (trace-of e) (some #(when (hooks/sci-wrapper? %) (trace-of %)) (rest (chain e))))]
+        trace (or (trace-of e) (some #(when (protocol/sci-wrapper? %) (trace-of %)) (rest (chain e))))]
     (cond-> enc (seq trace) (assoc :trace trace))))
 
 (defn relative-path
@@ -200,7 +200,7 @@
   expected or actual value."
   [ns-sym v contexts m]
   (let [raw (:actual m)
-        actual (cond-> raw (throwable? raw) hooks/unwrap)
+        actual (cond-> raw (throwable? raw) protocol/unwrap)
         loc (location m (meta v))
         error? (and (= :error (:type m)) (throwable? actual))
         check (when (= :fail (:type m)) (protocol/encode-check actual))]
@@ -213,7 +213,7 @@
              :expected (when-not (::zero? m) (protocol/encode-value (:expected m)))
              :actual (cond
                        (::zero? m) nil
-                       error? {:str (str (.getName (class actual)) ": " (hooks/message actual))}
+                       error? {:str (str (.getName (class actual)) ": " (protocol/message actual))}
                        :else (protocol/encode-value actual))
              :file (rel (:file loc))
              :line (:line loc)
@@ -358,6 +358,47 @@
 (defn- failed? [{:kaocha.result/keys [fail error]}]
   (pos? (+ (or fail 0) (or error 0))))
 
+;; ---------------------------------------------------------------------------
+;; Hooks, loaded only when configured
+
+(def ^:private without-hooks
+  "What the `volley.shell.hooks` functions the worker calls do when no
+  `{:op :configure}` message came: nothing. The worker loads that namespace
+  only for a `:configure` message, which the parent sends only when hooks,
+  `:volley/worker-setup` or reporters exist."
+  {:setup (fn [hs _suite] hs)
+   :setup-error (fn [_hs] nil)
+   :before-run (fn [hs _suite] hs)
+   :pre-load-ns (fn [_hs _ns-sym] nil)
+   :post-load-ns (fn [hs _suite _ns-sym _ns-obj _vars] hs)
+   :run-ns (fn [hs _suite _ns-sym _ns-obj run] [hs (run)])
+   :wrap-suite? (fn [_hs _suite] false)
+   :wrap-suite (fn [hs _suite _body] [hs false])
+   :run-var (fn [_hs ns-sym v test! counts]
+              (let [m (meta v)]
+                (test!)
+                (testable/with-result
+                  (assoc (testable/var-testable ns-sym (:name m) m) :kaocha.var/var v :kaocha.var/test (:test m))
+                  (counts))))
+   :report-fn (fn [_hs report] report)
+   :shutdown (fn [_hs] [])})
+
+(defn configure
+  "Hook state for a `{:op :configure}` message: `volley.shell.hooks/init`,
+  with that namespace's functions under `::hooks` in place of
+  `without-hooks`. A state made by `volley.shell.hooks/init` alone lacks
+  them, so the worker would run it without hooks."
+  [command]
+  (let [resolve-fn #(requiring-resolve (symbol "volley.shell.hooks" (name %)))]
+    (assoc ((resolve-fn :init) command)
+           ::hooks (into {} (map (juxt identity resolve-fn)) (keys without-hooks)))))
+
+(defn- call-hooks
+  "Call hooks function `k` (a key of `without-hooks`) with hook state `hs`
+  and `args`."
+  [k hs & args]
+  (apply (get (::hooks hs without-hooks) k) hs args))
+
 (defn- run-vars!
   "Run `vars` of `ns-obj` with fixtures and `testing` contexts as in
   `run-tests`, and the per-namespace and per-var hooks of `hs`. With
@@ -389,7 +430,7 @@
                                 (try (test!)
                                      (check-assertions! acc)
                                      (finally (safely #(end-var! acc emit! ns-sym)))))
-                        r (hooks/run-var hs ns-sym v test! counts)]
+                        r (call-hooks :run-var hs ns-sym v test! counts)]
                     (cond
                       (:kaocha.testable/skip r)
                       (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook})
@@ -405,11 +446,11 @@
                    (doseq [v vars :when (not (contains? (:settled @progress) v))]
                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
     (try
-      (binding [t/report (hooks/report-fn hs (make-report acc progress emit! ns-sym))
+      (binding [t/report (call-hooks :report-fn hs (make-report acc progress emit! ns-sym))
                 *out* *out*
                 *err* *err*]
         (try
-          (let [[hs _] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
+          (let [[hs _] (call-hooks :run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
             ;; with vars to run, a run that reached none, with no stop
             ;; requested, was never started
             (when (and (seq vars) (empty? (:reached @progress)) (not @stop-requested))
@@ -428,7 +469,7 @@
   "`{:kind kw :entry entry}` when `e` (or what it wraps) is the error of a
   hook (`volley.shell.hooks`), else nil."
   [e]
-  (let [{:keys [hook entry]} (ex-data (hooks/unwrap e))]
+  (let [{:keys [hook entry]} (ex-data (protocol/unwrap e))]
     (when (keyword? hook) {:kind hook :entry entry})))
 
 (defn- error-event
@@ -452,10 +493,10 @@
   order of `seed`. Returns `[hs error]`."
   [hs suite ns seed]
   (try
-    (hooks/pre-load-ns hs ns)
+    (call-hooks :pre-load-ns hs ns)
     (require ns)
     (let [ns-obj (find-ns ns)]
-      [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj seed)) nil])
+      [(call-hooks :post-load-ns hs suite ns ns-obj (test-vars-of ns-obj seed)) nil])
     (catch Throwable e [hs e])))
 
 (defn- preload-suite!
@@ -464,8 +505,8 @@
   is warned about; its own run reports the error. Returns the next hook
   state; after a setup error nothing more is loaded."
   [hs emit! suite nses]
-  (let [hs (hooks/setup hs suite)]
-    (when-not (hooks/setup-error hs)
+  (let [hs (call-hooks :setup hs suite)]
+    (when-not (call-hooks :setup-error hs)
       (doseq [ns nses]
         (try (require ns)
              (catch Throwable e
@@ -484,7 +525,7 @@
   (if (or (empty? preload) (::preloaded? hs))
     hs
     (-> (reduce (fn [hs entries]
-                  (if (hooks/setup-error hs)
+                  (if (call-hooks :setup-error hs)
                     (reduced hs)
                     (preload-suite! hs emit! (:suite (first entries)) (map :ns entries))))
                 hs
@@ -519,8 +560,8 @@
   "Run the vars of loaded namespace `ns`. Returns `[hs error phase pass]`,
   `pass` counting the passing assertions outside any var."
   [hs emit! decide {:keys [ns capture-output? fail-fast? suite preload] :as cmd}]
-  (let [hs (hooks/before-run hs suite)]
-    (if-let [e (hooks/setup-error hs)]
+  (let [hs (call-hooks :before-run hs suite)]
+    (if-let [e (call-hooks :setup-error hs)]
       [hs e :setup]
       (let [ns-obj (find-ns ns)
             [hs select] (settle-select hs emit! (:select cmd) preload)
@@ -562,10 +603,10 @@
   bindings could not be made, which stops the namespace like a failed
   setup."
   [emit! decide hs {:keys [ns run-id suite] :as cmd} t0 bind-error]
-  (let [hs (hooks/setup hs suite)
+  (let [hs (call-hooks :setup hs suite)
         [hs error phase pass] (cond
                                 bind-error [hs bind-error :setup]
-                                (hooks/setup-error hs) [hs (hooks/setup-error hs) :setup]
+                                (call-hooks :setup-error hs) [hs (call-hooks :setup-error hs) :setup]
                                 :else (let [hs (preload! hs emit! (:preload cmd))
                                             [hs e] (load-ns hs suite ns (:seed cmd))]
                                         (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
@@ -580,14 +621,14 @@
   "Run one `{:op :run}` message. `emit!` receives each event map. `decide` is
   `(fn [select ns-sym ns-meta var-sym var-meta] {:run? bool :reason kw})`,
   normally `volley.filters/decide`; it gets the namespace's real metadata.
-  `hs` is the worker's hook state (`volley.shell.hooks/init`); the 3-arity
+  `hs` is the worker's hook state (`{}`, or what `configure` made); the 3-arity
   runs without hooks. Returns the next hook state.
 
   Emits `:ns/start`, then `:ns/error` if setup, loading or a fixture
   fails, the `:var/*` and `:assertion` events, and always a final
   `:ns/end`. With `:fail-fast?` the vars after the first failing one are
   not run and get no events. Does not exit the JVM and does not throw."
-  ([emit! decide cmd] (run-assignment! emit! decide (hooks/init nil) cmd))
+  ([emit! decide cmd] (run-assignment! emit! decide {} cmd))
   ([emit! decide hs {:keys [ns run-id] :as cmd}]
    (let [t0 (System/nanoTime)]
      (emit! {:event :ns/start :ns ns :run-id run-id})
@@ -628,11 +669,11 @@
   [emit! decide more hs {:keys [suite] :as cmd}]
   ;; bmap is nil when the bindings cannot be made: run-assignment! reports it
   (let [[bmap] (bindings-of cmd)]
-    (if-not (and bmap (hooks/wrap-suite? hs suite))
+    (if-not (and bmap (call-hooks :wrap-suite? hs suite))
       (run-assignment! emit! decide hs cmd)
       ;; inside :kaocha/bindings, as Kaocha's api/run binds the whole run
       (let [[hs ran?] (with-bindings* bmap
-                        #(hooks/wrap-suite (hooks/setup hs suite) suite
+                        #(call-hooks :wrap-suite (call-hooks :setup hs suite) suite
                                            (fn [hs] (more (run-assignment! emit! decide hs cmd)))))]
         (if ran?
           (reduced hs)
@@ -647,7 +688,7 @@
     (case kind
       :command (case (:op command)
                  :run (run-command! emit! decide more hs command)
-                 :configure (hooks/init command)
+                 :configure (configure command)
                  :shutdown :shutdown
                  (do (binding [*out* *err*] (println "volley worker: unknown op" (:op command))) hs))
       :invalid (do (binding [*out* *err*] (println "volley worker: bad message:" error)) hs))))
@@ -687,7 +728,7 @@
   empty `*in*`, so a test that reads it cannot block on or swallow a
   command."
   ([emit! decide next-line] (serve emit! decide next-line flush))
-  ([emit! decide next-line flush!] (serve-from emit! decide next-line flush! (hooks/init nil))))
+  ([emit! decide next-line flush!] (serve-from emit! decide next-line flush! {})))
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
@@ -724,7 +765,7 @@
           hs (serve emit! decide
                     #(let [line (.take lines)] (when-not (= ::eof line) line))
                     #(.flush stray-writer))
-          errors (hooks/shutdown hs)]
+          errors (call-hooks :shutdown hs)]
       (report-hook-errors! emit! errors)
       (.flush stray-writer)
       (shutdown-agents)

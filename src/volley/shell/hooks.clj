@@ -20,6 +20,7 @@
   with `:kaocha.testable/skip` skips a var) and `wrap-run` (the wrapped
   run function). `:volley/worker-setup` fns take no arguments."
   (:require
+   [volley.protocol :as protocol]
    [volley.testable :as testable]
    [clojure.test :as t]))
 
@@ -79,39 +80,12 @@
   [hs]
   (:setup-error hs))
 
-(defn sci-wrapper?
-  "True for the ExceptionInfo babashka's interpreter wraps around an
-  exception that passes an interpreted `try`, to carry its call stack
-  (`:sci.impl/callstack` in its data). The original is its cause."
-  [t]
-  (boolean (and (instance? Throwable t)
-                (contains? (ex-data t) :sci.impl/callstack)
-                (ex-cause t))))
-
-(defn unwrap
-  "`t` without the interpreter's wrappers around it: the first exception
-  in its cause chain that is not one."
-  [t]
-  (if (sci-wrapper? t) (recur (ex-cause t)) t))
-
-(defn message
-  "`t`'s message. An exception built from a cause alone (a future's
-  ExecutionException, say) takes the cause's `toString` as its message;
-  when that cause is an interpreter wrapper, the message would hold the
-  wrapper's data, call stack included, so it is rebuilt from the
-  unwrapped cause."
-  [^Throwable t]
-  (let [c (ex-cause t)]
-    (if (and (sci-wrapper? c) (= (ex-message t) (str c)))
-      (str (unwrap c))
-      (ex-message t))))
-
 (defn- hook-error
   "Wrap `e` so the report says which hook failed."
   [kind entry ^Throwable e]
-  (let [cause (unwrap e)]
+  (let [cause (protocol/unwrap e)]
     (ex-info (str "volley: " (name kind) " hook " (pr-str entry) " threw "
-                  (.getName (class cause)) (when-let [m (message cause)] (str ": " m)))
+                  (.getName (class cause)) (when-let [m (protocol/message cause)] (str ": " m)))
              {:hook kind :entry entry}
              e)))
 
@@ -247,7 +221,7 @@
                 (seq (get-in hs [:msg :hooks :wrap-run]))
                 (not (contains? (:suites-wrapped hs) suite)))))
 
-(defn- hook-error? [e] (keyword? (:hook (ex-data (unwrap e)))))
+(defn- hook-error? [e] (keyword? (:hook (ex-data (protocol/unwrap e)))))
 
 (defn- wrapped-run
   "`base` wrapped by the `wrap-run` hooks, as Kaocha's `(reduce #(%2 %1)
@@ -259,13 +233,13 @@
         own (volatile! nil)
         base (fn [t p]
                (try (base t p)
-                    (catch ^:sci/error Throwable e (vreset! own (unwrap e)) (throw e))))
+                    (catch ^:sci/error Throwable e (vreset! own (protocol/unwrap e)) (throw e))))
         layer (fn [run [f entry]]
                 (let [wrapped (run-chain :wrap-run [[f] [entry]] run)]
                   (fn [t p]
                     (try (wrapped t p)
                          (catch ^:sci/error Throwable e
-                           (throw (if (or (hook-error? e) (identical? (unwrap e) @own))
+                           (throw (if (or (hook-error? e) (identical? (protocol/unwrap e) @own))
                                     e
                                     (hook-error :wrap-run entry e))))))))]
     (reduce layer base (map vector fs entries))))
@@ -290,7 +264,7 @@
              [final true]
              [(update hs :suites-unrun conj suite) false])
            (catch ^:sci/error Throwable e
-             (let [e (unwrap e)]
+             (let [e (protocol/unwrap e)]
                (if-let [final @end]
                  [(update final :late-errors conj e) true]
                  [(assoc hs :setup-error e) false])))))))
@@ -347,7 +321,7 @@
       (try (r m)
            (catch ^:sci/error Throwable e
              (binding [*out* *err*]
-               (println "Error in reporter:" (.getName (class (unwrap e))) (message (unwrap e)))))))
+               (println "Error in reporter:" (.getName (class (protocol/unwrap e))) (protocol/message (protocol/unwrap e)))))))
     (flush)))
 
 (defn report-fn

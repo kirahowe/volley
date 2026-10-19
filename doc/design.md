@@ -433,7 +433,7 @@ the cause chain (a future rethrows one inside an ExecutionException, a
 hook error wraps one), so `volley.shell.worker/encode-throwable` leaves
 every wrapper out of the chain, rebuilds a message that quotes one, and
 takes the trace from the first call stack that names user code. A hook
-error names the unwrapped exception (`volley.shell.hooks/unwrap`). The JVM
+error names the unwrapped exception (`volley.protocol/unwrap`). The JVM
 keeps its own stack trace.
 
 A test var opens (`:var/start`) before its `:each` fixtures run and
@@ -866,8 +866,9 @@ were skipped` warning (`rs/all-skipped`).
     are kept across namespaces, and a worker loads `clojure.test` and
     `volley.filters` before it sends `:worker/ready`. A worker loads
     nothing that reads source files (`volley.select` and `volley.discover`
-    pull in edamame) or folds run state, which keeps a JVM worker's start
-    to ready near 0.4s on a 16-core Mac. `--isolate` is allowed
+    pull in edamame) or folds run state, and it loads hook support
+    (`volley.shell.hooks`) only when a `:configure` message arrives. That
+    keeps a JVM worker's start to ready near 0.4s on a 16-core Mac. `--isolate` is allowed
     with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.volley/timings.edn`).
