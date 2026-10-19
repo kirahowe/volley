@@ -95,14 +95,25 @@
                                  (update :vars crash-running-vars))))
         (set-worker worker idle))))
 
+(defn- stopped-early?
+  "True for a finished namespace record whose worker was asked to stop
+  before every var ran: the worker sends those vars as skipped with
+  reason `:stopped`."
+  [{:keys [status vars]}]
+  (and (= :done status) (some #(= :stopped (:reason %)) (vals vars))))
+
 (defn- on-ns-end [state {:keys [worker ns at duration-ms pass]}]
-  (-> state
-      (update-in [:namespaces ns]
-                 #(cond-> (-> ((ns-record ns) %)
-                              (update :status (fn [s] (if (#{:error :crashed} s) s :done)))
-                              (assoc :end-at at :duration-ms duration-ms))
-                    pass (assoc :pass pass)))
-      (set-worker worker idle)))
+  (let [state (update-in state [:namespaces ns]
+                         #(cond-> (-> ((ns-record ns) %)
+                                      (update :status (fn [s] (if (#{:error :crashed} s) s :done)))
+                                      (assoc :end-at at :duration-ms duration-ms))
+                            pass (assoc :pass pass)))]
+    (-> (if (stopped-early? (get-in state [:namespaces ns]))
+          (-> state
+              (update-in [:namespaces ns] assoc :status :interrupted :reason :stopped)
+              (assoc-in [:interrupted ns] :stopped))
+          state)
+        (set-worker worker idle))))
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
   (-> state
@@ -173,14 +184,14 @@
 (defn- interrupt-ns
   "A namespace whose worker was stopped mid-run: the vars that finished
   keep their results, the one in progress is dropped."
-  [rec ns at]
+  [rec ns reason at]
   (-> ((ns-record ns) rec)
-      (assoc :status :interrupted :end-at at)
+      (assoc :status :interrupted :reason reason :end-at at)
       (update :vars #(into {} (remove (fn [[_ v]] (= :running (:phase v :running)))) %))))
 
 (defn- on-interrupted [state {:keys [namespaces reason at]}]
   (let [held (set namespaces)]
-    (-> (reduce (fn [st ns] (update-in st [:namespaces ns] interrupt-ns ns at)) state namespaces)
+    (-> (reduce (fn [st ns] (update-in st [:namespaces ns] interrupt-ns ns reason at)) state namespaces)
         (update :interrupted into (map (fn [ns] [ns reason])) namespaces)
         (update :workers update-vals #(cond-> % (held (:ns %)) (merge idle))))))
 
@@ -514,20 +525,30 @@
 (defn interrupted
   "Namespaces stopped part way, `{ns reason}`: with fail-fast, the ones
   other workers were running when the first failure arrived. They are
-  listed, not counted as failures."
+  listed, and count as failures only with reason `:stopped` (`exit-code`)."
   [state]
   (:interrupted state))
+
+(def counted-interrupted?
+  "Reasons a namespace was stopped part way that make the run fail.
+  Fail-fast is the parent's own choice, and the engine ignores what such a
+  worker sends afterwards; `:stopped` comes from a worker that stopped
+  before every var ran without the parent asking, so its unrun vars must
+  not pass silently."
+  #{:stopped})
 
 (defn exit-code
   "0 when nothing failed, otherwise the number of failures capped at 255,
   like Kaocha (`kaocha.runner/run`: `(min (+ error fail) 255)`). Load
   errors, unreadable files, crashed workers, protocol lines that could not
-  be read, namespaces that could not be run and planned namespaces that
-  never finished each count as one;
+  be read, namespaces that could not be run, planned namespaces that
+  never finished and namespaces a worker stopped on its own
+  (`counted-interrupted?`) each count as one;
   assertions whose details were lost count as many as were lost."
   [state]
   (min 255 (+ (reduce + (map #(:lost % 1) (failures state)))
-              (count (unfinished state)))))
+              (count (unfinished state))
+              (count (filter (comp counted-interrupted? val) (:interrupted state))))))
 
 (defn result
   "Plain data about the finished run, for `--print-result` and for

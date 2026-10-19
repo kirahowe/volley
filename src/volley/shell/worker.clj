@@ -243,12 +243,6 @@
   (.flush ^java.io.PrintStream stream)
   (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
 
-(def ^:private stop-requested
-  "Set as soon as the parent's `:shutdown` arrives, even while a namespace
-  is running; that namespace then runs no more vars, so the worker can run
-  its shutdown hooks before the parent gives up and kills it."
-  (atom false))
-
 (def ^:private live-capture
   "The capture buffer of the test running right now, so that a test that
   exits the process does not take its output with it (see `-main`)."
@@ -337,16 +331,16 @@
   `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
   inside the `:each` fixtures, and returns its result; after each var
   `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
-  still finish), and no var starts once `stop-requested` is set. Each
+  still finish), and no var starts once `(stop-requested?)` holds. Each
   result is added to `(:results @progress)`, since a `:once` fixture does
   not hand back what the tests return. Returns the results."
-  [ns-obj vars run-var stop? progress]
+  [ns-obj vars run-var stop? stop-requested? progress]
   (let [m (meta ns-obj)
         once (t/join-fixtures (:clojure.test/once-fixtures m))
         each (t/join-fixtures (:clojure.test/each-fixtures m))]
     (once (fn []
             (reduce (fn [_ v]
-                      (if @stop-requested
+                      (if (stop-requested?)
                         (reduced nil)
                         (let [r (run-var v #(each (fn [] (t/test-var v))))]
                           (vswap! progress update :results conj r)
@@ -407,7 +401,9 @@
   Throwable that escaped (a failing fixture or hook, for instance). The
   vars it kept from running, the one whose hook threw before it ran
   included, are sent as skipped with reason `:fixture-failed`, so none of
-  them vanishes. The third element is the number of passing assertions
+  them vanishes. Vars a stop request (`(stop-requested?)`, a `:shutdown`
+  from the parent) kept from running are sent as skipped with reason
+  `:stopped`. The third element is the number of passing assertions
   made outside any var.
 
   clojure.test reports through a callback and fixtures return nothing of
@@ -416,7 +412,7 @@
   updates, and `progress`, the vars reached, those settled (started, or
   done with by their hooks), their results and the passes outside any
   var, which must survive a fixture that throws."
-  [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
+  [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast? stop-requested?]} vars]
   (let [acc (atom nil)
         progress (volatile! {:reached #{} :settled #{} :results [] :outside 0})
         outside #(:outside @progress)
@@ -442,18 +438,21 @@
                     (vswap! progress update :settled conj v)
                     r))
         stop? (fn [r] (and fail-fast? (failed? r)))
-        abandon! (fn []
-                   (doseq [v vars :when (not (contains? (:settled @progress) v))]
-                     (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
+        skip-unsettled! (fn [reason]
+                          (doseq [v vars :when (not (contains? (:settled @progress) v))]
+                            (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason reason})))
+        abandon! #(skip-unsettled! :fixture-failed)]
     (try
       (binding [t/report (call-hooks :report-fn hs (make-report acc progress emit! ns-sym))
                 *out* *out*
                 *err* *err*]
         (try
-          (let [[hs _] (call-hooks :run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
-            ;; with vars to run, a run that reached none, with no stop
-            ;; requested, was never started
-            (when (and (seq vars) (empty? (:reached @progress)) (not @stop-requested))
+          (let [[hs _] (call-hooks :run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? stop-requested? progress))]
+            ;; a stop leaves vars unrun; with no stop, a run that
+            ;; reached none of its vars was never started
+            (cond
+              (stop-requested?) (skip-unsettled! :stopped)
+              (and (seq vars) (empty? (:reached @progress)))
               (emit! {:event :worker/warning
                       :message (str "the wrap-run hook did not call run for " ns-sym
                                     ", so its " (count vars) " test" (when (next vars) "s")
@@ -573,7 +572,8 @@
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
         (if (filters/runs-namespace? ns-meta parts)
           (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
-                                                                :fail-fast? (boolean fail-fast?)}
+                                                                :fail-fast? (boolean fail-fast?)
+                                                                :stop-requested? (or (::stop-requested? cmd) (constantly false))}
                                        run)]
             [hs e :run pass])
           [hs nil :run 0])))))
@@ -681,13 +681,15 @@
 
 (defn- handle-line!
   "Handle one stdin line with hook state `hs`; `more` serves the commands
-  after it (see `run-command!`). Returns the next state, `(reduced hs)`
-  when `more` already served the rest, or :shutdown to stop."
-  [emit! decide more hs line]
+  after it (see `run-command!`). A run command carries
+  `stop-requested?` to its namespace's var loop. Returns the next state,
+  `(reduced hs)` when `more` already served the rest, or :shutdown to
+  stop."
+  [emit! decide stop-requested? more hs line]
   (let [{:keys [kind command error]} (protocol/decode-command line)]
     (case kind
       :command (case (:op command)
-                 :run (run-command! emit! decide more hs command)
+                 :run (run-command! emit! decide more hs (assoc command ::stop-requested? stop-requested?))
                  :configure (configure command)
                  :shutdown :shutdown
                  (do (binding [*out* *err*] (println "volley worker: unknown op" (:op command))) hs))
@@ -696,24 +698,24 @@
 (defn- read-commands!
   "Put each line `(read-line)` returns on `lines`, then `::eof` once it
   returns nil. Runs on its own thread so that a `:shutdown` is seen while a
-  namespace runs: it sets `stop-requested` at once."
-  [read-line ^java.util.concurrent.BlockingQueue lines]
+  namespace runs: it calls `(request-stop!)` at once."
+  [read-line request-stop! ^java.util.concurrent.BlockingQueue lines]
   (loop []
     (if-let [line (try (read-line) (catch java.io.IOException _ nil))]
       (do (when (= :shutdown (get-in (protocol/decode-command line) [:command :op]))
-            (reset! stop-requested true))
+            (request-stop!))
           (.put lines line)
           (recur))
       (.put lines ::eof))))
 
 (defn- serve-from
   "`serve`, from hook state `hs`."
-  [emit! decide next-line flush! hs]
-  (let [more #(serve-from emit! decide next-line flush! %)]
+  [emit! decide next-line flush! stop-requested? hs]
+  (let [more #(serve-from emit! decide next-line flush! stop-requested? %)]
     (loop [hs hs]
       (if-let [line (next-line)]
         (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
-                        (handle-line! emit! decide more hs line))]
+                        (handle-line! emit! decide stop-requested? more hs line))]
           (flush!)
           (cond
             (= :shutdown next-hs) hs
@@ -724,11 +726,14 @@
 (defn serve
   "Handle the parent's commands, a line from `(next-line)` at a time, until
   `{:op :shutdown}` or the end of input (nil), calling `(flush!)` (by
-  default `flush`) after each. Returns the final hook state. Tests get an
-  empty `*in*`, so a test that reads it cannot block on or swallow a
-  command."
+  default `flush`) after each. A running namespace starts no further var
+  once `(stop-requested?)` (by default never) holds. Returns the final
+  hook state. Tests get an empty `*in*`, so a test that reads it cannot
+  block on or swallow a command."
   ([emit! decide next-line] (serve emit! decide next-line flush))
-  ([emit! decide next-line flush!] (serve-from emit! decide next-line flush! {})))
+  ([emit! decide next-line flush!] (serve emit! decide next-line flush! (constantly false)))
+  ([emit! decide next-line flush! stop-requested?]
+   (serve-from emit! decide next-line flush! stop-requested? {})))
 
 (defn serve!
   "The worker's command loop: send `:worker/ready`, then `serve` the lines
@@ -738,15 +743,19 @@
   (`make-emit`); `stray` is the writer for what tests print outside a
   capture, flushed after each command. Returns the exit code: 1 when a
   shutdown hook threw, else 0. `-main` serves the process's stdin;
-  `volley.shell.in-process` serves a queue inside the parent."
+  `volley.shell.in-process` serves a queue inside the parent, so the
+  stop flag belongs to this call alone: a `:shutdown` to one loop never
+  stops another in the same process."
   [emit! read-line ^java.io.Writer stray]
-  (reset! stop-requested false)
   (emit! {:event :worker/ready})
-  (let [lines (java.util.concurrent.LinkedBlockingQueue.)
-        _ (doto (Thread. ^Runnable #(read-commands! read-line lines)) (.setDaemon true) (.start))
+  (let [stop (atom false)
+        lines (java.util.concurrent.LinkedBlockingQueue.)
+        _ (doto (Thread. ^Runnable #(read-commands! read-line (fn [] (reset! stop true)) lines))
+            (.setDaemon true) (.start))
         hs (serve emit! filters/decide
                   #(let [line (.take lines)] (when-not (= ::eof line) line))
-                  #(.flush stray))
+                  #(.flush stray)
+                  #(deref stop))
         errors (call-hooks :shutdown hs)]
     (report-hook-errors! emit! errors)
     (.flush stray)

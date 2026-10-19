@@ -336,7 +336,8 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
 - `:ns/error` is always followed by `:ns/end`, so every namespace has exactly
   one terminal event. `:ns/error` covers load errors and a `:once` or `:each`
   fixture that throws.
-- `:var/skipped :reason` is whatever `volley.filters/decide` returned.
+- `:var/skipped :reason` is whatever `volley.filters/decide` returned,
+  or `:fixture-failed`, `:pre-test-hook` or `:stopped` from the worker.
   Only `:pending` vars are part of the run (`volley.run-state/in-run?`):
   they count as tests and as "skipped" in the summary, `<skipped/>` in
   the junit-xml report. A var skipped for any other reason (a filter, a
@@ -374,8 +375,11 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
   that reads stdin gets end of file instead of blocking on the command
   channel. A thread of its own reads the commands, so a `:shutdown` that
   arrives while a namespace runs is seen at once: that namespace runs no
-  var after the current one, ends, and the worker runs its shutdown hooks
-  and exits.
+  var after the current one, sends the vars it did not run as skipped
+  with reason `:stopped`, ends, and the worker runs its shutdown hooks
+  and exits. The stop flag belongs to one call of `serve!`, so an
+  in-process worker inside a worker process (volley's own tests run one)
+  cannot stop the worker that hosts it.
 - The worker keeps the original stdout for protocol lines and points
   `System/out` and the root `*out*`/`*err*` at stderr, so nothing a test
   prints can corrupt a protocol line. With `:capture-output?` the worker
@@ -493,8 +497,12 @@ reason is `:fail-fast`. A planned namespace that ends the run with no
 terminal status and is neither listed as not run nor interrupted is
 listed as `:unfinished` and adds one to the exit code: a worker that
 vanished without a crash being reported cannot make a run pass. Interrupted namespaces (status `:interrupted`)
-keep the vars that finished, lose the one that was running, are listed
-in the summary, and never count as failures.
+keep the vars that finished, lose the one that was running, and are listed
+in the summary. Those fail-fast interrupted never count as failures. A
+namespace that ends with vars skipped as `:stopped` is interrupted too,
+with reason `:stopped`, and adds one to the exit code: the engine ignores
+what a worker it stopped itself sends, so such a namespace means a worker
+stopped without being asked, and its unrun vars must not pass silently.
 
 ### Engine inputs and effects (`volley.engine`)
 

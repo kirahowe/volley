@@ -502,7 +502,7 @@
   ;; volley#12: a worker that gets no :configure never loads volley.shell.hooks
   (let [script (str "(require 'volley.shell.worker)"
                     "(defn loaded? [] (some? (find-ns 'volley.shell.hooks)))"
-                    "(defn handle [hs line] (#'volley.shell.worker/handle-line! (fn [_]) volley.shell.worker/run-everything identity hs line))"
+                    "(defn handle [hs line] (#'volley.shell.worker/handle-line! (fn [_]) volley.shell.worker/run-everything (constantly false) identity hs line))"
                     "(let [at-start (loaded?)"
                     "      hs (handle {} \"{:op :run :ns exec.pass-test :run-id 1}\")"
                     "      after-run (loaded?)"
@@ -512,3 +512,59 @@
                                            {:out :string :err :string})]
     (is (= 0 exit) err)
     (is (= "[false false true]" (str/trim out)))))
+
+(defn- serve-in-thread
+  "Run `worker/serve!` on a thread of its own, reading commands from the
+  returned `:commands` queue (`::eof` ends input). `:events` holds what it
+  sent and `:done` delivers its exit code."
+  []
+  (let [commands (java.util.concurrent.LinkedBlockingQueue.)
+        events (atom [])
+        done (promise)
+        read-line #(let [x (.take commands)] (when-not (= ::eof x) (protocol/encode-command x)))]
+    (doto (Thread. ^Runnable (fn []
+                               (deliver done (worker/serve! #(swap! events conj %) read-line
+                                                            (java.io.StringWriter.)))))
+      (.setDaemon true)
+      (.start))
+    {:commands commands :events events :done done}))
+
+(defn- await-event
+  "Wait up to 20s until `pred` holds for an event in `events`."
+  [events pred]
+  (loop [n 0]
+    (when (and (< n 400) (not (some pred @events)))
+      (Thread/sleep 50)
+      (recur (inc n)))))
+
+(defn- send-command [w cmd]
+  (.put ^java.util.concurrent.BlockingQueue (:commands w) cmd))
+
+(deftest a-shutdown-to-one-serve-loop-does-not-stop-another
+  ;; two loops in one JVM, as an in-process worker inside a worker process
+  (let [a (serve-in-thread)
+        b (serve-in-thread)]
+    (send-command a {:op :run :ns 'exec.steps-test :run-id 1})
+    (await-event (:events a) #(= :var/end (:event %)))
+    (send-command b {:op :shutdown})
+    (is (= 0 (deref (:done b) 20000 :timeout)))
+    (await-event (:events a) #(= :ns/end (:event %)))
+    (send-command a ::eof)
+    (is (= 0 (deref (:done a) 20000 :timeout)))
+    (is (= 10 (count (filter #(= :var/end (:event %)) @(:events a)))))))
+
+(deftest vars-a-shutdown-keeps-from-running-are-sent-as-stopped
+  (let [w (serve-in-thread)]
+    (send-command w {:op :run :ns 'exec.steps-test :run-id 1})
+    (await-event (:events w) #(= :var/end (:event %)))
+    (send-command w {:op :shutdown})
+    (is (= 0 (deref (:done w) 20000 :timeout)))
+    (let [events @(:events w)
+          ended (keep #(when (= :var/end (:event %)) (:var %)) events)
+          stopped (keep #(when (= :var/skipped (:event %)) [(:var %) (:reason %)]) events)]
+      (is (< (count ended) 10))
+      (testing "every var either ran or is sent as stopped"
+        (is (= (set (map #(symbol (str "step-" %)) (range 10)))
+               (into (set ended) (map first stopped))))
+        (is (every? #(= :stopped (second %)) stopped)))
+      (is (= :ns/end (:event (last (filter :ns events))))))))

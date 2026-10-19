@@ -176,6 +176,18 @@
                          (ev {:event :run/interrupted :namespaces '[a-test] :reason :fail-fast})])]
       (is (zero? (rs/exit-code state))))))
 
+(deftest a-namespace-its-worker-stopped-early-fails-the-run
+  (let [state (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
+                      [(ev {:event :ns/start :ns 'a-test})
+                       (ev {:event :var/start :ns 'a-test :var 'x})
+                       (ev {:event :var/end :ns 'a-test :var 'x :pass 1 :duration-ms 1})
+                       (ev {:event :var/skipped :ns 'a-test :var 'y :reason :stopped})
+                       (ev {:event :ns/end :ns 'a-test :duration-ms 2})])]
+    (is (= :interrupted (rs/ns-result (get-in state [:namespaces 'a-test]))))
+    (is (= '{a-test :stopped} (rs/interrupted state)))
+    (is (= 1 (rs/exit-code state)))
+    (is (= {:tests 1 :pending 0} (:totals (rs/result state))))))
+
 (deftest file-errors-and-not-run-namespaces-are-failures
   (let [state (reduce rs/apply-event (rs/init plan)
                       [(ev {:event :file/error :file "test/bad_test.clj" :error "EOF"})

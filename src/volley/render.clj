@@ -623,6 +623,11 @@
 (defn- ns-duration [{:keys [duration-ms start-at end-at]}]
   (or duration-ms (when (and start-at end-at) (- end-at start-at))))
 
+(defn- interrupted-text
+  "Why interrupted namespace record `rec` stopped part way."
+  [rec]
+  (if (= :stopped (:reason rec)) "stopped before all its tests ran" "interrupted by fail-fast"))
+
 (defn- ns-detail [rec]
   (let [vars    (rs/run-vars rec)
         failed  (count (filter (comp #{:failed :errored :crashed} rs/var-status) vars))
@@ -639,7 +644,7 @@
                  (= :run (:phase rec)) "(fixture failed)"
                  :else "(failed to load)")
       :crashed (str "(worker crashed" (when-let [c (:exit-code rec)] (str ", exit " c)) ")")
-      :interrupted (str "(interrupted by fail-fast, " (count vars) " done)")
+      :interrupted (str "(" (interrupted-text rec) ", " (count vars) " done)")
       "")))
 
 (defn- ns-line
@@ -789,7 +794,7 @@
      :error   [(str "  " (paint opts :red (if (= :setup (:phase rec)) "✗ worker setup failed" "✗ failed to load")))]
      :crashed (when (empty? (:vars rec))
                 [(str "  " (paint opts :red "✗ worker crashed"))])
-     :interrupted [(str "  " (paint opts :yellow "- interrupted by fail-fast"))]
+     :interrupted [(str "  " (paint opts :yellow (str "- " (interrupted-text rec))))]
      nil)
    [""]))
 
@@ -863,6 +868,7 @@
   {:fail-fast  "stopped by fail-fast"
    :no-workers "no worker process could be started"
    :unfinished "did not finish"
+   :stopped "stopped before all its tests ran"
    :interrupted "interrupted"})
 
 (defn- wrap-words
