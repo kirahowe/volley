@@ -1,6 +1,6 @@
 {:id 14
  :title "Recompute the randomize seed when tests.edn changes in watch mode"
- :status :ready
+ :status :review
  :type :bug
  :priority :p3
  :created "2026-10-18"
