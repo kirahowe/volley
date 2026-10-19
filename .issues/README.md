@@ -10,12 +10,6 @@
 | [19](19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md) | Add test paths from a reloaded tests.edn to the watch parent classpath | bug | P3 |
 | [20](20-find-the-1-in-40-bb-test-failure-seen-after-the-volley-2.md) | Find the 1-in-40 bb test failure seen after the volley#2 fixes | bug | P3 |
 
-### Ready
-
-| ID | Title | Type | Priority |
-| --- | --- | --- | --- |
-| [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
-
 ### Review
 
 | ID | Title | Type | Priority |
@@ -30,6 +24,7 @@
 | [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
 | [10](10-notice-deps-edn-changes-in-watch-mode-and-the-jvm-classpath.md) | Notice deps.edn changes in watch mode and the JVM classpath cache | feature | P3 |
 | [11](11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md) | Run a namespace found under two test paths twice, as Kaocha does | bug | P3 |
+| [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
 | [13](13-keep-failures-of-vars-a-watch-t-filter-skips.md) | Keep failures of vars a watch t filter skips | bug | P3 |
 | [14](14-recompute-the-randomize-seed-when-tests-edn-changes-in.md) | Recompute the randomize seed when tests.edn changes in watch mode | bug | P3 |
 | [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |

@@ -1,6 +1,6 @@
 {:id 12
  :title "Load hook support in workers only when hooks are configured"
- :status :ready
+ :status :review
  :type :chore
  :priority :p3
  :created "2026-10-18"
