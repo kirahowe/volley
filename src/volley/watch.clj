@@ -27,10 +27,19 @@
   (:require
    [volley.deps-graph :as deps]
    [volley.discover :as discover]
+   [volley.hooks :as hooks]
    [volley.run-state :as rs]
    [volley.select :as select]
    [clojure.set :as set]
    [clojure.string :as str]))
+
+(defn run-opts
+  "The `volley.engine/init` options of a watch run under `config`, the
+  current one (reloaded when tests.edn changes): the session's
+  `engine-opts` with the config's hook options and run seed. Without a
+  `:seed` the run is not randomized."
+  [engine-opts config]
+  (merge engine-opts (hooks/engine-opts config) {:seed (:seed config)}))
 
 (def poll-ms
   "How often the shell compares modification times."

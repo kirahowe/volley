@@ -396,3 +396,20 @@
     (testing "a file the graph cannot place affects every test namespace"
       (is (= '#{a-test b-test}
              (watch/affected-by suites old old {:added [] :modified ["resources/x.edn"] :deleted []}))))))
+
+;; ---------------------------------------------------------------------------
+;; Run options of a reloaded config
+
+(deftest a-reloaded-config-decides-the-run-seed
+  (let [started (config/normalize {:kaocha.plugin.randomize/seed 1234} {} {:seed 7})
+        opts {:workers 2 :seed (:seed started)}]
+    (is (= 1234 (:seed (watch/run-opts opts started))))
+    (testing "turning randomize off in tests.edn drops the seed"
+      (is (nil? (:seed (watch/run-opts opts (config/normalize {:kaocha.plugin.randomize/randomize? false}
+                                                              {} {:seed 7}))))))
+    (testing "a new seed in tests.edn is used"
+      (is (= 99 (:seed (watch/run-opts opts (config/normalize {:kaocha.plugin.randomize/seed 99}
+                                                              {} {:seed 7}))))))
+    (testing "removing it falls back to the session's random seed"
+      (is (= 7 (:seed (watch/run-opts opts (config/normalize {} {} {:seed 7}))))))
+    (is (= 2 (:workers (watch/run-opts opts started))) "other startup options are kept")))

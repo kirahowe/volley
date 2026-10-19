@@ -34,7 +34,6 @@
   (:require
    [volley.discover :as discover]
    [volley.engine :as engine]
-   [volley.hooks :as hooks]
    [volley.shell.fs :as bfs]
    [volley.shell.pool :as pool]
    [volley.shell.terminal :as term]
@@ -145,8 +144,7 @@
                                 (get-in sess [:ws :last :failed]))]
     (if (watch/plan-empty? plan)
       (update sess :inbox conj {:event :run/finished :empty? true :known (known-namespaces sess)})
-      (let [opts (cond-> (merge engine-opts
-                                (hooks/engine-opts (:config sess))
+      (let [opts (cond-> (merge (watch/run-opts engine-opts (:config sess))
                                 {:started-at (now-ms) :durations (bfs/read-timings)
                                  :first-worker-id (:next-worker-id sess)
                                  :compact-summary? true})

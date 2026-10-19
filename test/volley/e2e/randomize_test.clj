@@ -1,7 +1,9 @@
 (ns volley.e2e.randomize-test
-  "volley as a real subprocess: the randomize plugin's seeded var order."
+  "volley as a real subprocess: the randomize plugin's seeded var order,
+  also across a tests.edn change in watch mode."
   (:require
    [volley.e2e.support :as e2e]
+   [volley.e2e.watch-support :as ws]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]))
 
@@ -30,3 +32,24 @@
     (is (not= plain a))
     (testing "kaocha.plugin.randomize prints the seed of a failed run"
       (is (str/includes? out "Randomized with --seed 1234")))))
+
+(deftest watch-takes-the-seed-from-a-reloaded-tests-edn
+  (let [dir (e2e/copy-project nil (assoc files "tests.edn" "#kaocha/v1 {:kaocha.plugin.randomize/seed 1234}"))
+        w (ws/start! dir (ws/volley-command "--watch" "--no-capture-output" "--workers" "1"))
+        order (fn [text] (mapv second (re-seq #"(?m)^ran (t\d+)$" text)))]
+    (try
+      (let [first-run (ws/await-run! w 1)]
+        (is (str/includes? first-run "Randomized with --seed 1234"))
+        (testing "turning randomize off restores name order"
+          (ws/write! dir "tests.edn" "#kaocha/v1 {:kaocha.plugin.randomize/randomize? false}\n")
+          (let [text (ws/await-run! w 2)]
+            (is (= names (order text)))
+            (is (not (str/includes? text "Randomized with")))))
+        (testing "a new seed takes effect"
+          (ws/write! dir "tests.edn" "#kaocha/v1 {:kaocha.plugin.randomize/seed 5678}\n")
+          (let [text (ws/await-run! w 3)]
+            (is (= (sort names) (sort (order text))))
+            (is (not= names (order text)))
+            (is (str/includes? text "Randomized with --seed 5678")))))
+      (finally
+        (is (not= ::e2e/timeout (ws/stop! w)) "the process ends when killed")))))
