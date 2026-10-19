@@ -657,11 +657,13 @@ where `s` is `{:all? :failed? :namespaces :reload-config? :ns-pattern
 
 - are selected: `:all?`, or `:namespaces` (the affected ones), or with
   `:failed?` the namespaces that failed last time;
-- match `:ns-pattern` (`re-find` on the namespace name);
-- can hold a var matching `:test-pattern`, judged from the deftests the
-  parser sees. Workers also get `:var-pattern` in the select spec and skip
-  other vars (`:not-focused`) so generated tests are filtered too. The
-  pattern is matched against the var name.
+- match `:ns-pattern` (`re-find` on the namespace name).
+
+`:test-pattern` drops no namespace, since any of them may hold a
+macro-defined test whose name matches (see tests the parser cannot see).
+Workers get it as `:var-pattern` in the select spec and skip other vars
+(`:not-focused`), matching the pattern against the var name. A namespace
+left with no matching var is unselected and not reported.
 
 A namespace selected only because it failed last time runs just its failed
 vars, through one extra select pass that focuses `ns/var` ids. A namespace

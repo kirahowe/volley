@@ -132,9 +132,11 @@
   * are in the selection: everything with `:all?`, else `:namespaces` and,
     with `:failed?`, the keys of `failed` (`{ns #{var}}`; an empty set means
     the whole namespace);
-  * match `:ns-pattern` (a regex searched in the namespace name);
-  * can contain a var matching `:test-pattern` (checked against the vars
-    `infos` shows; the worker applies it to the real vars).
+  * match `:ns-pattern` (a regex searched in the namespace name).
+
+  `:test-pattern` prunes no namespace: any of them may hold a
+  macro-defined test whose name matches, so it goes into each select spec
+  as `:var-pattern` and the worker applies it to the real vars.
 
   A namespace selected only as failed with known failed vars runs just
   those vars."
@@ -145,13 +147,9 @@
         wanted (into namespaces (when failed? (keys failed)))
         ns-re (compile-pattern ns-pattern)
         test-re (compile-pattern test-pattern)
-        vars-by-ns (into {} (keep (fn [{:keys [ns vars]}] (when ns [ns (keys vars)]))) infos)
         keep? (fn [{:keys [ns]}]
                 (and (or all? (contains? wanted ns))
-                     (or (nil? ns-re) (boolean (re-find ns-re (str ns))))
-                     (or (nil? test-re)
-                         (let [vars (get vars-by-ns ns)]
-                           (or (empty? vars) (some #(re-find test-re (name %)) vars))))))
+                     (or (nil? ns-re) (boolean (re-find ns-re (str ns))))))
         decorate (fn [{:keys [ns] :as entry}]
                    (let [vars (when (and failed? (not all?) (not (contains? namespaces ns)))
                                 (seq (get failed ns)))]

@@ -1,10 +1,12 @@
 (ns volley.watch-test
   (:require
+   [volley.config :as config]
    [volley.discover :as discover]
    [volley.filters :as filters]
    [volley.gen.watch :as gw]
    [volley.select :as select]
    [volley.watch :as watch]
+   [clojure.java.io :as io]
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
@@ -225,18 +227,39 @@
           full (plan-nses (watch/select-plan config infos [] (assoc sel :all? true) {}))]
       (set/subset? (plan-nses (watch/select-plan config infos [] sel {})) full))))
 
-(defspec test-patterns-reach-the-worker-and-prune-static-misses 200
+(defspec test-patterns-reach-the-worker-and-keep-every-namespace 200
+  ;; Any namespace may hold a macro-defined test whose name matches, so the
+  ;; pattern prunes nothing statically; the worker applies it to real vars.
   (prop/for-all [{:keys [infos config selection]} gw/project]
     (let [sel (assoc selection :all? true)
           plan (watch/select-plan config infos [] sel {})
-          by-ns (into {} (map (juxt :ns identity)) (vals infos))
+          unfiltered (watch/select-plan config infos [] (dissoc sel :test-pattern) {})
           re (watch/compile-pattern (:test-pattern sel))]
-      (every? (fn [{:keys [ns select]}]
-                (and (= (:test-pattern sel) (when re (:var-pattern select)))
-                     (or (nil? re)
-                         (empty? (:vars (by-ns ns)))
-                         (some #(re-find re (name %)) (keys (:vars (by-ns ns)))))))
-              (mapcat :namespaces (:suites plan))))))
+      (and (= (plan-nses unfiltered) (plan-nses plan))
+           (every? (fn [{:keys [select]}]
+                     (= (:test-pattern sel) (when re (:var-pattern select))))
+                   (mapcat :namespaces (:suites plan)))))))
+
+(defn- fixture-infos
+  "Discovered infos of the files of dev-resources fixture `project`, keyed by
+  path relative to the project."
+  [project]
+  (let [root (io/file "dev-resources/projects" project)]
+    (into {}
+          (comp (filter #(str/ends-with? (.getName ^java.io.File %) ".clj"))
+                (map (fn [^java.io.File f]
+                       (let [rel (str (.relativize (.toPath root) (.toPath f)))]
+                         [rel (discover/ns-info rel (slurp f))]))))
+          (file-seq root))))
+
+(deftest test-pattern-keeps-namespaces-with-macro-defined-tests
+  (let [config (config/normalize (:config (config/read-config (slurp "dev-resources/projects/generated/tests.edn") {})) {})
+        plan (watch/select-plan config (fixture-infos "generated") []
+                                {:all? true :test-pattern "^generated$"} {})
+        spec (->> plan :suites (mapcat :namespaces) (filter #(= 'g.gen-test (:ns %))) first :select)]
+    (is (some? spec) "g.gen-test shows only `literal`, but its macro defines `generated`")
+    (is (:run? (filters/decide spec 'g.gen-test 'generated {})))
+    (is (not (:run? (filters/decide spec 'g.gen-test 'literal {}))))))
 
 (deftest failed-reruns-focus-the-failed-vars
   (let [infos {"test/a_test.clj" {:file "test/a_test.clj" :ns 'a-test :vars {'x {} 'y {}}}
