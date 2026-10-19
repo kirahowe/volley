@@ -76,6 +76,7 @@ Pure core:
 | `volley.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
 | `volley.discover` | File path + file text → namespace info (name, requires), parsed with edamame. |
 | `volley.paths` | Which files and namespaces belong to a suite: test paths and `ns-patterns`. Apart from `volley.discover`, so planning from cached namespace infos does not load the parser. |
+| `volley.ns-cache` | Which namespace infos a JVM run takes from `.volley/ns-infos.edn` and parses, and the cache to save (`plan-reuse`, `next-cache`). |
 | `volley.select` | Config + namespace infos → the plan's namespaces. |
 | `volley.filters` | Kaocha's filter rules for one var (`decide`), and the focus-meta keys a worker settles. The only selection code a worker loads; `volley.select` uses it too. |
 | `volley.deps-graph` | Namespace infos → dependency graph; changed files → affected test namespaces. |
@@ -916,8 +917,11 @@ were skipped` warning (`rs/all-skipped`).
     JVM the parent keeps the infos in `.volley/ns-infos.edn`, each under
     the SHA-256 of its file's text, and the whole cache under a key of the
     parser's source and edamame's version. It loads `volley.discover` only
-    for files whose text changed, and saves the cache when anything did.
-    An info that does not survive an EDN round trip is not cached. On
+    for files it cannot reuse (`volley.ns-cache`), and saves the cache
+    only when it does not hold every file as it is now. An info that does
+    not survive an EDN round trip is cached as its SHA with an
+    `:uncacheable?` mark: that file is parsed on every run, but while it
+    is unchanged the cache is not saved again. On
     babashka, where edamame is built in, it parses every file.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.volley/timings.edn`).

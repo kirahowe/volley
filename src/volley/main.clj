@@ -10,6 +10,7 @@
    [volley.cli :as cli]
    [volley.config :as config]
    [volley.engine :as engine]
+   [volley.ns-cache :as ns-cache]
    [volley.runtime :as core-runtime]
    [volley.select :as select]
    [volley.shell.fs :as bfs]
@@ -98,28 +99,20 @@
 
 (defn- cached-ns-infos
   "Namespace infos for `files`, reusing the last run's for any file whose
-  text is unchanged (`ns-info` is a function of path and text alone) and
-  saving the new set when anything changed. Parses, and so loads the
-  parser, only for files that changed."
+  text is unchanged (`volley.ns-cache`) and saving the cache when it does
+  not hold every file as it is now. Parses, and so loads the parser, only
+  for the files it cannot reuse."
   [files]
   (let [key (parser-key)
-        cache (bfs/read-ns-info-cache)
-        known (if (= key (:parser cache)) (:files cache) {})
-        entries (mapv (fn [path]
-                        (let [text (bfs/read-file path)
-                              sha (bfs/sha256 text)
-                              hit (get known path)]
-                          (if (and hit (= sha (:sha hit)))
-                            {:path path :sha sha :info (:info hit) :hit? true}
-                            {:path path :sha sha :info (parse-ns-info path text)})))
-                      files)]
-    (when-not (and (every? :hit? entries) (= (count known) (count entries)))
+        texts (into {} (map (juxt identity bfs/read-file)) files)
+        hashed (mapv #(hash-map :path % :sha (bfs/sha256 (texts %))) files)
+        {:keys [reuse parse write?]} (ns-cache/plan-reuse (bfs/read-ns-info-cache) key hashed)
+        parsed (into {} (map (juxt identity #(parse-ns-info % (texts %)))) parse)
+        infos (mapv #(get reuse % (get parsed %)) files)]
+    (when write?
       (bfs/write-ns-info-cache!
-       {:parser key
-        :files (into {} (keep (fn [{:keys [path sha info]}]
-                                (when (bfs/edn-safe? info) [path {:sha sha :info info}])))
-                     entries)}))
-    (mapv :info entries)))
+       (ns-cache/next-cache key (map #(assoc %1 :info %2) hashed infos) bfs/edn-safe?)))
+    infos))
 
 (defn- discover-all
   "Namespace info for every Clojure file under the suites' test paths. On

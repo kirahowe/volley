@@ -141,8 +141,8 @@
                     (.digest md (.getBytes (str text) "UTF-8"))))))
 
 (defn read-ns-info-cache
-  "What `write-ns-info-cache!` saved, `{:parser key :files {path {:sha
-  hex :info ns-info}}}`; empty when absent or unreadable."
+  "What `write-ns-info-cache!` saved, `{:parser key :files {path entry}}`
+  (`volley.ns-cache`); empty when absent or unreadable."
   []
   (try
     (let [m (edn/read-string (slurp ns-info-cache-file))]
