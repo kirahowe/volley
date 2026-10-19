@@ -1,0 +1,11 @@
+{:id 14
+ :title "Recompute the randomize seed when tests.edn changes in watch mode"
+ :status :inbox
+ :type :bug
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "14-recompute-the-randomize-seed-when-tests-edn-changes-in.md"}

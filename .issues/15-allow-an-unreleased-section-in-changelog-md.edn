@@ -1,0 +1,11 @@
+{:id 15
+ :title "Allow an Unreleased section in CHANGELOG.md"
+ :status :inbox
+ :type :chore
+ :priority :p3
+ :created "2026-10-18"
+ :updated "2026-10-18"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "15-allow-an-unreleased-section-in-changelog-md.md"}
