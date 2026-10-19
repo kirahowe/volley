@@ -4,6 +4,45 @@ All notable changes to volley are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and volley uses
 [semantic versioning](https://semver.org/) once it leaves alpha.
 
+## [Unreleased]
+
+### Added
+
+- Random test order. With Kaocha's randomize plugin (on by default) or
+  `--randomize`, the vars inside each namespace run in an order shuffled
+  from the run seed and the namespace's name, so babashka and JVM workers
+  agree on it. `--seed N` reproduces that order, a failed run prints
+  `Randomized with --seed N` as Kaocha does, and load hooks see the vars
+  in run order. Namespaces still start slowest first. The warning that
+  volley does not randomize is gone. (volley#4)
+- When volley creates `.volley/`, it writes a `.gitignore` containing `*`
+  inside it, so git and jj ignore the cache without a project entry.
+  (volley#1)
+- Watch mode reloads when the project's `deps.edn` or `bb.edn` changes
+  and computes the workers' classpath again. Removed dependencies and
+  paths stay on the classpath until a restart. (volley#10)
+
+### Changed
+
+- The `--runtime jvm` classpath cache key also covers the `deps.edn` of
+  every `:local/root` dependency, including those in `:default-deps`, and
+  the user-level `deps.edn`. (volley#10)
+- A plugin whose namespace loads but defines no plugin stops the run with
+  exit 249, as in Kaocha, instead of a warning. volley looks for the
+  definition through the namespace's requires and wrapper macros, and
+  ignores commented-out ones. (volley#7)
+- A namespace that two test paths define runs once, from the file that
+  comes first on the classpath; Kaocha runs it twice. This is now
+  documented as a deliberate divergence. (volley#11)
+
+### Fixed
+
+- Watch mode's `t` filter now runs matching tests that a macro defines;
+  the worker applies the pattern after loading the namespace. Failures of
+  a namespace the filter skips stay counted. (volley#5)
+- A namespace whose vars are all pending runs its `:once` fixtures, as in
+  Kaocha. A `^:kaocha/pending` namespace still runs none. (volley#6)
+
 ## [0.1.0-alpha.1] - 2026-10-18
 
 First alpha. volley is a `clojure.test` runner that reads Kaocha's
@@ -91,4 +130,5 @@ First alpha. volley is a `clojure.test` runner that reads Kaocha's
   `--print-*` maps). See "Deliberate divergences from Kaocha" in
   [doc/design.md](doc/design.md).
 
+[Unreleased]: https://github.com/kirahowe/volley/compare/v0.1.0-alpha.1...HEAD
 [0.1.0-alpha.1]: https://github.com/kirahowe/volley/releases/tag/v0.1.0-alpha.1
