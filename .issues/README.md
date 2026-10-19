@@ -15,7 +15,6 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
 | [4](4-support-random-test-order-kaocha-randomize-plugin.md) | Support random test order (Kaocha randomize plugin) | feature | P3 |
 | [5](5-watch-mode-test-name-filter-misses-macro-defined-tests.md) | Watch mode test-name filter misses macro-defined tests | bug | P3 |
@@ -27,6 +26,7 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
+| [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
 | [11](11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md) | Run a namespace found under two test paths twice, as Kaocha does | bug | P3 |
 
 ## Done

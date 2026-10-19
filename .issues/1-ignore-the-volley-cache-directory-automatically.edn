@@ -1,6 +1,6 @@
 {:id 1
  :title "Ignore the .volley/ cache directory automatically"
- :status :ready
+ :status :review
  :type :feature
  :priority :p2
  :created "2026-10-18"

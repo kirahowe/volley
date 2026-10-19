@@ -22,3 +22,11 @@ cache directory when it creates it.
       removed or reworded.
 - [ ] Shell test (`volley.shell.fs`) covering creation and not overwriting
       an existing file.
+
+## Log
+
+- 2026-10-18: Added `volley.shell.fs/ensure-cache-dir!`, which writes a
+  `.gitignore` of `*` when it creates `.volley/`; the timings and JVM
+  classpath writers both call it. Covered by `test/volley/shell/fs_test.clj`,
+  reworded the README note and mentioned it in doc/design.md. A `.volley/`
+  left by an older version gets no ignore file, matching pytest.
