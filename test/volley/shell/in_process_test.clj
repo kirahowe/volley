@@ -62,3 +62,16 @@
     (pool/kill! handle)
     (let [events (until-exit queue)]
       (is (= {:event :worker/exit :worker 6 :code 1} (dissoc (last events) :at))))))
+
+(deftest a-var-ending-after-kill-leaves-the-streams-alone
+  ;; the killed thread still ends its var, and must not put its own stray
+  ;; stream back as System/out and System/err
+  (let [streams [System/out System/err]
+        queue (pool/new-queue)
+        handle (in-process/start-worker! {:queue queue} 7)]
+    (pool/send! handle {:op :run :ns 'exec.slow-test :run-id 1 :capture-output? true})
+    (until queue #(= :var/start (:event %)))
+    (pool/kill! handle)
+    (until-exit queue)
+    (is (= :var/end (:event (last (until queue #(= :var/end (:event %)))))))
+    (is (= streams [System/out System/err]))))

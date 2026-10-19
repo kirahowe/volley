@@ -906,7 +906,11 @@ were skipped` warning (`rs/all-skipped`).
     terminal and breaks up the live view instead of becoming an output
     event. And a kill (fail-fast, the watchdog) puts `System/out` and
     `System/err` back while the interrupted thread may still run, so
-    what it writes there afterwards reaches the terminal too.
+    what it writes there afterwards reaches the terminal too. The var it
+    was running still ends, but the worker puts the streams back at the
+    end of a var only while they are still that var's capture, so the
+    killed thread cannot make its own stray stream the parent's
+    `System/out` again.
     `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
     last three wall times (engine start to end) of runs in process and of
     runs with worker processes, and how many short worker runs came

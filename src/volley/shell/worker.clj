@@ -276,8 +276,10 @@
       (reset! live-capture nil)
       (set! *out* saved-out)
       (set! *err* saved-err)
-      (System/setOut saved-system-out)
-      (System/setErr saved-system-err))
+      ;; only while they are still the capture: a killed in-process
+      ;; worker has given the parent its own streams back by now
+      (when (identical? System/out (:stream capture)) (System/setOut saved-system-out))
+      (when (identical? System/err (:stream capture)) (System/setErr saved-system-err)))
     (reset! acc {:ended {:pass pass :fail fail :error error}})
     (emit! {:event :var/end :ns ns-sym :var (:name (meta var))
             :pass pass :fail fail :error error
