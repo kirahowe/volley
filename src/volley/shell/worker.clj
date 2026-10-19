@@ -337,9 +337,9 @@
   `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
   inside the `:each` fixtures, and returns its result; after each var
   `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
-  still finish), and no var starts once `stop-requested` is set. Each result is added to `(:results @progress)`, since a
-  `:once` fixture does not hand back what the tests return. Returns the
-  results."
+  still finish), and no var starts once `stop-requested` is set. Each
+  result is added to `(:results @progress)`, since a `:once` fixture does
+  not hand back what the tests return. Returns the results."
   [ns-obj vars run-var stop? progress]
   (let [m (meta ns-obj)
         once (t/join-fixtures (:clojure.test/once-fixtures m))
