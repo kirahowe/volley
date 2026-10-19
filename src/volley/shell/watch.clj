@@ -125,7 +125,7 @@
   since its classpath includes the suites' test paths. Once deps.edn or
   bb.edn has changed, every rebuild computes the classpath again instead
   of reusing the one the parent started with (`:refresh-classpath?`
-  stays set)."
+  stays set, even when that rebuild fails)."
   [env sess reload-deps?]
   (let [refresh? (boolean (or reload-deps? (:refresh-classpath? sess)))
         {:keys [config error]} ((:reload-config env))
@@ -136,7 +136,7 @@
     (if (and config (not error))
       (assoc sess :config config :command (:command cmd) :refresh-classpath? refresh?
              :infos (read-infos config) :snapshot (take-snapshot env config))
-      (do (complain! error) sess))))
+      (do (complain! error) (assoc sess :refresh-classpath? refresh?)))))
 
 (defn- start-run [{:keys [ctx run-effects! engine-opts] :as env} sess selection]
   (let [sess (cond-> sess
