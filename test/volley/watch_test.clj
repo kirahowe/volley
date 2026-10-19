@@ -4,6 +4,7 @@
    [volley.discover :as discover]
    [volley.filters :as filters]
    [volley.gen.watch :as gw]
+   [volley.run-state :as rs]
    [volley.select :as select]
    [volley.watch :as watch]
    [clojure.java.io :as io]
@@ -175,6 +176,17 @@
         merged (watch/merge-outcome (watch/merge-outcome nil a) b)]
     (is (= {'b-test #{}} (:failed merged)))
     (is (false? (:ok? merged)))))
+
+(deftest failures-of-unselected-namespaces-are-kept
+  (let [skipped {:phase :skipped :reason :not-focused}
+        run (assoc (rs/init {:namespaces '[a-test b-test]})
+                   :namespaces {'a-test {:ns 'a-test :status :done :vars {'x skipped}}
+                                'b-test {:ns 'b-test :status :done :vars {'only-in-b {:phase :done}}
+                                         :pass 1}})
+        prev (watch/merge-outcome nil {:ran '#{a-test b-test} :failed {'a-test #{'x}}})
+        merged (watch/merge-outcome prev (watch/outcome run))]
+    (is (= '#{b-test} (:ran (watch/outcome run))))
+    (is (= {'a-test #{'x}} (:failed merged)) "a t filter that skips a-test keeps its failure")))
 
 (deftest keys-are-not-advertised-without-a-terminal
   (let [lines (-> (run-inputs (watch/init {:keys? false}) [{:event :start} {:event :run/finished :empty? true}])

@@ -173,7 +173,9 @@
   value): `{:ran #{ns} :failed {key #{var}}}`. A key is a namespace, or the
   path of an unreadable test file. A key whose failure is not tied to a var
   (load error, crash, not run, unreadable file) has an empty set, meaning
-  \"all of it\"."
+  \"all of it\". A namespace that finished unselected (the filters chose
+  none of its vars) is left out of `:ran`, so its earlier failures carry
+  over."
   [run]
   (let [failed (reduce (fn [m {:keys [ns file var kind]}]
                          (let [k (or ns file)]
@@ -184,7 +186,9 @@
                              :else (update m k (fnil conj #{}) var))))
                        {}
                        (rs/failures run))]
-    {:ran (into (set (:planned run)) (keys (:namespaces run)))
+    {:ran (into #{}
+                (remove #(some-> (get-in run [:namespaces %]) rs/unselected?))
+                (into (set (:planned run)) (keys (:namespaces run))))
      :failed failed}))
 
 (defn merge-outcome
