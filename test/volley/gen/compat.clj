@@ -302,6 +302,16 @@
            :workers workers :isolate isolate :runtime runtime :reporter reporter
            :plugin plugin})))
 
+(def third-party-plugin
+  "A plugin keyword outside `kaocha.plugin`: `:a.b/c` or `:a.b.c`."
+  (gen/such-that #(not= "kaocha.plugin" (namespace %))
+                 (gen/let [ns ns-sym
+                           n segment
+                           qualified? gen/boolean]
+                   (if qualified?
+                     (keyword (str ns) n)
+                     (keyword (str ns "." n))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Dependency graphs
 

@@ -96,6 +96,11 @@
     (is (= 250 (exit-of (pre {:config {:errors ["bad"]} :cli {:options {:help true} :errors []}})))))
   (testing "an unreadable tests.edn is a config error"
     (is (= 250 (exit-of (pre {:read-error "Failed reading tests.edn: EOF"})))))
+  (testing "kaocha.plugin/register: a plugin that fails to load exits 248, one never defined 249"
+    (is (= 248 (exit-of (pre {:plugin-error {:error :plugin-error :message "x"}}))))
+    (let [effs (pre {:plugin-error {:error :plugin-undefined :message "Couldn't load plugin :a/b."}})]
+      (is (= 249 (exit-of effs)))
+      (is (some #{"ERROR: Couldn't load plugin :a/b."} (mapcat :lines effs)))))
   (testing "--help and --version exit 0"
     (is (= 0 (exit-of (pre {:cli {:options {:help true} :errors []}}))))
     (is (= 0 (exit-of (pre {:cli {:options {:version true} :errors []}})))))

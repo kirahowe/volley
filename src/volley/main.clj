@@ -38,21 +38,21 @@
 ;; ---------------------------------------------------------------------------
 ;; Inputs
 
-(defn- loadable?
-  "True when namespace `ns-sym` has a source file on this process's
-  classpath or under one of `dirs`."
+(defn- ns-source
+  "The source text of namespace `ns-sym` from this process's classpath or
+  one of `dirs`, or nil when it has no source file."
   [dirs ns-sym]
   (let [base (-> (str ns-sym) (str/replace "-" "_") (str/replace "." "/"))
         files (map #(str base %) [".clj" ".cljc" ".bb"])]
-    (boolean (or (some io/resource files)
-                 (some (fn [d] (some #(bfs/exists? (str d "/" %)) files)) dirs)))))
+    (or (some #(some-> (io/resource %) slurp) files)
+        (some (fn [d] (some #(let [f (str d "/" %)] (when (bfs/exists? f) (bfs/read-file f))) files)) dirs))))
 
 (defn- plugin-error
-  "Kaocha's error for the first plugin in `:unknown-plugins` that cannot be
-  loaded at all, or nil."
+  "Kaocha's error for the first plugin in `:unknown-plugins` that does not
+  load, or nil."
   [cfg]
   (let [dirs (mapcat (juxt :test-paths :source-paths) (:tests cfg))]
-    (some #(config/plugin-load-error % (partial loadable? (flatten dirs))) (:unknown-plugins cfg))))
+    (some #(config/plugin-load-error % (partial ns-source (flatten dirs))) (:unknown-plugins cfg))))
 
 (defn- load-config
   "Parse args and read tests.edn. Returns the pieces `engine/preflight`

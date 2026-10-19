@@ -68,7 +68,12 @@
   (testing "kaocha.plugin/register: a plugin no namespace defines exits 248"
     (let [{:keys [exit err]} (e2e/run "default" ["--plugin" "my.team/thing"])]
       (is (= 248 exit))
-      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. Failed to load namespaces my.team.thing and my.team.")))))
+      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. Failed to load namespaces my.team.thing and my.team."))))
+  (testing "kaocha.plugin/register: a namespace that loads but defines no plugin exits 249"
+    (let [dir (e2e/copy-project "default" {"src/my/team/thing.clj" "(ns my.team.thing)"})
+          {:keys [exit err]} (e2e/volley dir ["--plugin" "my.team/thing"])]
+      (is (= 249 exit))
+      (is (str/includes? err "ERROR: Couldn't load plugin :my.team/thing. The plugin was not defined after loading namespace my.team.thing. Is the file missing a defplugin?")))))
 
 (deftest output-outside-capture-is-printed-as-it-happens
   (testing "--no-capture-output: everything a test prints shows, as in Kaocha"

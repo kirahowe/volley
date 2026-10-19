@@ -11,6 +11,7 @@
    [babashka.fs :as fs]
    [volley.diff.kaocha-result :as kr]
    [volley.e2e.support :as e2e]
+   [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]))
 
 (defn- kaocha-in
@@ -143,3 +144,20 @@
       (is (= (comparable kres) (comparable bres)) ":each fixture assertions count for the var in both")
       (is (= 2 kexit))
       (is (= 3 bexit)))))
+
+(deftest plugin-load-errors-match-kaocha
+  (testing "kaocha.plugin/register: same exit code and message for a plugin that does not load"
+    (doseq [files [{"src/my/team/thing.clj" "(ns my.team.thing)"}
+                   {"src/my/team.clj" "(ns my.team)"}
+                   {}]]
+      (let [dir (e2e/copy-project "default" files)
+            cp (e2e/classpath (e2e/parent-classpath) "src")
+            args ["--plugin" "my.team/thing"]
+            k (e2e/sh dir (into ["bb" "-cp" cp "-m" "kaocha.runner/-main"] args))
+            v (e2e/volley dir args)
+            error-line #(some (fn [l] (when (str/starts-with? l "ERROR:") l))
+                              (str/split-lines (str/replace (str (:out %) (:err %)) #"\u001b\[[0-9;]*m" "")))]
+        (testing (pr-str files)
+          (is (= (:exit k) (:exit v)) "exit code")
+          (is (some? (error-line k)))
+          (is (= (error-line k) (error-line v))))))))

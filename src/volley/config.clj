@@ -368,19 +368,51 @@
     [(symbol (str (namespace plugin) "." (name plugin))) (symbol (namespace plugin))]
     [(symbol (name plugin))]))
 
+(def ^:private delimiter
+  "What may follow a symbol or keyword in source text."
+  "(?=[\\s,()\\[\\]{}\"]|$)")
+
+(defn- defines-plugin?
+  "True when `text`, the source of namespace `ns-sym`, appears to define
+  `plugin`: a `defplugin` of its name, or its keyword (`::name` too, when
+  the keyword's namespace is `ns-sym`), as `defmethod -register` takes it.
+  Read from the text, as volley does not load plugins: a definition in
+  another namespace that this one requires goes unseen."
+  [plugin ns-sym text]
+  (let [lit #(java.util.regex.Pattern/quote %)
+        forms (cond-> [(str "(?:^|[\\s(])(?:[^\\s()]+/)?defplugin\\s+" (lit (subs (str plugin) 1)))
+                       (str "(?<![^\\s,()\\[\\]{}])" (lit (str plugin)))]
+                (= (namespace plugin) (str ns-sym))
+                (conj (str "(?<![^\\s,()\\[\\]{}])" (lit (str "::" (name plugin))))))]
+    (boolean (some #(re-find (re-pattern (str % delimiter)) text) forms))))
+
 (defn plugin-load-error
-  "Kaocha's message (`kaocha.plugin/register`, exit 248) for `plugin` when
-  none of its candidate namespaces can be loaded; `loadable?` says whether
-  a namespace can. nil when one can: then the plugin may exist, and volley
-  ignores it with a warning. `kaocha.plugin` itself, always there under
-  Kaocha, defines no plugin and is left out."
-  [plugin loadable?]
-  (let [candidates (remove #{'kaocha.plugin} (plugin-candidates plugin))
-        failed (remove loadable? candidates)]
-    (when (and (seq failed) (= failed candidates))
-      (str "Couldn't load plugin " plugin ". Failed to load namespace" (when (next failed) "s") " "
-           (str/join " and " failed)
-           ". This could be caused by a misspelling or a missing dependency."))))
+  "Kaocha's error for `plugin` (`kaocha.plugin/register`), or nil when it
+  loads. `source-of` returns a namespace's source text, nil when it cannot
+  be loaded. Kaocha tries `a.b` only when `a.b.c` fails
+  (`try-load-third-party-lib`). Returns `{:error :plugin-error :message s}`
+  (exit 248) when a namespace it tried failed and none defines the plugin,
+  `{:error :plugin-undefined :message s}` (exit 249) when they all loaded.
+  `kaocha.plugin` itself, always there under Kaocha, defines no other plugin."
+  [plugin source-of]
+  (let [sources (map (fn [ns-sym] [ns-sym (if (= 'kaocha.plugin ns-sym) "" (source-of ns-sym))])
+                     (plugin-candidates plugin))
+        tried (if (second (first sources)) (take 1 sources) sources)
+        failed (map first (remove second tried))]
+    (cond
+      (some (fn [[ns-sym text]] (and text (defines-plugin? plugin ns-sym text))) tried)
+      nil
+
+      (empty? failed)
+      {:error :plugin-undefined
+       :message (str "Couldn't load plugin " plugin ". The plugin was not defined after loading namespace "
+                     (ffirst tried) ". Is the file missing a defplugin?")}
+
+      :else
+      {:error :plugin-error
+       :message (str "Couldn't load plugin " plugin ". Failed to load namespace" (when (next failed) "s") " "
+                     (str/join " and " failed)
+                     ". This could be caused by a misspelling or a missing dependency.")})))
 
 (def ^:private silent-namespaces
   #{"kaocha.plugin.profiling" "kaocha.plugin.print-invocations"

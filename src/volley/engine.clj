@@ -44,6 +44,7 @@
    :unknown-suite 254      ; kaocha.runner/run returns -2
    :config-invalid 252     ; kaocha.runner: the config fails Kaocha's spec
    :config-error 250       ; kaocha.config/replace-by-default
+   :plugin-undefined 249   ; kaocha.plugin/register: its namespaces load but do not define it
    :plugin-error 248       ; kaocha.plugin/register: a plugin that cannot load
    :no-tests 0})           ; kaocha.api/run warns and exits 0
 
@@ -79,7 +80,7 @@
 (defn preflight
   "Decide what happens before any worker starts. Takes
   `{:cli parsed-args :config normalized :read-error str-or-nil
-    :plugin-error str-or-nil :config-missing? bool :config-file path :plan plan-or-nil
+    :plugin-error {:error kw :message str}-or-nil :config-missing? bool :config-file path :plan plan-or-nil
     :help str :version str}`
   (the plan may be absent when it is not needed yet).
 
@@ -111,7 +112,7 @@
         (exit (:config-error exit-codes))]
 
        plugin-error
-       [(err [(str "ERROR: " plugin-error)]) (exit (:plugin-error exit-codes))]
+       [(err [(str "ERROR: " (:message plugin-error))]) (exit (exit-codes (:error plugin-error)))]
 
        (seq (:errors cli))
        [(out (concat (:errors cli) [help])) (exit (:cli-error exit-codes))]
