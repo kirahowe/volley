@@ -12,10 +12,11 @@
   "The version in the first `## [...]` heading of `changelog`, skipping an
   `## [Unreleased]` section."
   [changelog]
-  (second (re-find #"(?m)^## \[(?!Unreleased\])([^\]]+)\]" changelog)))
+  (second (re-find #"(?m)^## \[(?!(?i:unreleased)\])([^\]]+)\]" changelog)))
 
 (deftest changelog-version-skips-unreleased
   (is (= "1.2.0" (changelog-version "# Changelog\n\n## [Unreleased]\n\n- x\n\n## [1.2.0] - 2026-01-01\n")))
+  (is (= "1.2.0" (changelog-version "# Changelog\n\n## [unreleased]\n\n## [1.2.0] - 2026-01-01\n")))
   (is (= "1.2.0" (changelog-version "# Changelog\n\n## [1.2.0] - 2026-01-01\n"))))
 
 (deftest one-version-everywhere
