@@ -565,7 +565,9 @@
                            (when (some #{:kaocha.plugin/randomize} plugins)
                              (pick (:kaocha.plugin.randomize/randomize? cfg) true))
                            false))
-        seed (when on? (pick (:seed cli-options) (:kaocha.plugin.randomize/seed cfg) (:seed raw) env-seed))]
+        seed (when on?
+               (pick (:seed cli-options) (:kaocha.plugin.randomize/seed cfg)
+                     (:seed raw) env-seed))]
     (cond-> {:randomize? on?}
       (int? seed) (assoc :seed seed))))
 
@@ -625,9 +627,9 @@
   overrides of `kaocha.config/apply-cli-opts`; the CLI always wins. Accepts
   both `:test-paths` and `:kaocha/test-paths` style keys. Unsupported plugins
   and options become `:warnings` entries. `env` may carry `:seed`, the
-  random seed to use when neither `--seed` nor tests.edn gives one, `:cpus` for the
-  default worker count and `:bb?` (default true) for the runtime of the
-  parent, which is also the default worker runtime.
+  random seed to use when neither `--seed` nor tests.edn gives one,
+  `:cpus` for the default worker count and `:bb?` (default true) for the
+  runtime of the parent, which is also the default worker runtime.
 
   Total: input Kaocha would reject (where it exits with an error, such as a
   string for `:test-paths`) yields the defaults and a message in `:errors`,

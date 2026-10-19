@@ -178,8 +178,9 @@
   `:timestamp` and `:cwd`: the report is written after the summary.
   `:bindings` (`{var-sym value}`, Kaocha's `:kaocha/bindings`) goes to the
   workers with every run message, and so does `:seed`, the run seed of a
-  randomized run, which the summary of a failed run prints. `:config` is the normalized config, for
-  the Kaocha-shaped result `--print-result` prints. `:compact-summary?`
+  randomized run, which the summary of a failed run prints. `:config` is
+  the normalized config, for the Kaocha-shaped result `--print-result`
+  prints. `:compact-summary?`
   (watch mode) ends the run with the counts line alone: no slowest tests,
   and no rerun command, which `f` does there.
   Events from any worker this run did not spawn are dropped.
