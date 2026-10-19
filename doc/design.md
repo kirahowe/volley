@@ -889,6 +889,12 @@ difference:
   `:volley/worker-setup` and load hooks (`volley.shell.hooks/setup`). A
   namespace that fails to load then is a warning (`--preload could not
   load ...`, once per run); its own run reports the error.
+- **A namespace under two test paths.** When two test paths define the
+  same namespace (`test/g/dup_test.clj` and `test2/g/dup_test.clj` both
+  declaring `g.dup-test`), Kaocha runs it twice and counts its tests
+  twice. volley plans one namespace per name, so it runs once: the worker
+  requires it by name and loads whichever file comes first on the
+  classpath. Overlapping suites behave the same way (see Decisions).
 - **Namespace failures in the junit-xml report.** kaocha-junit-xml gives
   the testcase of a failed namespace (a load error, a failing assertion
   in a `:once` fixture) an empty `classname`; volley uses the namespace,

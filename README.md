@@ -256,6 +256,8 @@ namespace is loaded in the worker that runs it unless you pass `--preload`.
   accepted with a warning.
 - When two suites select the same namespace, it runs once, with the
   first suite's selection. Kaocha runs it twice.
+- When two test paths define the same namespace, it runs once, from the
+  file that comes first on the classpath. Kaocha runs it twice.
 - A namespace is loaded only in the worker that runs it. A test namespace
   that relies on another one being loaded first (an `assert-expr`
   method, a spec) needs `--preload`.
