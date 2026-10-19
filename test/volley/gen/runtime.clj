@@ -61,6 +61,8 @@
 
 (def dep-graph
   "Directories `a` to `d`, each listing the directories its deps.edn points
-  at with `:local/root` (`missing` has no deps.edn)."
-  (gen/map (gen/elements ["a" "b" "c" "d"])
-           (gen/vector (gen/elements ["a" "b" "c" "d" "missing"]) 0 3)))
+  at with `:local/root` (`missing` has no deps.edn). `a`, where traversal
+  starts, always has an entry."
+  (let [roots (gen/vector (gen/elements ["a" "b" "c" "d" "missing"]) 0 3)]
+    (gen/fmap (fn [[a m]] (assoc m "a" a))
+              (gen/tuple (gen/not-empty roots) (gen/map (gen/elements ["b" "c" "d"]) roots)))))

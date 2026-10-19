@@ -144,9 +144,19 @@
     (let [text-of (fn [dir] (pr-str {:deps (into {} (map (fn [d] [(symbol "x" d) {:local/root (str "/" d)}]))
                                                  (get edges dir))}))
           files (into {} (map (fn [d] [(str "/" d "/deps.edn") (text-of d)])) (keys edges))
-          found (runtime/local-deps-files (text-of "root") "/root" {:read files :join join-abs})]
-      (and (= (set (map #(str "/" % "/deps.edn") (reachable edges "root"))) (set (keys found)))
+          found (runtime/local-deps-files (get files "/a/deps.edn") "/a" {:read files :join join-abs})]
+      (and (= (set (map #(str "/" % "/deps.edn") (reachable edges "a"))) (set (keys found)))
            (every? (fn [[f t]] (= t (get files f))) found)))))
+
+(deftest local-deps-files-stop-at-cycles-and-self-loops
+  (let [files {"/a/deps.edn" "{:deps {b/b {:local/root \"/b\"}}}"
+               "/b/deps.edn" "{:deps {a/a {:local/root \"/a\"} b/b {:local/root \"/b\"}}}"}]
+    (is (= files (runtime/local-deps-files (get files "/a/deps.edn") "/a"
+                                           {:read files :join join-abs})))
+    (is (= {"/c/deps.edn" "{:deps {c/c {:local/root \"/c\"}}}"}
+           (runtime/local-deps-files "{:deps {c/c {:local/root \"/c\"}}}" "/x"
+                                     {:read {"/c/deps.edn" "{:deps {c/c {:local/root \"/c\"}}}"}
+                                      :join join-abs})))))
 
 (deftest local-deps-files-resolve-relative-roots-from-their-own-directory
   (let [files {"/p/../a/deps.edn" "{:deps {b/b {:local/root \"../b\"}}}"
