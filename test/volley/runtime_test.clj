@@ -34,6 +34,74 @@
            (= n (min (or cpus 4) cap))))))
 
 ;; ---------------------------------------------------------------------------
+;; In process or in worker processes
+
+(defn- short? [ms] (and (number? ms) (<= ms runtime/in-process-limit-ms)))
+
+(defspec typical-is-a-middle-value 200
+  (prop/for-all [times (gen/vector g/wall-ms 1 3)]
+    (let [t (runtime/typical times)
+          below (count (filter #(< % t) times))
+          above (count (filter #(> % t) times))]
+      (and (some #{t} times)
+           (<= below (quot (count times) 2))
+           (<= above (quot (count times) 2))))))
+
+(defspec worker-plan-keeps-the-worker-count 200
+  (prop/for-all [in g/worker-plan-input]
+    (= (:workers in) (:workers (runtime/worker-plan in)))))
+
+(defspec chosen-workers-are-never-in-process 200
+  ;; --workers (or :workers in tests.edn) always overrides the heuristic
+  (prop/for-all [in g/worker-plan-input]
+    (not (:in-process? (runtime/worker-plan (assoc in :workers-set? true))))))
+
+(defspec in-process-only-where-the-shell-allows-it 200
+  (prop/for-all [in g/worker-plan-input]
+    (not (:in-process? (runtime/worker-plan (assoc in :in-process-ok? false))))))
+
+(defspec no-history-means-worker-processes 200
+  (prop/for-all [in g/worker-plan-input]
+    (not (:in-process? (runtime/worker-plan (assoc in :history {}))))))
+
+(defspec in-process-needs-short-runs-on-record 300
+  (prop/for-all [in g/worker-plan-input]
+    (let [{:keys [in-process-ms workers-ms]} (:history in)]
+      (= (:in-process? (runtime/worker-plan in))
+         (and (:in-process-ok? in) (not (:workers-set? in))
+              (short? (runtime/typical (if (seq in-process-ms) in-process-ms workers-ms))))))))
+
+(defspec one-slow-run-does-not-change-the-plan 300
+  ;; a busy machine slows one run down; the next plan is the same as if
+  ;; it had not happened, once two runs of the same mode agree
+  (prop/for-all [history g/history
+                 in-process? gen/boolean
+                 wall g/wall-ms
+                 slow (gen/choose (inc runtime/in-process-limit-ms) 600000)]
+    (let [plan #(runtime/worker-plan {:workers 4 :in-process-ok? true :history %})
+          steady (-> history
+                     (runtime/record-run {:in-process? in-process? :wall-ms wall})
+                     (runtime/record-run {:in-process? in-process? :wall-ms wall}))]
+      (= (plan steady)
+         (plan (runtime/record-run steady {:in-process? in-process? :wall-ms slow}))))))
+
+(defspec record-run-keeps-the-recent-times-of-its-mode 300
+  (prop/for-all [history g/history
+                 in-process? gen/boolean
+                 wall g/wall-ms]
+    (let [k (if in-process? :in-process-ms :workers-ms)
+          other (if in-process? :workers-ms :in-process-ms)
+          after (runtime/record-run history {:in-process? in-process? :wall-ms wall})]
+      (and (= wall (peek (get after k)))
+           (= (seq (take-last (dec runtime/recent-runs) (get history k))) (seq (pop (get after k))))
+           (= (get history other) (get after other))))))
+
+(deftest record-run-accepts-a-missing-or-broken-history
+  (is (= {:workers-ms [812]} (runtime/record-run nil {:in-process? false :wall-ms 812.4})))
+  (is (= {:in-process-ms [5]} (runtime/record-run [:junk] {:in-process? true :wall-ms 5})))
+  (is (= {:in-process-ms [1 5]} (runtime/record-run {:in-process-ms [:x 1]} {:in-process? true :wall-ms 5}))))
+
+;; ---------------------------------------------------------------------------
 ;; JVM options
 
 (defspec forwarded-args-keep-input-order 200
@@ -245,6 +313,13 @@
       (is (= [:bb 8] ((juxt :runtime :workers) c)))))
   (testing "--workers always wins"
     (is (= 12 (:workers (config/normalize nil {:workers 12 :runtime :jvm} {:cpus 2 :bb? true})))))
+  (testing "a worker count from --workers or tests.edn is marked as chosen, so worker-plan keeps it"
+    (is (false? (:workers-set? (config/normalize nil {} {:cpus 16 :bb? false}))))
+    (is (true? (:workers-set? (config/normalize nil {:workers 2} {:cpus 16 :bb? false}))))
+    (is (true? (:workers-set? (config/normalize {:workers 3} {} {:cpus 16 :bb? false}))))
+    (let [c (config/normalize nil {} {:cpus 16 :bb? false})]
+      (is (false? (:workers-set? (config/normalize c {} {:cpus 16 :bb? false})))
+          "normalizing a normalized config keeps the default a default")))
   (testing "isolating JVM workers warns"
     (is (some #(re-find #"slow" %)
               (:warnings (config/normalize nil {:runtime :jvm :isolate true} {:bb? true}))))

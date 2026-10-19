@@ -27,20 +27,26 @@
   ([classpath]
    ["bb" "-cp" (or classpath "") "-m" "volley.shell.worker"]))
 
+(defn put-line!
+  "Put each message `decode` makes of `line`, which worker `id` wrote on
+  `stream` (`:stdout` or `:stderr`), on `queue` as an event."
+  [^LinkedBlockingQueue queue id stream decode line]
+  (doseq [message (decode line)]
+    (.put queue (protocol/->event message
+                                  {:worker id
+                                   :at (System/currentTimeMillis)
+                                   :stream stream}))))
+
 (defn- pump!
   "Read `stream` line by line, putting each message `decode` makes of a
   line as an event on `queue`."
-  [^LinkedBlockingQueue queue worker stream decode]
+  [queue worker stream decode]
   (with-open [rdr (io/reader (if (= stream :stdout) (:out worker) (:err worker))
                              :encoding "UTF-8")]
-    (doseq [line (line-seq rdr)
-            message (decode line)]
-      (.put queue (protocol/->event message
-                                    {:worker (:id worker)
-                                     :at (System/currentTimeMillis)
-                                     :stream stream})))))
+    (doseq [line (line-seq rdr)]
+      (put-line! queue (:id worker) stream decode line))))
 
-(defn- new-nonce
+(defn new-nonce
   "A fresh random token for one worker's protocol prefix."
   []
   (subs (str (java.util.UUID/randomUUID)) 0 8))
@@ -108,9 +114,10 @@
   nil)
 
 (defn kill!
-  "Forcibly kill a worker by its process handle."
-  [{:keys [proc]}]
-  (p/destroy-tree proc)
+  "Forcibly kill a worker by its handle: its process, or for a worker in
+  this process (`volley.shell.in-process`) its `:kill!` function."
+  [{:keys [proc] kill-fn :kill!}]
+  (if kill-fn (kill-fn) (p/destroy-tree proc))
   nil)
 
 (defn kill-descendants!

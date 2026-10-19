@@ -11,16 +11,15 @@
    [volley.config :as config]
    [volley.discover :as discover]
    [volley.engine :as engine]
+   [volley.runtime :as core-runtime]
    [volley.select :as select]
    [volley.shell.fs :as bfs]
    [volley.shell.hooks :as shell-hooks]
    [volley.shell.pool :as pool]
    [volley.shell.runtime :as runtime]
    [volley.shell.terminal :as term]
-   [volley.shell.watch :as watch-loop]
    [clojure.edn :as edn]
    [clojure.java.io :as io]
-   [clojure.pprint :as pprint]
    [clojure.string :as str])
   (:import
    (java.util.concurrent LinkedBlockingQueue TimeUnit)))
@@ -37,12 +36,23 @@
 ;; ---------------------------------------------------------------------------
 ;; Inputs
 
+(defn- source-files
+  "The classpath-relative paths namespace `ns-sym` may load from."
+  [ns-sym]
+  (let [base (-> (str ns-sym) (str/replace "-" "_") (str/replace "." "/"))]
+    (map #(str base %) [".clj" ".cljc" ".bb"])))
+
+(defn- on-classpath?
+  "True when namespace `ns-sym` has a source file on this process's
+  classpath."
+  [ns-sym]
+  (boolean (some io/resource (source-files ns-sym))))
+
 (defn- ns-source
   "The source text of namespace `ns-sym` from this process's classpath or
   one of `dirs`, or nil when it has no source file."
   [dirs ns-sym]
-  (let [base (-> (str ns-sym) (str/replace "-" "_") (str/replace "." "/"))
-        files (map #(str base %) [".clj" ".cljc" ".bb"])]
+  (let [files (source-files ns-sym)]
     (or (some #(some-> (io/resource %) slurp) files)
         (some (fn [d] (some #(let [f (str d "/" %)] (when (bfs/exists? f) (bfs/read-file f))) files)) dirs))))
 
@@ -101,6 +111,38 @@
        (str/blank? (get-in env [:env "NO_COLOR"]))
        (or tty? (true? (:color cli-options)))))
 
+(defn- hook-namespaces
+  "Namespaces of the hooks, worker setup fns and reporters a worker
+  resolves from the `:configure` message `msg`."
+  [msg]
+  (->> (select-keys msg [:hooks :worker-setup :reporters :suites])
+       (tree-seq coll? seq)
+       (filter qualified-symbol?)
+       (map (comp symbol namespace))))
+
+(defn- in-process-ok?
+  "Whether the plan can run on a thread of this process: the parent and
+  the workers are both JVMs, it is not watch or isolate mode, and every
+  planned namespace, and every namespace a hook or reporter names, loads
+  from this process's classpath (a JVM worker's adds only the test paths)."
+  [config plan configure]
+  (and (not (runtime/bb?))
+       (= :jvm (:runtime config))
+       (not (:watch? config))
+       (not (:isolate? config))
+       (every? on-classpath?
+               (concat (map :ns (mapcat :namespaces (:suites plan)))
+                       (map :ns (:preload plan))
+                       (hook-namespaces configure)))))
+
+(defn- record-history?
+  "Only a run of the whole plan is a fair measure for the next one: no
+  suite named on the command line, no CLI filter, no watch mode."
+  [config cli]
+  (and (not (:watch? config))
+       (empty? (:suites cli))
+       (not-any? #(seq (get (:options cli) %)) [:focus :skip :focus-meta :skip-meta])))
+
 ;; ---------------------------------------------------------------------------
 ;; Effects
 
@@ -146,7 +188,7 @@
   [{:keys [value pretty?]}]
   (binding [*print-namespace-maps* false *print-length* nil *print-level* nil]
     (print-lines! {:lines [(if pretty?
-                             (str/trimr (with-out-str (pprint/pprint value)))
+                             (str/trimr (with-out-str ((requiring-resolve 'clojure.pprint/pprint) value)))
                              (pr-str value))]
                    :stream :out})))
 
@@ -161,7 +203,10 @@
      (let [handle (get-in world [:handles worker])
            world (case effect
                    :spawn (assoc-in world [:handles worker]
-                                    (pool/start-worker! {:queue queue :command command} worker))
+                                    (if (:in-process? e)
+                                      ((requiring-resolve 'volley.shell.in-process/start-worker!)
+                                       {:queue queue} worker)
+                                      (pool/start-worker! {:queue queue :command command} worker)))
                    :send (do (some-> handle (pool/send! msg)) world)
                    :stop (do (some-> handle pool/stop!) world)
                    :kill (do (some-> handle pool/kill!) world)
@@ -169,6 +214,8 @@
                    :print-data (do (print-data! e) world)
                    :redraw (assoc world :height (term/redraw! (:height world 0) frame))
                    :save-timings (do (bfs/write-timings! timings) world)
+                   :save-history (do (bfs/write-history! (core-runtime/record-run (bfs/read-history) (:run e)))
+                                     world)
                    :write-file (do (when-let [err (bfs/write-file! (:path e) (:text e))]
                                      (print-lines! {:lines [(str "WARNING: could not write " (:path e) ": " err)]
                                                     :stream :err}))
@@ -259,18 +306,20 @@
   [command cfg loaded opts reload worker-command]
   (let [ctx {:queue (pool/new-queue)
              :command command}]
-    (watch-loop/watch! {:ctx ctx
-                      :run-effects! run-effects!
-                      :step! step!
-                      :print! print-lines!
-                      :reload-config reload
-                      :worker-command worker-command
-                      :config cfg
-                      :config-file (:config-file loaded)
-                      :cli-suites (:suites (:cli loaded))
-                      :engine-opts opts
-                      :keys? (term/stdin-tty?)
-                      :live? (= :live (:reporter opts))})))
+    ;; loaded only here: a one-shot run does not pay for watch mode
+    ((requiring-resolve 'volley.shell.watch/watch!)
+     {:ctx ctx
+      :run-effects! run-effects!
+      :step! step!
+      :print! print-lines!
+      :reload-config reload
+      :worker-command worker-command
+      :config cfg
+      :config-file (:config-file loaded)
+      :cli-suites (:suites (:cli loaded))
+      :engine-opts opts
+      :keys? (term/stdin-tty?)
+      :live? (= :live (:reporter opts))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Entry point
@@ -302,6 +351,14 @@
                      :durations (bfs/read-timings)
                      :started-at (System/currentTimeMillis)}
                     (config/engine-opts config (bfs/run-info)))
+              opts (merge opts
+                          (core-runtime/worker-plan
+                           {:workers (:workers config)
+                            :workers-set? (:workers-set? config)
+                            :in-process-ok? (in-process-ok? config plan (:configure opts))
+                            :history (bfs/read-history)})
+                          {:scale-out-ms core-runtime/in-process-limit-ms
+                           :record-history? (record-history? config cli)})
               _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))
               bad-reporter (when-not error (unresolved-reporter config))]
           (cond

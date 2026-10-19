@@ -7,7 +7,7 @@
   `:width`, the terminal's current width, for the live view. Effects are data
   for `volley.main` to carry out:
 
-      {:effect :spawn :worker id}
+      {:effect :spawn :worker id}              ; :in-process? true: on a thread of the parent
       {:effect :send :worker id :msg m}
       {:effect :stop :worker id}               ; ask a worker to shut down
       {:effect :kill :worker id}               ; it did not exit in time
@@ -15,6 +15,7 @@
       {:effect :print-data :value v :pretty? bool}   ; EDN on stdout
       {:effect :redraw :frame {:emit [str] :frame [str]}}
       {:effect :save-timings :timings {ns millis}}
+      {:effect :save-history :run {:in-process? b :wall-ms ms}}
       {:effect :write-file :path str :text str}   ; the junit-xml report
       {:effect :post-summary :hooks [entry] :result kaocha-result}
       {:effect :exit :code n}
@@ -193,6 +194,14 @@
   prints. `:compact-summary?`
   (watch mode) ends the run with the counts line alone: no slowest tests,
   and no rerun command, which `f` does there.
+  `:in-process?` (`volley.runtime/worker-plan`) runs the first worker on
+  a thread of the parent: its spawn effect says so, and the run starts no
+  other worker until it has gone on for `:scale-out-ms` with at least as
+  much work still waiting, by `:durations` (a namespace without a timing
+  counts as that much), when it may start worker processes up to
+  `:workers`.
+  `:record-history?` ends a run that ran every planned namespace with a
+  `:save-history` effect, its mode and wall time for the next plan.
   Events from any worker this run did not spawn are dropped.
 
   Returns `{:state s :effects [...]}`: the first spawns, and the load errors
@@ -207,8 +216,11 @@
                     (rs/init {:namespaces (keys nses) :started-at started-at})
                     file-errors)
         state {:sched (sched/init {:parallel (mapv :ns parallel) :serial (mapv :ns serial)}
-                                  (-> (select-keys opts [:workers :fail-fast? :isolate? :durations])
-                                      (assoc :first-id (:first-worker-id opts 1))))
+                                  (cond-> (-> (select-keys opts [:workers :fail-fast? :isolate? :durations])
+                                              (assoc :first-id (:first-worker-id opts 1)))
+                                    (:in-process? opts) (assoc :workers 1)))
+               :in-process-id (when (:in-process? opts) (:first-worker-id opts 1))
+               :scaled-out? false
                :run run
                :shown nil
                :dirty #{}
@@ -262,12 +274,35 @@
                   (update :spawned into spawned))]
     [state
      (concat (mapcat (fn [id]
-                       (cons {:effect :spawn :worker id}
+                       (cons (cond-> {:effect :spawn :worker id}
+                               (= id (:in-process-id state)) (assoc :in-process? true))
                              (when-let [msg (get-in state [:opts :configure])]
                                [{:effect :send :worker id :msg msg}])))
                      spawned)
              (map (fn [[w ns-sym]] {:effect :send :worker w :msg (run-message state ns-sym)}) assigns)
              (map (fn [id] {:effect :stop :worker id}) shut))]))
+
+(defn- waiting-ms
+  "How long the namespaces waiting would take by the last run's timings,
+  counting `unknown-ms` for each one without a timing."
+  [{:keys [sched durations]} unknown-ms]
+  (reduce + 0 (map #(get durations % unknown-ms) (sched/pending sched))))
+
+(defn- scale-out
+  "An in-process run still going `:scale-out-ms` after it started, with at
+  least that much work still waiting, may start worker processes up to
+  `:workers` for it, once. A worker process starts a JVM and loads the
+  project again, which a few namespaces left do not pay for."
+  [{:keys [opts now] :as state}]
+  (let [{:keys [in-process? scale-out-ms started-at workers]} opts]
+    (if (and in-process? (not (:scaled-out? state))
+             (number? scale-out-ms) (number? started-at) (number? now)
+             (>= (- now started-at) scale-out-ms)
+             (>= (waiting-ms state scale-out-ms) scale-out-ms))
+      (-> state
+          (assoc :scaled-out? true)
+          (update :sched sched/set-max-workers (or workers 1)))
+      state)))
 
 ;; ---------------------------------------------------------------------------
 ;; Output
@@ -488,14 +523,25 @@
       :lines [(str "WARNING: All " n " tests were skipped. Check for misspelled settings in your"
                    " Kaocha test configuration or incorrect focus or skip filters.")]}]))
 
+(defn- history
+  "The run's mode and wall time for `volley.runtime/record-run`, when the
+  shell asked for it and the run ran every planned namespace (nothing was
+  left unrun or interrupted)."
+  [{:keys [opts run now]}]
+  (when (and (:record-history? opts) (empty? (rs/not-run run)) (empty? (rs/interrupted run))
+             (number? now) (number? (:started-at opts)))
+    [{:effect :save-history
+      :run {:in-process? (boolean (:in-process? opts)) :wall-ms (- now (:started-at opts))}}]))
+
 (defn- finish [state]
   [(assoc state :phase :done)
    (concat (all-skipped-warning state)
            (final-output state)
            (junit-xml state)
            (post-summary state)
-           [{:effect :save-timings :timings (timings state)}
-            {:effect :exit :code (rs/exit-code (:run state))}])])
+           [{:effect :save-timings :timings (timings state)}]
+           (history state)
+           [{:effect :exit :code (rs/exit-code (:run state))}])])
 
 (defn- drain-timers
   "Kill workers that ignore the shutdown, and give up on ones that never
@@ -630,6 +676,7 @@
           [state ew] (if tick? (watchdog state) [state []])
           [state ek] (if tick? (kill-stragglers state) [state []])
           [state es] (if tick? (still-running state) [state []])
+          state (cond-> state (and tick? (= :running (:phase state))) scale-out)
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
           [state e2] (show state input)
           [state e3] (if (and (= :running (:phase state)) (sched/done? (:sched state)))

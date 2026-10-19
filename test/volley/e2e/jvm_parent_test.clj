@@ -4,6 +4,7 @@
   (:require
    [babashka.fs :as fs]
    [volley.e2e.support :as e2e]
+   [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.test :refer [deftest is]]))
 
@@ -32,3 +33,25 @@
                                    {:timeout-ms 180000})]
     (is (= 0 exit))
     (is (map? (e2e/print-result out)))))
+
+(deftest a-short-jvm-run-goes-in-process-next-time
+  ;; volley#2: once a short run is on record, the next one runs on a
+  ;; thread of the parent JVM instead of starting a worker JVM
+  (let [dir (e2e/copy-project "jvm")
+        run (fn [paths & args]
+              (e2e/sh dir (into ["clojure" "-Sdeps" (pr-str {:paths paths
+                                                             :deps {'volley/volley {:local/root (str (fs/absolutize "."))}}})
+                                 "-J-Dvolley.fixture=parent" "-M" "-m" "volley.main"]
+                                args)
+                      {:env {"EXPECT_FIXTURE_PROP" "parent"} :timeout-ms 180000}))
+        history #(edn/read-string (slurp (str (fs/path dir ".volley" "history.edn"))))
+        passes? (fn [{:keys [exit out err]}]
+                  (is (= 0 exit) (str out err))
+                  (is (= expected-summary (summary out))))]
+    (passes? (run ["src" "extra"]))
+    (is (= [:workers-ms] (keys (history))) "no history: worker processes")
+    (passes? (run ["src" "extra"]))
+    (is (= [:workers-ms] (keys (history)))
+        "test namespaces the parent cannot load: worker processes, whatever the history")
+    (passes? (run ["src" "extra" "test"]))
+    (is (seq (:in-process-ms (history))) "a short run on record: in process")))

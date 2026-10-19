@@ -39,6 +39,67 @@
   (-> (or cpus 4) (min (get max-workers runtime 8)) (max 1)))
 
 ;; ---------------------------------------------------------------------------
+;; In process or in worker processes
+
+(def in-process-limit-ms
+  "The longest run that is worth running inside the parent JVM. A JVM
+  worker costs about half a second to start and loads the project's code
+  again, which a run of a few seconds never wins back; past this, parallel
+  workers can. An in-process run that is still going after this long
+  starts worker processes for the namespaces left (`volley.engine`)."
+  10000)
+
+(def recent-runs
+  "How many run times of each mode the history keeps."
+  3)
+
+(defn typical
+  "The median of `times` (the lower middle one of an even count), or nil
+  when there are none."
+  [times]
+  (when (seq times)
+    (nth (sort times) (quot (dec (count times)) 2))))
+
+(defn worker-plan
+  "How a run gets its workers: `{:workers n :in-process? bool}`.
+  `:in-process?` runs the tests on a thread of the parent JVM, starting
+  worker processes, up to `:workers`, only if the run outlasts
+  `in-process-limit-ms`. Input:
+
+  * `:workers`         the configured or default worker count
+  * `:workers-set?`    true when `--workers` or tests.edn chose it: then
+                       always that many worker processes
+  * `:in-process-ok?`  whether the shell can run this plan in process (a
+                       JVM parent with JVM workers, no watch or isolate
+                       mode, every namespace on the parent's classpath)
+  * `:history`         `record-run`'s map from earlier runs
+
+  In process when the recent in-process runs typically took at most
+  `in-process-limit-ms`, or, with no in-process run on record, when the
+  recent runs with worker processes did. Typically means the median of
+  the last `recent-runs` (the lower middle one of two), so one slow run
+  on a busy machine changes nothing. With no history, worker processes:
+  a first run (or CI) behaves as before."
+  [{:keys [workers workers-set? in-process-ok? history]}]
+  (let [{:keys [in-process-ms workers-ms]} history
+        short? #(and (number? %) (<= % in-process-limit-ms))]
+    {:workers workers
+     :in-process? (boolean (and in-process-ok?
+                                (not workers-set?)
+                                (if (seq in-process-ms)
+                                  (short? (typical in-process-ms))
+                                  (short? (typical workers-ms)))))}))
+
+(defn record-run
+  "`history` after a run that ran every planned namespace, in process
+  (`:in-process?`) or not, in `:wall-ms`: the run's mode keeps its last
+  `recent-runs` times, newest last; the other mode keeps its own."
+  [history {:keys [in-process? wall-ms]}]
+  (update (if (map? history) history {})
+          (if in-process? :in-process-ms :workers-ms)
+          (fn [times] (vec (take-last recent-runs (conj (vec (filter number? times)) (long wall-ms)))))))
+
+;; ---------------------------------------------------------------------------
 ;; JVM options
 
 (def ^:private dropped-prefixes

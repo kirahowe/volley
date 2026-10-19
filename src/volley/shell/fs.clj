@@ -99,6 +99,32 @@
     (spit timings-file (pr-str (into (sorted-map) timings)))
     (catch Exception _ nil)))
 
+(def history-file
+  "Where the last runs' wall times are kept, per mode
+  (`volley.runtime/record-run`)."
+  ".volley/history.edn")
+
+(defn read-history
+  "What `write-history!` saved, `{:in-process-ms [ms ...] :workers-ms [ms ...]}`,
+  either key possibly absent; empty when absent or unreadable."
+  []
+  (try
+    (let [m (edn/read-string (slurp history-file))]
+      (if (map? m)
+        (into {} (keep (fn [[k v]] (when (and (#{:in-process-ms :workers-ms} k) (sequential? v))
+                                      [k (filterv number? v)])))
+              m)
+        {}))
+    (catch Exception _ {})))
+
+(defn write-history!
+  "Save `history` for the next run. Failure to write is not an error."
+  [history]
+  (try
+    (fs/create-dirs (fs/parent history-file))
+    (spit history-file (pr-str history))
+    (catch Exception _ nil)))
+
 (defn write-file!
   "Write `text` to `path`, creating its directory. Returns nil, or the
   error message when it could not be written."

@@ -80,7 +80,75 @@
           {:keys [world]} (ge/simulate w max-steps)]
       (zero? (:exit world)))))
 
+(defspec only-the-first-worker-of-an-in-process-run-is-in-process runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world]} (ge/simulate w max-steps)
+          first-id (get-in w [:opts :first-worker-id] 1)]
+      (if (and (get-in w [:opts :in-process?]) (seq (:spawned world)))
+        (and (= first-id (first (:spawned world)))
+             (= [first-id] (:in-process world)))
+        (empty? (:in-process world))))))
+
+(defspec an-in-process-run-starts-processes-only-after-its-limit runs
+  ;; the simulated clock moves 80ms per tick; a run with a limit beyond
+  ;; reach never gets a second worker, unless the first one died
+  (prop/for-all [w ge/gen-world]
+    (let [w (-> w
+                (assoc-in [:opts :in-process?] true)
+                (assoc-in [:opts :isolate?] false)
+                (assoc-in [:opts :scale-out-ms] 1000000)
+                (assoc :spawn-fails [] :hung? false)
+                (assoc :fates (update-vals (:fates w) (fn [[kind :as fate]]
+                                                        (if (#{:crash :garbled :lost} kind) [:pass 1] fate)))))
+          {:keys [world]} (ge/simulate w max-steps)]
+      (<= (count (:spawned world)) 1))))
+
+(defspec history-is-saved-for-complete-runs-that-ask runs
+  (prop/for-all [w ge/gen-world]
+    (let [{:keys [world state]} (ge/simulate w max-steps)
+          complete? (and (empty? (rs/not-run (:run state)))
+                         (empty? (rs/interrupted (:run state))))]
+      (if (and (get-in w [:opts :record-history?]) complete? (integer? (:exit world)))
+        (= {:in-process? (boolean (get-in w [:opts :in-process?])) :wall-ms (:now state)}
+           (:history world))
+        (nil? (:history world))))))
+
 ;;; Examples
+
+(deftest an-in-process-run-scales-out-once-past-its-limit
+  (let [plan {:suites [{:id :unit :namespaces (mapv (fn [s] {:ns s :select {}}) '[a-test b-test c-test])
+                        :load-errors []}]}
+        opts {:workers 3 :in-process? true :scale-out-ms 1000 :reporter :ci :width 120
+              :color? false :started-at 0}
+        {:keys [state]} (engine/init plan opts)
+        {state :state started :effects} (engine/start state)
+        spawns (fn [effects] (filter #(= :spawn (:effect %)) effects))
+        state (reduce #(:state (engine/step %1 %2)) state
+                      [{:event :worker/ready :worker 1 :at 10}
+                       {:event :ns/start :worker 1 :ns 'a-test :run-id 1 :at 20}])
+        early (:effects (engine/step state {:event :tick :at 900}))
+        {state :state late :effects} (engine/step state {:event :tick :at 1000})
+        again (:effects (engine/step state {:event :tick :at 5000}))]
+    (is (= [{:effect :spawn :worker 1 :in-process? true}] (spawns started)))
+    (is (empty? (spawns early)))
+    (is (= [{:effect :spawn :worker 2} {:effect :spawn :worker 3}] (spawns late))
+        "the namespaces waiting get worker processes")
+    (is (empty? (spawns again)) "once")))
+
+(deftest an-in-process-run-keeps-a-little-work-left-to-itself
+  (let [plan {:suites [{:id :unit :namespaces (mapv (fn [s] {:ns s :select {}}) '[a-test b-test c-test])
+                        :load-errors []}]}
+        opts {:workers 3 :in-process? true :scale-out-ms 1000 :reporter :ci :width 120
+              :color? false :started-at 0 :durations '{a-test 900 b-test 300 c-test 600}}
+        {:keys [state]} (engine/init plan opts)
+        state (:state (engine/start state))
+        state (reduce #(:state (engine/step %1 %2)) state
+                      [{:event :worker/ready :worker 1 :at 10}
+                       {:event :ns/start :worker 1 :ns 'a-test :run-id 1 :at 20}])
+        late (:effects (engine/step state {:event :tick :at 2000}))]
+    (is (empty? (filter #(= :spawn (:effect %)) late))
+        "900ms of work waiting is less than the limit")))
+
 
 (def ^:private help "USAGE: volley")
 

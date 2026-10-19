@@ -461,7 +461,7 @@
     ;; unqualified leftovers that kaocha-normalize copies through
     :capture-output? :diff-style :bindings :kaocha/bindings
     ;; volley's own shape, so a normalized config can be normalized again
-    :workers :isolate? :preload? :seed :runtime :warnings :errors :filters :reporter :reporters
+    :workers :workers-set? :isolate? :preload? :seed :runtime :warnings :errors :filters :reporter :reporters
     :hooks :worker-setup :junit-xml :unknown-plugins :invalid
     ;; read by volley.hooks
     :volley/worker-setup})
@@ -750,6 +750,11 @@
        :workers (pick (:workers cli-options)
                       (when (pos-int? (:workers raw)) (:workers raw))
                       (runtime/default-workers runtime (:cpus env)))
+       ;; --workers or :workers in tests.edn: no heuristic may change it
+       :workers-set? (boolean (or (pos-int? (:workers cli-options))
+                                  (if (contains? raw :workers-set?)
+                                    (:workers-set? raw)
+                                    (pos-int? (:workers raw)))))
        :isolate? (boolean (pick (:isolate cli-options) (:isolate? raw) false))
        :preload? (boolean (pick (:preload cli-options) (:preload? raw) false))
        :runtime runtime

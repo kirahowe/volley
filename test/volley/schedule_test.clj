@@ -187,3 +187,12 @@
     (testing "the run is done once the failing worker ends its namespace"
       (is (not (sched/done? s5)))
       (is (sched/done? (sched/handle-event s5 {:event :ns/end :worker 1 :ns 'a}))))))
+
+(deftest raising-the-worker-limit-starts-more-workers
+  ;; an in-process run that outlasts its limit gets worker processes
+  (let [[s1 first-ids] (sched/drain-spawns (sched/init {:parallel '[a b c d] :serial []} {:workers 1}))
+        [s2 more-ids] (sched/drain-spawns (sched/set-max-workers s1 3))]
+    (is (= [1] first-ids))
+    (is (= [2 3] more-ids))
+    (is (= [] (second (sched/drain-spawns s2))))
+    (is (= 1 (:max-workers (sched/set-max-workers s1 0))))))

@@ -66,3 +66,21 @@
   (let [roots (gen/vector (gen/elements ["a" "b" "c" "d" "missing"]) 0 3)]
     (gen/fmap (fn [[a m]] (assoc m "a" a))
               (gen/tuple (gen/not-empty roots) (gen/map (gen/elements ["b" "c" "d"]) roots)))))
+
+(def wall-ms
+  "A run's wall time in milliseconds, on both sides of
+  `volley.runtime/in-process-limit-ms`."
+  (gen/one-of [(gen/choose 0 12000) (gen/choose 0 120000)]))
+
+(def history
+  "What `.volley/history.edn` may hold: the recent in-process run times
+  and worker-process run times, newest last, each possibly absent."
+  (gen/fmap (fn [[ip wk]] (cond-> {} (seq ip) (assoc :in-process-ms ip) (seq wk) (assoc :workers-ms wk)))
+            (gen/tuple (gen/vector wall-ms 0 3) (gen/vector wall-ms 0 3))))
+
+(def worker-plan-input
+  "Input for `volley.runtime/worker-plan`."
+  (gen/hash-map :workers (gen/choose 1 16)
+                :workers-set? gen/boolean
+                :in-process-ok? gen/boolean
+                :history history))

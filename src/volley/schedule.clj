@@ -273,6 +273,13 @@
              state taken)
      taken]))
 
+(defn set-max-workers
+  "Allow up to `n` (at least 1) concurrent workers from now on. Workers
+  already alive beyond a lower limit are not stopped; idle ones are
+  trimmed by `drain-shutdowns` as the work runs out."
+  [state n]
+  (assoc state :max-workers (max 1 n)))
+
 (defn live-workers
   "Ids of workers that have not exited, in any status."
   [state]

@@ -40,7 +40,10 @@
             reporter (gen/elements [:ci :documentation :live])
             first-id (gen/frequency [[2 (gen/return 1)] [1 (gen/choose 2 60)]])
             hooks? gen/boolean
-            stale? gen/boolean]
+            stale? gen/boolean
+            in-process? (gen/frequency [[3 (gen/return false)] [1 (gen/return true)]])
+            scale-out-ms (gen/elements [0 200 1000000])
+            record-history? gen/boolean]
     (let [entries (mapv (fn [i] {:ns (ns-sym i) :file (str "test/sim/ns" i "_test.clj")
                                  :serial? (nth serial i) :select {:passes [] :ns-meta {}}})
                         (range n))]
@@ -53,6 +56,8 @@
               :watchdog-ms 2000
               :reporter reporter :width 120 :color? false :started-at 0 :durations {}
               :first-worker-id first-id
+              :in-process? in-process? :scale-out-ms scale-out-ms
+              :record-history? record-history?
               :configure (when hooks? {:op :configure :hooks {:pre-load ['my/hook]}})
               :post-summary (when hooks? {:hooks ['my/summary] :config {:tests [{:id :unit}]}})}
        :spawn-fails (if all-spawns-fail? (vec (repeat 100 true)) spawn-fails)
@@ -111,7 +116,8 @@
     :spawn (let [fail? (get (:spawn-fails world) (:spawn-count world 0) false)
                  world (-> world
                            (update :spawn-count (fnil inc 0))
-                           (update :spawned conj worker))]
+                           (update :spawned conj worker)
+                           (cond-> (:in-process? e) (update :in-process conj worker)))]
              (-> world
                  (assoc-in [:workers worker] {:queue [] :exiting? false})
                  (enqueue worker (if fail?
@@ -143,6 +149,7 @@
                   (assoc-in [:workers worker :exiting?] true))))
     (:print :redraw) (update world :output conj e)
     :save-timings (assoc world :timings (:timings e))
+    :save-history (assoc world :history (:run e))
     :post-summary (assoc world :post-summary e)
     :exit (cond-> (assoc world :exit (:code e))
             (:post-summary world) (assoc :post-summary-before-exit? true))))

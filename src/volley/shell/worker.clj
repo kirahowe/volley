@@ -642,7 +642,7 @@
 (defn- utf8-writer [^java.io.OutputStream out]
   (java.io.OutputStreamWriter. out "UTF-8"))
 
-(defn- make-emit
+(defn make-emit
   "Emit function writing whole protocol lines with `prefix` to `out`,
   atomically, each framed by newlines (`volley.protocol/frame-event`)."
   [^java.io.Writer out prefix]
@@ -694,12 +694,12 @@
       :invalid (do (binding [*out* *err*] (println "volley worker: bad message:" error)) hs))))
 
 (defn- read-commands!
-  "Put each line of `in` on `lines`, then `::eof`. Runs on its own thread so
-  that a `:shutdown` is seen while a namespace runs: it sets
-  `stop-requested` at once."
-  [^java.io.BufferedReader in ^java.util.concurrent.BlockingQueue lines]
+  "Put each line `(read-line)` returns on `lines`, then `::eof` once it
+  returns nil. Runs on its own thread so that a `:shutdown` is seen while a
+  namespace runs: it sets `stop-requested` at once."
+  [read-line ^java.util.concurrent.BlockingQueue lines]
   (loop []
-    (if-let [line (try (.readLine in) (catch java.io.IOException _ nil))]
+    (if-let [line (try (read-line) (catch java.io.IOException _ nil))]
       (do (when (= :shutdown (get-in (protocol/decode-command line) [:command :op]))
             (reset! stop-requested true))
           (.put lines line)
@@ -730,6 +730,28 @@
   ([emit! decide next-line] (serve emit! decide next-line flush))
   ([emit! decide next-line flush!] (serve-from emit! decide next-line flush! {})))
 
+(defn serve!
+  "The worker's command loop: send `:worker/ready`, then `serve` the lines
+  `(read-line)` returns, read on a thread of their own so that a
+  `:shutdown` stops a running namespace, until it returns nil or a
+  `:shutdown` arrives; then run the shutdown hooks. `emit!` sends an event
+  (`make-emit`); `stray` is the writer for what tests print outside a
+  capture, flushed after each command. Returns the exit code: 1 when a
+  shutdown hook threw, else 0. `-main` serves the process's stdin;
+  `volley.shell.in-process` serves a queue inside the parent."
+  [emit! read-line ^java.io.Writer stray]
+  (reset! stop-requested false)
+  (emit! {:event :worker/ready})
+  (let [lines (java.util.concurrent.LinkedBlockingQueue.)
+        _ (doto (Thread. ^Runnable #(read-commands! read-line lines)) (.setDaemon true) (.start))
+        hs (serve emit! filters/decide
+                  #(let [line (.take lines)] (when-not (= ::eof line) line))
+                  #(.flush stray))
+        errors (call-hooks :shutdown hs)]
+    (report-hook-errors! emit! errors)
+    (.flush stray)
+    (if (seq errors) 1 0)))
+
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
   else a test prints goes to stderr. The one argument, when given, is the
@@ -739,7 +761,6 @@
         stray (java.io.PrintStream. System/err true "UTF-8")
         ^java.io.Writer stray-writer (utf8-writer stray)
         emit! (make-emit proto-out (protocol/prefix-for nonce))
-        decide filters/decide
         in (java.io.BufferedReader.
             (java.io.InputStreamReader. System/in "UTF-8"))]
     ;; stdin carries the parent's commands. A test that reads System/in
@@ -759,14 +780,6 @@
     (alter-var-root #'*err* (constantly stray-writer))
     ;; the project's reporters print here (`volley.shell.hooks/report-fn`)
     (alter-var-root #'t/*test-out* (constantly stray-writer))
-    (emit! {:event :worker/ready})
-    (let [lines (java.util.concurrent.LinkedBlockingQueue.)
-          _ (doto (Thread. ^Runnable #(read-commands! in lines)) (.setDaemon true) (.start))
-          hs (serve emit! decide
-                    #(let [line (.take lines)] (when-not (= ::eof line) line))
-                    #(.flush stray-writer))
-          errors (call-hooks :shutdown hs)]
-      (report-hook-errors! emit! errors)
-      (.flush stray-writer)
+    (let [code (serve! emit! #(.readLine in) stray-writer)]
       (shutdown-agents)
-      (System/exit (if (seq errors) 1 0)))))
+      (System/exit code))))
