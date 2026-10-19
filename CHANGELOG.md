@@ -21,6 +21,14 @@ All notable changes to volley are recorded here. The format follows
 - Watch mode reloads when the project's `deps.edn` or `bb.edn` changes
   and computes the workers' classpath again. Removed dependencies and
   paths stay on the classpath until a restart. (volley#10)
+- With a JVM parent, a suite whose recent runs took 10s or less runs on a
+  thread of the parent instead of starting worker JVMs, and starts workers
+  for the rest if it runs past 10s. `--workers` or `:workers` turns this
+  off. The run times are kept in `.volley/history.edn`, so a first run
+  still starts workers. On hosted-clay this brings volley level with
+  Kaocha (6.14s against 6.16s, median of five). (volley#2)
+- A JVM parent caches parsed namespace forms in `.volley/ns-infos.edn`
+  and parses only the files that changed. (volley#2)
 
 ### Changed
 
@@ -40,6 +48,8 @@ All notable changes to volley are recorded here. The format follows
 - `wrap-run` hooks wrap each var's run as well as each namespace's, as in
   Kaocha. A suite-level `wrap-run` is called once per worker process
   rather than once per run. (volley#9)
+- Workers load hook support only when tests.edn configures hooks.
+  (volley#12)
 - A `wrap-run` hook that throws is reported by name, and the vars it kept
   from running are listed as not run. (volley#18)
 
