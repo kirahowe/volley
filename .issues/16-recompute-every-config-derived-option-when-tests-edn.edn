@@ -1,6 +1,6 @@
 {:id 16
  :title "Recompute every config-derived option when tests.edn reloads in watch mode"
- :status :ready
+ :status :review
  :type :bug
  :priority :p3
  :created "2026-10-18"
