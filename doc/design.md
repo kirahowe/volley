@@ -910,7 +910,12 @@ were skipped` warning (`rs/all-skipped`).
     was running still ends, but the worker puts the streams back at the
     end of a var only while they are still that var's capture, so the
     killed thread cannot make its own stray stream the parent's
-    `System/out` again.
+    `System/out` again. The cost: a test that calls `System/setOut` (or
+    `setErr`) and never restores it keeps its stream there for the rest
+    of the worker, which in process means the parent JVM. The check and
+    the restore are also not atomic with a kill, so a kill landing
+    between them can still put the stray stream back; the window is a
+    few instructions wide.
     `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
     last three wall times (engine start to end) of runs in process and of
     runs with worker processes, and how many short worker runs came
