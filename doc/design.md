@@ -121,6 +121,8 @@ then in code.
  :fail-fast?       false
  :color?           true
  :capture-output?  true
+ :randomize?       true                             ; kaocha.plugin.randomize, see "Random order"
+ :seed             1234                             ; only when :randomize?
  :reporter         :live                            ; volley reporter keyword
  :reporters        [my.ns/report]                   ; the project's own reporters, called in the workers
  :watch?           false
@@ -156,7 +158,7 @@ ignore. Plugins fall in three groups (`volley.config`):
 
 - Built in or stood in for, silently: `:kaocha.plugin/filter`,
   `:kaocha.plugin/capture-output`, `:kaocha.plugin/randomize` (one of
-  Kaocha's defaults; volley never shuffles, it orders by previous timings),
+  Kaocha's defaults; see "Random order"),
   `:kaocha.plugin/print-invocations` (volley prints its own rerun command),
   `:kaocha.plugin/profiling` (volley always lists the slowest tests),
   `:kaocha.plugin/hooks` (see "Hooks"), `:kaocha.plugin/junit-xml`
@@ -179,8 +181,25 @@ are parsed by `volley.cli` like any other, but, as in Kaocha, they are an
 unknown option (exit 255) unless their plugin is in `:plugins` or given
 with `--plugin` (`volley.cli/plugin-flag-errors`). `--help` lists them
 under a heading of their own. `--randomize` and `--seed` belong to a
-default plugin and are always accepted, with one warning that volley does
-not randomize.
+default plugin and are always accepted.
+
+**Random order.** `volley.config` settles randomizing as
+`kaocha.plugin.randomize/config` does: on by default when the plugin is
+listed (which `#kaocha/v1` does), `--[no-]randomize` deciding, and off
+without the plugin unless `--randomize` asks. The seed is `--seed`, else
+tests.edn's `:kaocha.plugin.randomize/seed`, else the `:seed` the shell
+draws (`rand-int Integer/MAX_VALUE`, as Kaocha does) and passes in `env`.
+The config carries `:randomize?`, and `:seed` only when randomizing.
+Kaocha shuffles the whole test plan from one random number generator in
+one process. volley's namespaces run in different workers, so each
+`:run` message carries the run seed and the worker orders that
+namespace's vars by `volley.order/shuffle-names`: a sort key mixed from
+the seed, the namespace name and the var name alone, so one seed gives
+every namespace the same order whichever worker runs it, and adding or
+filtering out a var leaves the order of the others alone. Namespaces are
+not shuffled; the scheduler orders them by timings. A failed run prints
+`Randomized with --seed N` above its counts line, as Kaocha's `post-run`
+prints it.
 
 ### Namespace info (`volley.discover`)
 
@@ -207,6 +226,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
  :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
  :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
+ :seed 1234                 ; only when randomizing: the run seed, see "Random order"
  :fail-fast? true}          ; only with fail-fast: skip the vars after a failing one
 {:op :configure                               ; right after spawn, only when hooks, setup or reporters exist
  :hooks {:pre-load [entry] ...}               ; top-level hooks that run in workers
@@ -799,6 +819,8 @@ were skipped` warning (`rs/all-skipped`).
   timings from a previous run (stored by the shell in `.volley/timings.edn`).
   When the shell creates `.volley/` it writes a `.gitignore` of `*` into it
   (`volley.shell.fs/ensure-cache-dir!`).
+  Inside a namespace, vars run in name order, or in the seeded random
+  order of "Random order" when randomizing.
 - **Fail fast.** On the first failure (a failed or erroring assertion, a
   namespace error or a crash) the engine stops handing out work, kills every
   other busy worker by handle at once (`volley.schedule/interrupt` takes
@@ -815,7 +837,7 @@ were skipped` warning (`rs/all-skipped`).
   `--skip-meta`, `--fail-fast`, `--watch`, `--config-file`, `--[no-]color`,
   `--[no-]capture-output`, `--reporter` (see "Reporters" below), `--plugin`, `--profile`, `--diff-style`,
   `--print-config`, `--print-test-plan`, `--print-result`, and the plugin
-  flags above. `--[no-]randomize` and `--seed` are accepted with a warning. volley's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
+  flags above, `--[no-]randomize` and `--seed` (see "Random order"). volley's: `--workers N`, `--[no-]isolate`, `--[no-]preload`,
   `--runtime bb|jvm`, `--aliases :a:b`.
 
 ## Decisions
@@ -955,6 +977,15 @@ difference:
   failure in the testsuite's `failures`. kaocha-junit-xml writes its
   testcase with no `<failure>` child; volley adds one with Kaocha's
   message, so a tool that reads testcases sees the failure too.
+- **Random order.** Kaocha's randomize plugin shuffles namespaces and
+  vars from one random number generator, so a seed fixes the whole run's
+  order. volley shuffles only the vars inside each namespace, from the
+  seed and the namespace name (`volley.order`), and the scheduler orders
+  the namespaces. The same seed gives the same order within each
+  namespace, but not the same order as Kaocha with that seed. A
+  `--seed` given on the command line wins over
+  `:kaocha.plugin.randomize/seed` in tests.edn; in Kaocha the file wins.
+  volley's own tests that depend on var order pass `--no-randomize`.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; volley counts each of its vars as skipped (reason
   `:pending`). The same vars run (none).

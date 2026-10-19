@@ -251,9 +251,11 @@ namespace is loaded in the worker that runs it unless you pass `--preload`.
   worker with `--workers 1`.
 - Hooks and `:volley/worker-setup` run in every worker, so setup that
   starts a server on a fixed port starts one per worker.
-- volley does not randomize the order of tests. It runs the namespaces
-  that were slowest last time first. `--randomize` and `--seed` are
-  accepted with a warning.
+- Randomizing (on by default with Kaocha's randomize plugin) shuffles
+  the vars inside each namespace, from the run seed and the namespace's
+  name. Namespaces still start slowest first, as last time's timings
+  say, so `--seed N` reproduces the order within each namespace but not
+  which namespaces run side by side.
 - When two suites select the same namespace, it runs once, with the
   first suite's selection. Kaocha runs it twice.
 - When two test paths define the same namespace, it runs once, from the
@@ -390,8 +392,8 @@ starts the slowest namespaces first. When it creates `.volley/` it puts a
 - `clojure.test` only. No ClojureScript and no coverage.
 - volley finds test namespaces by reading their source. It cannot see tests
   that a macro defines, though filters still reach them at run time.
-- `--randomize` and `--seed` are accepted with a warning. volley runs the
-  slowest namespaces first rather than shuffling.
+- `--randomize` shuffles the vars of each namespace, not the order of
+  the namespaces, which start slowest first.
 - Hooks run once per worker, so a hook that starts something with a fixed
   port starts N of them.
 - Overlapping suites that select the same namespace run it once, with the

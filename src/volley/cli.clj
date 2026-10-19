@@ -83,9 +83,9 @@
     :doc "Only run tests where this metadata key is truthy."}
    ;; kaocha.plugin/randomize
    {:long "randomize" :toggle? true
-    :doc "Accepted for Kaocha; volley does not randomize (it runs the slowest namespaces first)."}
+    :doc "Run the vars of each namespace in random order."}
    {:long "seed" :arg "SEED" :parse parse-int
-    :doc "Accepted for Kaocha and ignored, like --randomize."}
+    :doc "Provide a seed to determine the random order of tests."}
    ;; kaocha.plugin/capture-output
    {:long "capture-output" :toggle? true :doc "Capture output during tests."}
    ;; Flags of other plugins, valid only when the plugin is listed
