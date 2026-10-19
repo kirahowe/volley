@@ -769,6 +769,8 @@ Inputs: `{:event :start}`, `{:event :key :char c}`,
     with a warning.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.volley/timings.edn`).
+  When the shell creates `.volley/` it writes a `.gitignore` of `*` into it
+  (`volley.shell.fs/ensure-cache-dir!`).
 - **Fail fast.** On the first failure (a failed or erroring assertion, a
   namespace error or a crash) the engine stops handing out work, kills every
   other busy worker by handle at once (`volley.schedule/interrupt` takes
