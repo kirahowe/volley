@@ -147,6 +147,13 @@
     :exit (cond-> (assoc world :exit (:code e))
             (:post-summary world) (assoc :post-summary-before-exit? true))))
 
+(defn- logged
+  "`interpret`, keeping `[effect worker clock]` for each stop and kill in
+  `:log`, so properties can check their timing."
+  [world {:keys [effect worker] :as e}]
+  (cond-> (interpret world e)
+    (#{:stop :kill} effect) (update :log (fnil conj []) [effect worker (:clock world)])))
+
 (defn- next-input
   "Pick the next input: an event from some worker's queue, or a tick."
   [world choice]
@@ -164,8 +171,9 @@
 
 (defn simulate
   "Run the engine against a generated world until it exits or `max-steps`
-  inputs have been fed. Returns the world (with `:output` effects, `:exit`)
-  and the final engine state."
+  inputs have been fed. Returns the world (with `:output` effects, `:exit`,
+  and `:log`, each stop and kill as `[effect worker clock]`) and the final
+  engine state."
   [{:keys [plan opts fates spawn-fails hung? stale? choices]} max-steps]
   (let [{:keys [state effects]} (engine/init plan opts)
         stale-worker (dec (:first-worker-id opts 1))
@@ -174,14 +182,14 @@
                                  :queue (vec (concat (ns-events stale-ns [:fail])
                                                      [{:event :worker/exit :code 137}]))}}
                   {})
-        world (reduce interpret {:workers workers :clock 0 :fates fates :spawn-fails spawn-fails
+        world (reduce logged {:workers workers :clock 0 :fates fates :spawn-fails spawn-fails
                                  :hung? hung? :output [] :spawned []}
                       effects)
         {state :state effects :effects} (engine/start state)
-        world (reduce interpret world effects)]
+        world (reduce logged world effects)]
     (loop [state state world world cs (seq choices) n 0]
       (if (or (contains? world :exit) (>= n max-steps))
         {:world world :state state :steps n}
         (let [[world input] (next-input world (or (first cs) 0))
               {state :state effects :effects} (engine/step state input)]
-          (recur state (reduce interpret world effects) (next cs) (inc n)))))))
+          (recur state (reduce logged world effects) (next cs) (inc n)))))))

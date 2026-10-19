@@ -52,6 +52,12 @@
   "How long workers get to exit after the run before they are killed."
   5000)
 
+(def ^:private default-stop-grace-ms
+  "How long a worker fail-fast interrupted gets to run its shutdown hooks
+  and exit before it is killed. Short, since a test that never returns
+  must not hold up the end of the run."
+  1000)
+
 (def ^:private give-up-ms
   "How long after the kills the loop waits for exits before ending anyway."
   5000)
@@ -172,6 +178,9 @@
   `:first-worker-id` (default 1) is where this run's worker ids start.
   `:watchdog-ms` (default 10000) is how long a busy worker may stay silent
   after a protocol line that could not be read before it is killed.
+  `:stop-grace-ms` (default 1000) is how long a worker fail-fast
+  interrupted may take to exit after it is asked to stop before it is
+  killed.
   `:configure` is a `{:op :configure}` message sent to each worker right
   after it is spawned (`volley.hooks/configure-message`). `:post-summary`
   is `{:hooks [entry] :config normalized-config}`: the hooks to run in the
@@ -220,6 +229,7 @@
                :interrupted? false
                :suspect {}
                :watchdog-killed #{}
+               :stop-asked {}
                :notices []
                :still {}
                :drain-at nil
@@ -551,9 +561,10 @@
         (update :run #(reduce rs/apply-event % (conj (vec crash) ev))))))
 
 (defn- interrupt
-  "Fail-fast, at the first failure: kill every other busy worker now
-  instead of letting its namespace run to the end, and record those
-  namespaces as interrupted. The failing worker (`worker` of the event that
+  "Fail-fast, at the first failure: ask every other busy worker to stop
+  now instead of letting its namespace run to the end, and record those
+  namespaces as interrupted. `kill-stragglers` kills the ones still alive
+  after the grace period. The failing worker (`worker` of the event that
   failed) finishes its own namespace; it stops after the failing var."
   [state {:keys [worker]}]
   (if (or (:interrupted? state) (not (sched/stopped? (:sched state))))
@@ -564,11 +575,23 @@
                             (assoc :sched sch :interrupted? true)
                             (update :stopping into ids)
                             (update :dirty into (map second taken))
-                            (update :silenced into ids))
+                            (update :silenced into ids)
+                            (update :stop-asked into (map (fn [id] [id (:now state)])) ids))
                   (seq taken) (update :run rs/apply-event
                                       {:event :run/interrupted :namespaces (mapv second taken)
                                        :reason :fail-fast :at (:now state)}))]
-      [state (map (fn [id] {:effect :kill :worker id}) ids)])))
+      [state (map (fn [id] {:effect :stop :worker id}) ids)])))
+
+(defn- kill-stragglers
+  "Kill the workers fail-fast asked to stop that are still alive after the
+  grace period. A worker that exited is forgotten."
+  [state]
+  (let [grace (get-in state [:opts :stop-grace-ms] default-stop-grace-ms)
+        live (set (sched/live-workers (:sched state)))
+        asked (into {} (filter (comp live key)) (:stop-asked state))
+        due (sort (keep (fn [[w at]] (when (>= (- (:now state) at) grace) w)) asked))]
+    [(assoc state :stop-asked (apply dissoc asked due))
+     (map (fn [w] {:effect :kill :worker w}) due)]))
 
 (defn- advance-clock [state at]
   (cond-> state (number? at) (update :now #(if % (max % at) at))))
@@ -576,13 +599,14 @@
 (defn- foreign?
   "True for an event to ignore: from a worker this run never spawned (a late
   event of an earlier, cancelled run in watch mode), or anything but the
-  exit of a worker fail-fast killed."
+  exit and shutdown-hook errors of a worker fail-fast interrupted."
   [state {:keys [event worker]}]
   (and (not= :tick event)
        (some? worker)
        (or (not (contains? (:spawned state) worker))
-           ;; killed by fail-fast: only its exit still matters
-           (and (contains? (:silenced state) worker) (not= :worker/exit event)))))
+           ;; interrupted by fail-fast: only its exit and its shutdown
+           ;; hooks still matter
+           (and (contains? (:silenced state) worker) (not (#{:worker/exit :worker/error} event))))))
 
 (defn next-worker-id
   "The first worker id a later run should use, so ids stay unique across
@@ -604,6 +628,7 @@
                   (not tick?) (fold-event input))
           [state e0] (if (and (= :running (:phase state)) (not tick?)) (interrupt state input) [state []])
           [state ew] (if tick? (watchdog state) [state []])
+          [state ek] (if tick? (kill-stragglers state) [state []])
           [state es] (if tick? (still-running state) [state []])
           [state e1] (if (= :running (:phase state)) (decide state) [state []])
           [state e2] (show state input)
@@ -611,7 +636,7 @@
                        (begin-drain state)
                        [state []])
           [state e4] (if (= :draining (:phase state)) (drain-timers state) [state []])]
-      {:state state :effects (vec (concat e0 ew es e1 e2 e3 e4))})))
+      {:state state :effects (vec (concat e0 ew ek es e1 e2 e3 e4))})))
 
 (defn start
   "The first step: spawn workers, or finish at once for an empty plan."
