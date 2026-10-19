@@ -7,7 +7,6 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
 | [19](19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md) | Add test paths from a reloaded tests.edn to the watch parent classpath | bug | P3 |
 
 ### Ready
@@ -15,6 +14,7 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+| [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
 
 ### Review
 
