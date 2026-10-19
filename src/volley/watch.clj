@@ -168,14 +168,19 @@
 ;; ---------------------------------------------------------------------------
 ;; Run outcome
 
+(defn- filtered-out?
+  "True for a namespace record that has vars, all of them skipped by the filters."
+  [rec]
+  (boolean (and (seq (:vars rec)) (rs/unselected? rec))))
+
 (defn outcome
   "What the UI needs to remember about a finished run (a `volley.run-state`
   value): `{:ran #{ns} :failed {key #{var}}}`. A key is a namespace, or the
   path of an unreadable test file. A key whose failure is not tied to a var
   (load error, crash, not run, unreadable file) has an empty set, meaning
-  \"all of it\". A namespace that finished unselected (the filters chose
-  none of its vars) is left out of `:ran`, so its earlier failures carry
-  over."
+  \"all of it\". A namespace whose vars the filters all skipped is left out
+  of `:ran`, so its earlier failures carry over. One that finished with no
+  vars at all still counts as run and clears them."
   [run]
   (let [failed (reduce (fn [m {:keys [ns file var kind]}]
                          (let [k (or ns file)]
@@ -187,7 +192,7 @@
                        {}
                        (rs/failures run))]
     {:ran (into #{}
-                (remove #(some-> (get-in run [:namespaces %]) rs/unselected?))
+                (remove #(filtered-out? (get-in run [:namespaces %])))
                 (into (set (:planned run)) (keys (:namespaces run))))
      :failed failed}))
 

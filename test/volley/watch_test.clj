@@ -188,6 +188,15 @@
     (is (= '#{b-test} (:ran (watch/outcome run))))
     (is (= {'a-test #{'x}} (:failed merged)) "a t filter that skips a-test keeps its failure")))
 
+(deftest a-namespace-left-with-no-vars-clears-its-failures
+  (let [run (assoc (rs/init {:namespaces '[a-test]})
+                   :namespaces {'a-test {:ns 'a-test :status :done :vars {}}})
+        prev (watch/merge-outcome nil {:ran '#{a-test} :failed {'a-test #{'x}}})
+        merged (watch/merge-outcome prev (watch/outcome run))]
+    (is (= '#{a-test} (:ran (watch/outcome run))))
+    (is (= {} (:failed merged)))
+    (is (:ok? merged))))
+
 (deftest keys-are-not-advertised-without-a-terminal
   (let [lines (-> (run-inputs (watch/init {:keys? false}) [{:event :start} {:event :run/finished :empty? true}])
                   second last :lines)]
