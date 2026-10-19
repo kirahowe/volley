@@ -135,3 +135,10 @@
             stale (gen/map (gen/elements [:seed :configure :post-summary])
                            gen/small-integer {:max-elements 3})]
     (merge base stale)))
+
+(def cancel-progress
+  "Where a cancel stands: `{:elapsed ms :waiting #{worker} :killed? b}`,
+  for `volley.watch/cancel-action`."
+  (gen/hash-map :elapsed (gen/choose 0 8000)
+                :waiting (gen/set (gen/choose 1 4) {:max-elements 3})
+                :killed? gen/boolean))

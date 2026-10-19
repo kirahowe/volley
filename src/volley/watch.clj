@@ -51,6 +51,27 @@
   merge."
   250)
 
+(def cancel-grace-ms
+  "How long a cancelled run's workers get to stop, and run their shutdown
+  hooks, before they are killed."
+  1000)
+
+(def ^:private cancel-wait-ms
+  "How long after the kills a cancel waits for the workers' exits."
+  5000)
+
+(defn cancel-action
+  "What a cancel does next, `elapsed` ms after it asked the run's workers to
+  stop, with `waiting` the ones whose exit has not arrived: `:done`,
+  `:wait`, `:kill` (once the grace period is over, unless `killed?`) or
+  `:give-up` (the kills were not enough either)."
+  [{:keys [elapsed waiting killed?]}]
+  (cond
+    (empty? waiting) :done
+    (not killed?) (if (>= elapsed cancel-grace-ms) :kill :wait)
+    (>= elapsed (+ cancel-grace-ms cancel-wait-ms)) :give-up
+    :else :wait))
+
 ;; ---------------------------------------------------------------------------
 ;; Snapshots
 

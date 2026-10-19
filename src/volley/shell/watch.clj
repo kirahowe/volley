@@ -45,10 +45,6 @@
 
 (def ^:private tick-ms 80)
 
-(def ^:private cancel-wait-ms
-  "How long a cancelled run's workers get to report their exit."
-  5000)
-
 (defn- now-ms [] (System/currentTimeMillis))
 
 ;; ---------------------------------------------------------------------------
@@ -157,17 +153,20 @@
         (cond-> (assoc sess :engine state :world world) code finish-run)))))
 
 (defn- cancel-run
-  "Kill the run's workers by handle and wait for their exit events, so none
-  of their output reaches the next run."
+  "Ask the run's workers to stop, so their shutdown hooks run, kill the ones
+  still alive after `volley.watch/cancel-grace-ms`, and wait for their exit
+  events, so none of their output reaches the next run."
   [{:keys [ctx]} sess]
   (let [^LinkedBlockingQueue queue (:queue ctx)
         handles (get-in sess [:world :handles])
-        deadline (+ (now-ms) cancel-wait-ms)]
-    (pool/kill-all! (vals handles))
-    (loop [waiting (set (keys handles))]
-      (when (and (seq waiting) (< (now-ms) deadline))
-        (let [ev (.poll queue 100 TimeUnit/MILLISECONDS)]
-          (recur (if (= :worker/exit (:event ev)) (disj waiting (:worker ev)) waiting)))))
+        t0 (now-ms)]
+    (run! pool/stop! (vals handles))
+    (loop [waiting (set (keys handles)) killed? false]
+      (case (watch/cancel-action {:elapsed (- (now-ms) t0) :waiting waiting :killed? killed?})
+        :kill (do (pool/kill-all! (keep handles waiting)) (recur waiting true))
+        :wait (let [ev (.poll queue 50 TimeUnit/MILLISECONDS)]
+                (recur (if (= :worker/exit (:event ev)) (disj waiting (:worker ev)) waiting) killed?))
+        (:done :give-up) nil))
     (cond-> (assoc-in sess [:world :handles] {}) (:engine sess) end-engine)))
 
 ;; ---------------------------------------------------------------------------
