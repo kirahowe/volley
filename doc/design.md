@@ -743,12 +743,14 @@ longer exist are dropped.
 during a run, the shell asks the workers to stop, kills the ones still
 alive after `volley.watch/cancel-grace-ms` (1s; `volley.watch/cancel-action`
 decides), waits for their exit events so none of their output reaches the
-next run, and starts the new run. Worker ids count up for the life of the parent process (each run's
-`volley.engine/init` gets `:first-worker-id`, the next id after the last
-run's), and the engine drops every event from a worker its run did not
-spawn, so a cancelled run's worker that takes longer than the 5s wait to
-exit can never be mistaken for one of the new run's. The new selection is the union of the cancelled run's selection and
-the new one, so a cancelled affected-only run does not lose its namespaces.
+next run, and starts the new run. Worker ids count up for the life of
+the parent process (each run's `volley.engine/init` gets
+`:first-worker-id`, the next id after the last run's), and the engine
+drops every event from a worker its run did not spawn, so a cancelled
+run's worker that takes longer than the 5s wait to exit can never be
+mistaken for one of the new run's. The new selection is the union of the
+cancelled run's selection and the new one, so a cancelled affected-only
+run does not lose its namespaces.
 A change that affects no test namespace does not disturb a run.
 
 **Keys** (raw mode through `volley.shell.terminal`, restored when the loop
