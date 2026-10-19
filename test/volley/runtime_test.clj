@@ -103,16 +103,47 @@
          (and (:in-process-ok? in) (not (:workers-set? in))
               (or (short? (runtime/typical in-process-ms))
                   (and (short? (runtime/typical workers-ms))
-                       (or (< (count in-process-ms) 2)
+                       (or (empty? in-process-ms)
+                           (and (= 1 (count in-process-ms))
+                                (not (> (or (:serial-ms in) 0) runtime/in-process-limit-ms)))
                            (>= (or workers-streak 0) runtime/retry-after)))))))))
+
+(defspec long-serial-work-gets-one-try-until-the-retry 300
+  ;; a suite of 10s on four JVM workers but 30s on one thread: after one
+  ;; slow in-process run it waits for retry-after short worker runs
+  (prop/for-all [in g/worker-plan-input
+                 serial (gen/choose (inc runtime/in-process-limit-ms) 600000)]
+    (let [{:keys [in-process-ms workers-streak]} (:history in)]
+      (or (not (:in-process? (runtime/worker-plan (assoc in :serial-ms serial))))
+          (short? (runtime/typical in-process-ms))
+          (empty? in-process-ms)
+          (>= (or workers-streak 0) runtime/retry-after)))))
+
+(defspec short-serial-work-tries-again-after-one-slow-run 300
+  (prop/for-all [in g/worker-plan-input
+                 slow (gen/choose (inc runtime/in-process-limit-ms) 120000)
+                 short-wk (gen/vector (gen/choose 0 runtime/in-process-limit-ms) 1 3)
+                 serial (gen/one-of [(gen/return nil) (gen/choose 0 runtime/in-process-limit-ms)])]
+    (:in-process? (runtime/worker-plan (-> in
+                                           (assoc :in-process-ok? true :workers-set? false :serial-ms serial)
+                                           (update :history assoc :in-process-ms [slow] :workers-ms short-wk))))))
+
+(defspec serial-ms-sums-the-planned-namespaces-on-record 300
+  (prop/for-all [durations (gen/map g/ns-sym (gen/choose 0 60000) {:max-elements 5})
+                 nses (gen/vector g/ns-sym 0 6)]
+    (let [known (keep durations (distinct nses))]
+      (= (runtime/serial-ms durations nses)
+         (when (seq known) (reduce + known))))))
 
 (defspec short-worker-runs-lead-back-in-process 300
   ;; one slow in-process run (a busy machine, a run that scaled out) must
   ;; not keep a checkout on worker processes for good
   (prop/for-all [history g/history
-                 walls (gen/vector (gen/choose 0 runtime/in-process-limit-ms) runtime/retry-after)]
+                 walls (gen/vector (gen/choose 0 runtime/in-process-limit-ms) runtime/retry-after)
+                 serial (gen/choose 0 runtime/in-process-limit-ms)]
     (let [after (reduce #(runtime/record-run %1 {:in-process? false :wall-ms %2}) history walls)]
-      (:in-process? (runtime/worker-plan {:workers 4 :in-process-ok? true :history after})))))
+      (:in-process? (runtime/worker-plan {:workers 4 :in-process-ok? true :history after
+                                          :serial-ms serial})))))
 
 (defspec one-slow-run-does-not-change-the-plan 300
   ;; a busy machine slows one run down; the next plan is the same as if
@@ -121,7 +152,7 @@
                  in-process? gen/boolean
                  wall g/wall-ms
                  slow (gen/choose (inc runtime/in-process-limit-ms) 600000)]
-    (let [plan #(runtime/worker-plan {:workers 4 :in-process-ok? true :history %})
+    (let [plan #(runtime/worker-plan {:workers 4 :in-process-ok? true :history % :serial-ms 1000})
           steady (-> history
                      (runtime/record-run {:in-process? in-process? :wall-ms wall})
                      (runtime/record-run {:in-process? in-process? :wall-ms wall}))]

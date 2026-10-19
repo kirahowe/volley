@@ -110,6 +110,19 @@
 (defn- short-run? [ms]
   (and (number? ms) (<= ms in-process-limit-ms)))
 
+(defn- long-run? [ms]
+  (and (number? ms) (> ms in-process-limit-ms)))
+
+(defn serial-ms
+  "How long `namespaces` took one after another by the last run's
+  `durations` (`.volley/timings.edn`, `{ns-sym millis}`): the sum of the
+  ones on record, or nil when none is. A run in process runs them on one
+  thread, so this, not the wall time of a run with parallel workers, is
+  what it would take."
+  [durations namespaces]
+  (let [known (keep #(get durations %) (distinct namespaces))]
+    (when (seq known) (reduce + known))))
+
 (defn worker-plan
   "How a run gets its workers: `{:workers n :in-process? bool}`.
   `:in-process?` runs the tests on a thread of the parent JVM, starting
@@ -122,23 +135,35 @@
   * `:in-process-ok?`  whether this plan can run in process
                        (`in-process-ok?`)
   * `:history`         `record-run`'s map from earlier runs
+  * `:serial-ms`       the plan's namespaces one after another
+                       (`serial-ms`), or nil when unknown
 
   In process when the recent in-process runs typically took at most
   `in-process-limit-ms`. Otherwise the recent runs with worker processes
-  must typically have been that short, and then in process when fewer
-  than two in-process runs are on record (one slow run proves nothing) or
-  after `retry-after` short worker-process runs. Typically means the
-  median of the last `recent-runs` (the lower middle one of two), so one
-  slow run on a busy machine changes nothing. With no history, worker
-  processes: a first run (or CI) behaves as before."
-  [{:keys [workers workers-set? in-process-ok? history]}]
-  (let [{:keys [in-process-ms workers-ms workers-streak]} history]
+  must typically have been that short, and then in process when no
+  in-process run is on record, after one slow in-process run when
+  `:serial-ms` is not over `in-process-limit-ms` (one slow run on a busy
+  machine proves nothing), or after `retry-after` short worker-process
+  runs. Typically means the median of the last `recent-runs` (the lower
+  middle one of two), so one slow run on a busy machine changes nothing.
+  With no history, worker processes: a first run (or CI) behaves as
+  before.
+
+  `:serial-ms` cannot stop the first try: after worker-process runs it
+  counts each worker's setup again (hosted-clay sums to 28s and runs in
+  6s on one thread), so only a run in process can tell. It stops the
+  second: a suite that takes 10s on four workers but 30s on one thread
+  then waits for `retry-after`."
+  [{:keys [workers workers-set? in-process-ok? history serial-ms]}]
+  (let [{:keys [in-process-ms workers-ms workers-streak]} history
+        tries (count in-process-ms)]
     {:workers workers
      :in-process? (boolean (and in-process-ok?
                                 (not workers-set?)
                                 (or (short-run? (typical in-process-ms))
                                     (and (short-run? (typical workers-ms))
-                                         (or (< (count in-process-ms) 2)
+                                         (or (zero? tries)
+                                             (and (= 1 tries) (not (long-run? serial-ms)))
                                              (>= (or workers-streak 0) retry-after))))))}))
 
 (defn record-run

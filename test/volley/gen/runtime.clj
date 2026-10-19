@@ -84,12 +84,17 @@
             (gen/tuple (gen/vector wall-ms 0 3) (gen/vector wall-ms 0 3)
                        (gen/one-of [(gen/return nil) (gen/choose 0 8)]))))
 
+(def serial-ms
+  "A plan's serial time by the timings on record, or nil when unknown."
+  (gen/one-of [(gen/return nil) wall-ms]))
+
 (def worker-plan-input
   "Input for `volley.runtime/worker-plan`."
   (gen/hash-map :workers (gen/choose 1 16)
                 :workers-set? gen/boolean
                 :in-process-ok? gen/boolean
-                :history history))
+                :history history
+                :serial-ms serial-ms))
 
 (def run-mode
   "What `volley.runtime/heuristic-run?` reads about a run."
