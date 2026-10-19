@@ -89,7 +89,7 @@ Pure core:
 | `volley.hooks` | Kaocha's hooks plugin and `:volley/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
 | `volley.order` | The seeded random order of a namespace's vars, from the run seed and the namespace name. Loaded by the workers. |
 | `volley.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
-| `volley.runtime` | Which worker runtime and how many workers by default; whether a run goes in process (`worker-plan`, `record-run`); which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
+| `volley.runtime` | Which worker runtime and how many workers by default; whether a run goes in process and is recorded (`worker-plan`, `in-process-ok?`, `record-history?`, `record-run`); which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
 
@@ -903,9 +903,11 @@ were skipped` warning (`rs/all-skipped`).
     (`:workers-set?`), a babashka parent or babashka workers, watch and
     isolate mode, or a plan with a namespace the parent's classpath cannot
     load (planned, preloaded, or named by a hook or reporter; a JVM
-    worker's classpath adds the test paths). Only a run of the whole plan
-    (no suite or filter on the command line) that ran every namespace
-    goes into the history. An in-process run still going after 10s with
+    worker's classpath adds the test paths). Only a run whose mode the
+    plan chose (a JVM parent with JVM workers, the default worker count,
+    no watch or isolate mode) of the whole plan (no suite or filter on the
+    command line) that ran every namespace goes into the history
+    (`record-history?`). An in-process run still going after 10s with
     at least 10s of work waiting, by the timings, starts worker processes
     up to `:workers` for the rest, once.
   * **Cached namespace infos.** `volley.discover/ns-info` is a function of

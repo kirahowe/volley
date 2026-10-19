@@ -90,3 +90,29 @@
                 :workers-set? gen/boolean
                 :in-process-ok? gen/boolean
                 :history history))
+
+(def run-mode
+  "What `volley.runtime/heuristic-run?` reads about a run."
+  (gen/hash-map :parent (gen/elements [:bb :jvm])
+                :runtime (gen/elements [:bb :jvm])
+                :workers-set? gen/boolean
+                :watch? gen/boolean
+                :isolate? gen/boolean))
+
+(def ns-sym
+  "A namespace symbol from a small pool, so plans and hooks share some."
+  (gen/elements '[a.core-test a.util-test b.hooks b.reporter c.setup]))
+
+(def plan
+  "The parts of a `volley.select/plan` that `in-process-ok?` reads."
+  (gen/hash-map :suites (gen/vector (gen/hash-map :namespaces (gen/vector (gen/fmap #(hash-map :ns %) ns-sym) 0 3))
+                                    0 2)
+                :preload (gen/vector (gen/fmap #(hash-map :ns %) ns-sym) 0 2)))
+
+(def configure
+  "A `:configure` message naming hook, setup and reporter vars."
+  (let [var-sym (gen/fmap (fn [[n v]] (symbol (str n) (name v))) (gen/tuple ns-sym (gen/elements '[f g])))]
+    (gen/hash-map :hooks (gen/map (gen/elements [:pre-run :post-load :wrap-run]) (gen/vector var-sym 0 2)
+                                  {:max-elements 2})
+                  :worker-setup (gen/vector var-sym 0 2)
+                  :reporters (gen/vector var-sym 0 2))))

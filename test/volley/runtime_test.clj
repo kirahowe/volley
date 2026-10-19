@@ -47,6 +47,38 @@
            (<= below (quot (count times) 2))
            (<= above (quot (count times) 2))))))
 
+(defspec only-a-jvm-run-with-default-workers-is-a-heuristic-run 200
+  (prop/for-all [mode g/run-mode]
+    (= (runtime/heuristic-run? mode)
+       (and (= :jvm (:parent mode) (:runtime mode))
+            (not-any? mode [:workers-set? :watch? :isolate?])))))
+
+(defspec hook-namespaces-are-those-of-the-named-vars 200
+  (prop/for-all [msg g/configure]
+    (= (set (map (comp symbol namespace)
+                 (concat (mapcat val (:hooks msg)) (:worker-setup msg) (:reporters msg))))
+       (set (runtime/hook-namespaces msg)))))
+
+(defspec in-process-needs-every-namespace-on-the-classpath 300
+  (prop/for-all [mode g/run-mode
+                 plan g/plan
+                 msg g/configure
+                 missing (gen/set g/ns-sym)]
+    (let [named (set (concat (map :ns (mapcat :namespaces (:suites plan))) (map :ns (:preload plan))
+                             (runtime/hook-namespaces msg)))]
+      (= (runtime/in-process-ok? mode plan msg (complement missing))
+         (and (runtime/heuristic-run? mode) (not-any? missing named))))))
+
+(defspec only-whole-heuristic-runs-are-recorded 300
+  ;; --isolate, --workers, a bb parent or a filtered run measures some
+  ;; other setup than the one the next default run chooses between
+  (prop/for-all [mode g/run-mode
+                 suites (gen/vector (gen/elements [:unit :e2e]) 0 1)
+                 filter-key (gen/elements [nil :focus :skip :focus-meta :skip-meta])]
+    (let [options (cond-> {} filter-key (assoc filter-key ['x]))]
+      (= (runtime/record-history? mode suites options)
+         (and (runtime/heuristic-run? mode) (empty? suites) (nil? filter-key))))))
+
 (defspec worker-plan-keeps-the-worker-count 200
   (prop/for-all [in g/worker-plan-input]
     (= (:workers in) (:workers (runtime/worker-plan in)))))

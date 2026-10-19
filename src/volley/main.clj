@@ -150,37 +150,14 @@
        (str/blank? (get-in env [:env "NO_COLOR"]))
        (or tty? (true? (:color cli-options)))))
 
-(defn- hook-namespaces
-  "Namespaces of the hooks, worker setup fns and reporters a worker
-  resolves from the `:configure` message `msg`."
-  [msg]
-  (->> (select-keys msg [:hooks :worker-setup :reporters :suites])
-       (tree-seq coll? seq)
-       (filter qualified-symbol?)
-       (map (comp symbol namespace))))
-
-(defn- in-process-ok?
-  "Whether the plan can run on a thread of this process: the parent and
-  the workers are both JVMs, it is not watch or isolate mode, and every
-  planned namespace, and every namespace a hook or reporter names, loads
-  from this process's classpath (a JVM worker's adds only the test paths)."
-  [config plan configure]
-  (and (not (runtime/bb?))
-       (= :jvm (:runtime config))
-       (not (:watch? config))
-       (not (:isolate? config))
-       (every? on-classpath?
-               (concat (map :ns (mapcat :namespaces (:suites plan)))
-                       (map :ns (:preload plan))
-                       (hook-namespaces configure)))))
-
-(defn- record-history?
-  "Only a run of the whole plan is a fair measure for the next one: no
-  suite named on the command line, no CLI filter, no watch mode."
-  [config cli]
-  (and (not (:watch? config))
-       (empty? (:suites cli))
-       (not-any? #(seq (get (:options cli) %)) [:focus :skip :focus-meta :skip-meta])))
+(defn- run-mode
+  "What `volley.runtime/heuristic-run?` needs to know about this run."
+  [config]
+  {:parent (if (runtime/bb?) :bb :jvm)
+   :runtime (:runtime config)
+   :workers-set? (:workers-set? config)
+   :watch? (:watch? config)
+   :isolate? (:isolate? config)})
 
 ;; ---------------------------------------------------------------------------
 ;; Effects
@@ -390,14 +367,15 @@
                      :durations (bfs/read-timings)
                      :started-at (System/currentTimeMillis)}
                     (config/engine-opts config (bfs/run-info)))
+              setup (run-mode config)
               opts (merge opts
                           (core-runtime/worker-plan
                            {:workers (:workers config)
                             :workers-set? (:workers-set? config)
-                            :in-process-ok? (in-process-ok? config plan (:configure opts))
+                            :in-process-ok? (core-runtime/in-process-ok? setup plan (:configure opts) on-classpath?)
                             :history (bfs/read-history)})
                           {:scale-out-ms core-runtime/in-process-limit-ms
-                           :record-history? (record-history? config cli)})
+                           :record-history? (core-runtime/record-history? setup (:suites cli) (:options cli))})
               _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))
               bad-reporter (when-not error (unresolved-reporter config))]
           (cond

@@ -60,6 +60,46 @@
   (when (seq times)
     (nth (sort times) (quot (dec (count times)) 2))))
 
+(defn heuristic-run?
+  "True when `worker-plan` decides how run `mode` gets its workers: a JVM
+  parent (`:parent`) with JVM workers (`:runtime`), the default worker
+  count (no `:workers-set?`), and neither `:watch?` nor `:isolate?`. Its
+  wall time then measures the setup the next plan chooses between."
+  [{:keys [parent runtime workers-set? watch? isolate?]}]
+  (and (= :jvm parent) (= :jvm runtime) (not workers-set?) (not watch?) (not isolate?)))
+
+(defn hook-namespaces
+  "Namespaces of the hooks, worker setup fns and reporters a worker
+  resolves from the `:configure` message `msg`."
+  [msg]
+  (->> (select-keys msg [:hooks :worker-setup :reporters :suites])
+       (tree-seq coll? seq)
+       (filter qualified-symbol?)
+       (map (comp symbol namespace))
+       distinct))
+
+(defn in-process-ok?
+  "Whether `plan` can run on a thread of the parent: `mode` is a
+  `heuristic-run?`, and every planned or preloaded namespace, and every
+  namespace a hook or reporter of `:configure` names, loads from the
+  parent's classpath by `(on-classpath? ns-sym)` (a JVM worker's adds the
+  test paths)."
+  [mode plan configure on-classpath?]
+  (boolean (and (heuristic-run? mode)
+                (every? on-classpath?
+                        (concat (map :ns (mapcat :namespaces (:suites plan)))
+                                (map :ns (:preload plan))
+                                (hook-namespaces configure))))))
+
+(defn record-history?
+  "Whether a complete run in `mode` goes into the history: a
+  `heuristic-run?` of the whole plan, with no suite (`cli-suites`) or
+  filter (`cli-options`) given on the command line."
+  [mode cli-suites cli-options]
+  (boolean (and (heuristic-run? mode)
+                (empty? cli-suites)
+                (not-any? #(seq (get cli-options %)) [:focus :skip :focus-meta :skip-meta]))))
+
 (def retry-after
   "How many short worker-process runs since the last in-process run make
   the next one try in process again, though the in-process runs on record
@@ -79,7 +119,7 @@
   * `:workers`         the configured or default worker count
   * `:workers-set?`    true when `--workers` or tests.edn chose it: then
                        always that many worker processes
-  * `:in-process-ok?`  whether the shell can run this plan in process
+  * `:in-process-ok?`  whether this plan can run in process
                        (`in-process-ok?`)
   * `:history`         `record-run`'s map from earlier runs
 
