@@ -73,11 +73,22 @@
         {}))
     (catch Exception _ {})))
 
+(defn ensure-cache-dir!
+  "Create the cache directory `dir` if it is missing, with a `.gitignore`
+  of `*` so version control skips it, as pytest does for its cache. An
+  existing directory, or an existing `.gitignore`, is left alone."
+  [dir]
+  (when-not (fs/directory? dir)
+    (fs/create-dirs dir)
+    (let [ignore (fs/path dir ".gitignore")]
+      (when-not (fs/exists? ignore)
+        (spit (str ignore) "*\n")))))
+
 (defn write-timings!
   "Save `timings` for the next run. Failure to write is not an error."
   [timings]
   (try
-    (fs/create-dirs (fs/parent timings-file))
+    (ensure-cache-dir! (fs/parent timings-file))
     (spit timings-file (pr-str (into (sorted-map) timings)))
     (catch Exception _ nil)))
 

@@ -9,6 +9,7 @@
    [babashka.fs :as fs]
    [babashka.process :as p]
    [volley.runtime :as runtime]
+   [volley.shell.fs :as vfs]
    [clojure.edn :as edn]
    [clojure.string :as str]))
 
@@ -126,7 +127,7 @@
       (let [{:keys [classpath error]} (compute-classpath aliases)]
         (if error
           {:error error}
-          (do (try (fs/create-dirs (fs/parent file))
+          (do (try (vfs/ensure-cache-dir! (fs/parent file))
                    (spit file classpath)
                    (catch Exception _ nil))
               {:classpath classpath :aliases aliases :jvm-opts jvm-opts :cached? false}))))))

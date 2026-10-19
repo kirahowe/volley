@@ -362,7 +362,8 @@ reports `1 test`. When the filters leave nothing to run, volley prints
 Kaocha's "All N tests were skipped" warning.
 
 volley saves namespace durations in `.volley/timings.edn`, and the next run
-starts the slowest namespaces first. Add `.volley/` to your `.gitignore`.
+starts the slowest namespaces first. When it creates `.volley/` it puts a
+`.gitignore` containing `*` inside, so git and jj leave the directory alone.
 
 ## CI
 
