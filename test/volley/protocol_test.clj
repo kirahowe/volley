@@ -246,3 +246,25 @@
             "deep.core/outer (src/deep/core.clj:10)"
             "deep.core-test (test/deep/core_test.clj:6)"]
            (protocol/interpreter-trace frames "/proj")))))
+
+;; ---------------------------------------------------------------------------
+;; Interpreter wrappers
+
+(defspec unwrap-removes-every-wrapper 200
+  (prop/for-all [[e _ wrapped] g/gen-wrapped]
+    (identical? e (protocol/unwrap wrapped))))
+
+(defspec unwrap-leaves-other-values-alone 200
+  (prop/for-all [e g/gen-exception]
+    (and (identical? e (protocol/unwrap e))
+         (not (protocol/sci-wrapper? e)))))
+
+(defspec a-wrapper-is-one-only-with-its-cause 200
+  (prop/for-all [[_ depth wrapped] g/gen-wrapped]
+    (= (pos? depth) (protocol/sci-wrapper? wrapped))))
+
+(defspec message-never-quotes-the-call-stack 200
+  ;; a future's ExecutionException takes its cause's toString as message
+  (prop/for-all [[_ _ wrapped] g/gen-wrapped]
+    (let [m (protocol/message (java.util.concurrent.ExecutionException. ^Throwable wrapped))]
+      (not (str/includes? (str m) "sci.impl/callstack")))))

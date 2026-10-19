@@ -9,6 +9,28 @@
 ;; ---------------------------------------------------------------------------
 ;; Protocol
 
+(defn sci-wrapper
+  "What babashka's interpreter wraps around `cause` when it passes an
+  interpreted `try`: an ExceptionInfo with the call stack in its data."
+  [cause]
+  (ex-info (ex-message cause) {:type :sci/error :sci.impl/callstack (volatile! nil)} cause))
+
+(def gen-exception
+  "An exception a test might throw, never an interpreter wrapper."
+  (gen/let [msg gen/string-alphanumeric
+            kind (gen/elements [:ex-info :runtime :npe :cause-only])]
+    (case kind
+      :ex-info (ex-info msg {:k msg})
+      :runtime (RuntimeException. ^String msg)
+      :npe (NullPointerException.)
+      :cause-only (ex-info msg {} (IllegalStateException. ^String msg)))))
+
+(def gen-wrapped
+  "`[e depth wrapped]`: `gen-exception` `e` inside `depth` interpreter
+  wrappers."
+  (gen/let [e gen-exception depth (gen/choose 0 4)]
+    [e depth (nth (iterate sci-wrapper e) depth)]))
+
 (def gen-scalar
   "Values that print and read back as themselves in EDN."
   (gen/one-of [gen/small-integer
