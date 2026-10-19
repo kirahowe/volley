@@ -1,6 +1,6 @@
 {:id 18
  :title "Name the wrap-run hook when it throws"
- :status :inbox
+ :status :ready
  :type :feature
  :priority :p3
  :created "2026-10-18"

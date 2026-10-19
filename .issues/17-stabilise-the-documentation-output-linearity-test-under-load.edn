@@ -1,6 +1,6 @@
 {:id 17
  :title "Stabilise the documentation-output linearity test under load"
- :status :inbox
+ :status :ready
  :type :bug
  :priority :p3
  :created "2026-10-18"

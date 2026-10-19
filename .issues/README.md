@@ -8,15 +8,15 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
-| [16](16-recompute-every-config-derived-option-when-tests-edn.md) | Recompute every config-derived option when tests.edn reloads in watch mode | bug | P3 |
-| [17](17-stabilise-the-documentation-output-linearity-test-under-load.md) | Stabilise the documentation-output linearity test under load | bug | P3 |
-| [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
 
 ### Ready
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+| [16](16-recompute-every-config-derived-option-when-tests-edn.md) | Recompute every config-derived option when tests.edn reloads in watch mode | bug | P3 |
+| [17](17-stabilise-the-documentation-output-linearity-test-under-load.md) | Stabilise the documentation-output linearity test under load | bug | P3 |
+| [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
 
 ### Review
 
