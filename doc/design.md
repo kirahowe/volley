@@ -168,12 +168,17 @@ ignore. Plugins fall in three groups (`volley.config`):
   debug, orchestra, preloads, version-filter, the alpha ones, cloverage):
   accepted, with their options and config keys, under one warning line
   that names every such plugin listed.
-- Anything else goes to `:unknown-plugins`. Kaocha exits 248 when a
-  plugin's namespaces cannot be loaded (`kaocha.plugin/register`); the
-  shell checks the classpath and the suites' paths for a source file of
-  each candidate namespace (`volley.config/plugin-candidates`) and exits
-  248 with Kaocha's message (`volley.config/plugin-load-error`) when there
-  is none. A plugin with a namespace that exists joins the warning line.
+- Anything else goes to `:unknown-plugins`. Kaocha (`kaocha.plugin/register`)
+  exits 248 when a namespace it tries cannot be loaded and no loaded one
+  defines the plugin, and 249 when every namespace it tried loaded but
+  none defines it. It tries `a.b` only when `a.b.c` fails. The shell reads
+  the source of each candidate namespace (`volley.config/plugin-candidates`)
+  from the classpath or the suites' paths, and
+  `volley.config/plugin-load-error` decides from that text, without
+  loading anything: a `defplugin` of the plugin's name or its keyword
+  (as `defmethod -register` takes it) counts as a definition. On an error
+  volley exits with Kaocha's code and message. A plugin it finds defined
+  joins the warning line.
 
 Flags that belong to a plugin (`--junit-xml-file`, cloverage's `--cov-*`,
 `--profiling`, `--notifications`, `--gc-profiling` and their siblings)
@@ -520,13 +525,15 @@ output costs time linear in its namespaces.
 
 `preflight` returns Kaocha's exit codes: a config that fails Kaocha's
 spec (a suite id that is not a keyword) 252, a plugin that cannot be
-loaded 248, other config errors (including an unreadable tests.edn, and
-values volley cannot use such as `:preload? "yes"` or a `:kaocha/bindings`
-that is not a map, which Kaocha does not accept either) 250, CLI errors 255 (Kaocha's -1), unknown suite 254
-(-2), help/version/print-config/print-test-plan 0 (also with `--watch`,
-as Kaocha prints and exits; `--print-result` turns `--watch` off with a
-warning and prints the one result), and an empty plan prints
-Kaocha's "No tests were found" warning and exits 0. A run exits with
+loaded 248, a plugin whose namespace loads but does not define it 249,
+other config errors (including an unreadable tests.edn, and values volley
+cannot use such as `:preload? "yes"` or a `:kaocha/bindings` that is not
+a map, which Kaocha does not accept either) 250, CLI errors 255
+(Kaocha's -1), unknown suite 254 (-2),
+help/version/print-config/print-test-plan 0 (also with `--watch`, as
+Kaocha prints and exits; `--print-result` turns `--watch` off with a
+warning and prints the one result), and an empty plan prints Kaocha's
+"No tests were found" warning and exits 0. A run exits with
 `volley.run-state/exit-code`.
 
 ## Hooks

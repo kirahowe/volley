@@ -219,7 +219,8 @@ from a JVM parent starts babashka workers.
   not need the kaocha-junit-xml library.
 - Exit codes: the number of failures capped at 255, 250 for invalid config,
   252 for a config that fails Kaocha's spec, 248 for a plugin that cannot
-  be loaded, 255 for CLI errors and 254 for an unknown suite or a reporter
+  be loaded, 249 for a plugin whose namespace loads but does not define
+  it, 255 for CLI errors and 254 for an unknown suite or a reporter
   that does not resolve.
 - A test var that makes no assertion fails with Kaocha's "Test ran without
   assertions" message.
@@ -230,7 +231,8 @@ Kaocha options volley does not support print a warning instead of being
 ignored silently. Kaocha's other plugins (notifier, gc-profiling,
 cloverage and the like) are accepted with their options, and one warning
 line names the ones volley does not run. A plugin that cannot be loaded at
-all stops the run with exit 248, as in Kaocha. Kaocha's reporters map to
+all stops the run with exit 248, and one whose namespace defines no such
+plugin with exit 249, as in Kaocha. Kaocha's reporters map to
 volley's output without a warning (`documentation` to its documentation
 layout), and a reporter of your own, such as `--reporter my.app/report`,
 runs in the workers and gets every `clojure.test` event.
