@@ -387,8 +387,14 @@
                                      (check-assertions! acc)
                                      (finally (safely #(end-var! acc emit! ns-sym)))))
                         r (hooks/run-var hs ns-sym v test! counts)]
-                    (when (:kaocha.testable/skip r)
-                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))
+                    (cond
+                      (:kaocha.testable/skip r)
+                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook})
+                      ;; the var never opened, so a wrap-run hook did not call run
+                      (nil? (counts))
+                      (emit! {:event :worker/warning
+                              :message (str "the wrap-run hook did not call run for " ns-sym "/" (:name (meta v))
+                                            ", so it did not run (Kaocha does not run it either)")}))
                     r))
         stop? (fn [r] (and fail-fast? (failed? r)))
         abandon! (fn []

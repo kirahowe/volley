@@ -256,8 +256,9 @@
 
 (defn run-var
   "Run test var `v` of `ns-sym`: `pre-test` with its testable, then
-  `(test!)` unless a hook marked it `:kaocha.testable/skip`, then
-  `(counts)` for its result and `post-test`. Returns the var's result
+  `(test!)` and `(counts)` for its result, wrapped by the `wrap-run`
+  hooks, unless a hook marked it `:kaocha.testable/skip`, then
+  `post-test`. A `wrap-run` hook may not call them. Returns the var's result
   testable, with `:kaocha.testable/skip` when it was skipped; throws when
   a hook does."
   [hs ns-sym v test! counts]
@@ -269,8 +270,9 @@
             t (run-chain :pre-test (top hs :pre-test) t p)]
         (if (:kaocha.testable/skip t)
           t
-          (do (test!)
-              (run-chain :post-test (top hs :post-test) (testable/with-result t (counts)) p)))))))
+          (let [base (fn [testable _plan] (test!) (testable/with-result testable (counts)))
+                r ((run-chain :wrap-run (top hs :wrap-run) base) t p)]
+            (run-chain :post-test (top hs :post-test) (if (map? r) r t) p)))))))
 
 (defn- call-reporters
   "Call the project's reporters with event `m`, as Kaocha calls its

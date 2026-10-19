@@ -27,7 +27,9 @@
 (defn wrap-run [run]
   (fn [testable plan]
     (log! :wrap-run (id testable))
-    (run testable plan)))
+    (let [result (run testable plan)]
+      (log! :wrap-run-end (id testable))
+      result)))
 (defn pre-load-test [testable _config] (log! :pre-load-test (id testable)) testable)
 (defn post-load-test [testable _config]
   (log! :post-load-test [(id testable) (count (:kaocha.test-plan/tests testable))])

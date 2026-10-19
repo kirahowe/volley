@@ -574,7 +574,7 @@ worker passes holds only the namespaces that worker has loaded so far.
 | `post-load` | each worker | after every namespace it loads, with the plan so far |
 | `pre-run` | each worker | once, before the tests of its first namespace |
 | `post-run` | each worker | once, when it is shut down cleanly |
-| `wrap-run` | each worker | wraps the run of each namespace (Kaocha also wraps suites and vars) |
+| `wrap-run` | each worker | wraps the run of each namespace and each var, between its `pre-test` and `post-test` (Kaocha also wraps suites) |
 | `pre-test` / `post-test` (top level) | each worker | around each namespace and each var; with the suite testable once per worker, before its first namespace of the suite and at shutdown |
 | `pre-test` / `post-test` on a suite (and `before`/`after`) | each worker | with the suite testable, once per worker as above |
 | `pre-load-test` / `post-load-test` | each worker | around each namespace's require; with the suite testable once per worker |
@@ -614,8 +614,8 @@ was. A shutdown hook that throws is sent as `:worker/error` (with `:hook`)
 and counts as one failure per hook and message, however many workers
 it failed in, since Kaocha runs `post-run` once; the report lists the
 workers. A `wrap-run` hook that never calls `run` leaves the namespace's
-tests unrun: Kaocha then reports nothing and exits 0, and so does volley,
-with a warning naming the namespace.
+(or the var's) tests unrun: Kaocha then reports nothing and exits 0, and
+so does volley, with a warning naming the namespace or var.
 In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker stopped early, by
 fail-fast or a watch cancel, is asked to shut down and killed only if it

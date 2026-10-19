@@ -21,7 +21,10 @@
   (let [hooks (map second entries)
         once (fn [h] (= 1 (count (filter #{h} hooks))))
         at (fn [h detail] (index-of entries #(= [h detail] (rest %))))
-        nses (keep (fn [[_ h d]] (when (= :wrap-run h) d)) entries)]
+        wrapped (keep (fn [[_ h d]] (when (= :wrap-run h) d)) entries)
+        nses (filter simple-keyword? (remove #{:unit} wrapped))
+        vars (filter qualified-keyword? wrapped)
+        post-test (fn [id] (index-of entries #(and (= :post-test (second %)) (= id (first (nth % 2))))))]
     (is (= [:worker-setup :pre-load :suite-setup] (take 3 hooks))
         "worker setup first, before anything is loaded")
     (doseq [h [:worker-setup :pre-load :pre-run :post-run :suite-setup :suite-before :suite-after]]
@@ -31,11 +34,16 @@
         "the suite's post-test, then post-run, at shutdown")
     (doseq [n nses]
       (let [order [(at :pre-load-test n) (index-of entries #(and (= :post-load-test (second %)) (= n (first (nth % 2)))))
-                   (at :pre-test n) (at :wrap-run n)
-                   (index-of entries #(and (= :post-test (second %)) (= n (first (nth % 2)))))]]
+                   (at :pre-test n) (at :wrap-run n) (at :wrap-run-end n) (post-test n)]]
         (is (every? some? order) (str n " " order))
         (is (apply < order) (str "load and run hooks of " n " in order"))))
-    nses))
+    (doseq [v vars]
+      (let [n (keyword (namespace v))
+            order [(at :wrap-run n) (at :pre-test v) (at :wrap-run v) (at :wrap-run-end v) (post-test v)
+                   (at :wrap-run-end n)]]
+        (is (every? some? order) (str v " " order))
+        (is (apply < order) (str v ": pre-test, wrap-run, post-test, inside its namespace's wrap-run"))))
+    {:nses nses :vars vars}))
 
 (defn- check-run [dir out exit bb?]
   (let [log (hook-log dir)
@@ -48,9 +56,13 @@
     (is (<= 1 (count workers) 2))
     (is (every? (fn [[_ h d]] (or (not= :worker-setup h) (= bb? (some? (:bb d))))) log)
         "the workers ran on the requested runtime")
-    (is (= #{:hooks.a-test :hooks.b-test :hooks.c-test}
-           (set (mapcat #(check-worker (val %)) workers)))
-        "every namespace ran in a worker that was set up")
+    (let [checked (map #(check-worker (val %)) workers)]
+      (is (= #{:hooks.a-test :hooks.b-test :hooks.c-test} (set (mapcat :nses checked)))
+          "every namespace ran in a worker that was set up")
+      (is (= #{:hooks.a-test/worker-setup-ran-first :hooks.a-test/defused-by-pre-report
+               :hooks.b-test/also-set-up :hooks.c-test/also-set-up}
+             (set (mapcat :vars checked)))
+          "wrap-run wraps every var that ran, not the one pre-test skipped"))
     (is (= 1 (count parent)))
     (is (= [[:post-summary 4]] (map rest (get by-pid (first parent))))
         "post-summary once, in the parent, with Kaocha's result shape")

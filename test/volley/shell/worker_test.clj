@@ -270,3 +270,55 @@
     (is (= "src/volley/main.clj" (worker/project-path dir (str dir "/src/volley/main.clj"))))
     (is (= "nowhere/x.clj" (worker/project-path dir "nowhere/x.clj")))
     (is (nil? (worker/project-path dir nil)))))
+
+(def wrap-log
+  "What the hooks of the wrap-run tests saw, in order."
+  (atom []))
+
+(def ^:private logging-wrap-run
+  '(fn [run]
+     (fn [testable plan]
+       (swap! volley.shell.worker-test/wrap-log conj [:in (:kaocha.testable/id testable)])
+       (let [r (run testable plan)]
+         (swap! volley.shell.worker-test/wrap-log conj [:out (:kaocha.testable/id testable)])
+         r))))
+
+(def ^:private logging-test-hooks
+  {:pre-test ['(fn [t _]
+                 (swap! volley.shell.worker-test/wrap-log conj [:pre (:kaocha.testable/id t)])
+                 t)]
+   :post-test ['(fn [t _]
+                  (swap! volley.shell.worker-test/wrap-log conj [:post (:kaocha.testable/id t) (:kaocha.result/pass t)])
+                  t)]})
+
+(deftest wrap-run-wraps-each-var-between-its-pre-and-post-test
+  ;; kaocha.testable/run-testable: pre-test, then -run through the wrap-run
+  ;; hooks (kaocha.testable/run), then post-test; a var's :each fixtures
+  ;; run inside its -run (kaocha.type.var)
+  (reset! wrap-log [])
+  (let [hs (hooks/init {:hooks (assoc logging-test-hooks :wrap-run [logging-wrap-run]) :config {}})
+        events (volatile! [])]
+    (worker/run-assignment! #(vswap! events conj %) worker/run-everything hs
+                            {:ns 'exec.pass-test :run-id 1 :suite :unit :capture-output? true})
+    (is (= [[:pre :unit]
+            [:pre :exec.pass-test] [:in :exec.pass-test]
+            [:pre :exec.pass-test/adds] [:in :exec.pass-test/adds]
+            [:out :exec.pass-test/adds] [:post :exec.pass-test/adds 2]
+            [:pre :exec.pass-test/strings] [:in :exec.pass-test/strings]
+            [:out :exec.pass-test/strings] [:post :exec.pass-test/strings 2]
+            [:out :exec.pass-test] [:post :exec.pass-test nil]]
+           @wrap-log))
+    (is (= {:pass 4 :fail 0 :error 0} (counts @events)))))
+
+(deftest a-var-wrap-run-that-never-runs-is-warned-about
+  (let [hook '(fn [run] (fn [t p] (if (= :kaocha.type/var (:kaocha.testable/type t)) t (run t p))))
+        hs (hooks/init {:hooks {:wrap-run [hook]} :config {}})
+        events (volatile! [])]
+    (worker/run-assignment! #(vswap! events conj %) worker/run-everything hs
+                            {:ns 'exec.pass-test :run-id 1 :suite :unit})
+    (is (not-any? #(= :var/start (:event %)) @events))
+    (is (= [(str "the wrap-run hook did not call run for exec.pass-test/adds,"
+                 " so it did not run (Kaocha does not run it either)")
+            (str "the wrap-run hook did not call run for exec.pass-test/strings,"
+                 " so it did not run (Kaocha does not run it either)")]
+           (keep #(when (= :worker/warning (:event %)) (:message %)) @events)))))
