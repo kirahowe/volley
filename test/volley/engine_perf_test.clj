@@ -4,6 +4,7 @@
   namespace the run has seen."
   (:require
    [volley.engine :as engine]
+   [volley.render :as render]
    [clojure.test :refer [deftest is]]))
 
 (defn- respond
@@ -16,15 +17,13 @@
 
 (defn- run-synthetic
   "Drive the engine through a run of `n` one-var namespaces with
-  `reporter`, workers answering at once. Returns the number of printed
-  lines."
+  `reporter`, workers answering at once."
   [n reporter]
   (let [plan {:suites [{:id :unit :namespaces (mapv (fn [i] {:ns (symbol (str "n" i "-test"))})
                                                      (range n))}]}
         {:keys [state]} (engine/init plan {:workers 4 :reporter reporter :started-at 0})]
-    (loop [state state input {:event :tick :at 0} pending [] printed 0 at 0]
+    (loop [state state input {:event :tick :at 0} pending [] at 0]
       (let [{:keys [state effects]} (engine/step state input)
-            printed (+ printed (count (mapcat :lines (filter #(= :print (:effect %)) effects))))
             pending (into pending
                           (mapcat (fn [{:keys [effect worker msg]}]
                                     (case effect
@@ -34,38 +33,35 @@
                                       nil)))
                           effects)]
         (cond
-          (engine/done? state) printed
-          (seq pending) (recur state (first pending) (subvec pending 1) printed (inc at))
-          :else (recur state {:event :tick :at (+ at 100)} pending printed (+ at 100)))))))
+          (engine/done? state) nil
+          (seq pending) (recur state (first pending) (subvec pending 1) (inc at))
+          :else (recur state {:event :tick :at (+ at 100)} pending (+ at 100)))))))
 
-(defn- time-ms [f]
-  (let [t0 (System/nanoTime)]
-    (f)
-    (/ (- (System/nanoTime) t0) 1e6)))
+(defn- visits
+  "How many namespace records the renderer looks at over a run of `n`
+  namespaces. Counting work rather than timing it keeps the test
+  deterministic, so load from the rest of the suite cannot sway it."
+  [n reporter]
+  (let [seen (volatile! 0)
+        candidates @#'render/candidates]
+    (with-redefs [render/candidates (fn [state opts]
+                                      (let [recs (candidates state opts)]
+                                        (vswap! seen + (count recs))
+                                        recs))]
+      (run-synthetic n reporter))
+    @seen))
 
 (defn- growth
-  "How much longer a run of 4n namespaces takes than one of n, best of
-  five each. The two sizes alternate, so a burst of load from the rest of
-  the suite slows both rather than only the larger one."
+  "How many times more records a run of 4n namespaces visits than one of
+  n: about 4 for a linear engine, about 16 for one that renders every
+  namespace on each `:ns/end`."
   [n reporter]
-  (run-synthetic 50 reporter)
-  (let [pairs (doall (repeatedly 5 (fn [] [(time-ms #(run-synthetic n reporter))
-                                           (time-ms #(run-synthetic (* 4 n) reporter))])))]
-    (/ (apply min (map second pairs)) (apply min (map first pairs)))))
-
-(defn- growths
-  "Up to three `growth` measurements, stopping at the first under 8.
-  Linear is 4x and quadratic 16x. Load from the rest of the suite only
-  ever inflates the ratio, so one measurement under the bound settles it,
-  and a quadratic engine never gets one."
-  [reporter]
-  (let [[over under] (split-with #(>= % 8) (repeatedly 3 #(growth 100 reporter)))]
-    (vec (concat over (take 1 under)))))
+  (double (/ (visits (* 4 n) reporter) (visits n reporter))))
 
 (deftest ci-output-is-linear-in-namespaces
-  (let [gs (growths :ci)]
-    (is (< (peek gs) 8) (str "growth ratios: " gs))))
+  (let [g (growth 50 :ci)]
+    (is (< g 8) (str "growth ratio: " g))))
 
 (deftest documentation-output-is-linear-in-namespaces
-  (let [gs (growths :documentation)]
-    (is (< (peek gs) 8) (str "growth ratios: " gs))))
+  (let [g (growth 50 :documentation)]
+    (is (< g 8) (str "growth ratio: " g))))
