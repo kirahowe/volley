@@ -631,16 +631,16 @@ catch that error at all. With several `wrap-run` hooks, the error names the
 one that threw, and an error thrown by the run itself (a fixture) passes
 through them unchanged. The vars that did not run, including the one whose
 hook threw before it started, are listed as not run (reason
-`:fixture-failed`). A `pre-report` hook that
-throws is printed to the worker's stderr and the event is counted as it
-was. A shutdown hook that throws is sent as `:worker/error` (with `:hook`)
-and counts as one failure per hook and message, however many workers
-it failed in, since Kaocha runs `post-run` once; the report lists the
-workers. A `wrap-run` hook that never calls `run` leaves the namespace's
-(or the var's) tests unrun: Kaocha then reports nothing and exits 0, and
-so does volley, with a warning naming the namespace or var. A suite's
-`wrap-run` that throws before calling `run` is a setup error; one that
-throws after it fails at shutdown, like a shutdown hook.
+`:fixture-failed`). A `pre-report` hook that throws is printed to the
+worker's stderr and the event is counted as it was. A shutdown hook that
+throws is sent as `:worker/error` (with `:hook`) and counts as one failure
+per hook and message, however many workers it failed in, since Kaocha
+runs `post-run` once; the report lists the workers. A `wrap-run` hook
+that never calls `run` leaves the namespace's (or the var's) tests unrun:
+Kaocha then reports nothing and exits 0, and so does volley, with a
+warning naming the namespace or var. A suite's `wrap-run` that throws
+before calling `run` is a setup error; one that throws after it fails at
+shutdown, like a shutdown hook.
 In `--isolate` mode every namespace has its own worker, so every
 once-per-worker hook runs once per namespace. A worker stopped early, by
 fail-fast or a watch cancel, is asked to shut down and killed only if it

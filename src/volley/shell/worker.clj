@@ -366,8 +366,8 @@
   Throwable that escaped (a failing fixture or hook, for instance). The
   vars it kept from running, the one whose hook threw before it ran
   included, are sent as skipped with reason `:fixture-failed`, so none of
-  them vanishes. The third element is the
-  number of passing assertions made outside any var.
+  them vanishes. The third element is the number of passing assertions
+  made outside any var.
 
   clojure.test reports through a callback and fixtures return nothing of
   the tests they wrap, so two mutable cells carry what the run learns out
