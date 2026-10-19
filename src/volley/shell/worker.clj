@@ -429,13 +429,14 @@
   (merge (:ns-meta select) (meta ns-obj)))
 
 (defn- load-ns
-  "Require `ns` between its load hooks. Returns `[hs error]`."
-  [hs suite ns]
+  "Require `ns` between its load hooks, which see its vars in the run
+  order of `seed`. Returns `[hs error]`."
+  [hs suite ns seed]
   (try
     (hooks/pre-load-ns hs ns)
     (require ns)
     (let [ns-obj (find-ns ns)]
-      [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj)) nil])
+      [(hooks/post-load-ns hs suite ns ns-obj (test-vars-of ns-obj seed)) nil])
     (catch Throwable e [hs e])))
 
 (defn- preload-suite!
@@ -540,7 +541,7 @@
                                 bind-error [hs bind-error :setup]
                                 (hooks/setup-error hs) [hs (hooks/setup-error hs) :setup]
                                 :else (let [hs (preload! hs emit! (:preload cmd))
-                                            [hs e] (load-ns hs suite ns)]
+                                            [hs e] (load-ns hs suite ns (:seed cmd))]
                                         (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
     (when error
       (emit! (error-event ns run-id phase error)))
