@@ -1,6 +1,6 @@
 {:id 8
  :title "Run shutdown hooks in workers stopped by fail-fast or a watch cancel"
- :status :inbox
+ :status :ready
  :type :feature
  :priority :p3
  :created "2026-10-18"

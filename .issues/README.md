@@ -7,18 +7,18 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [8](8-run-shutdown-hooks-in-workers-stopped-by-fail-fast-or-a.md) | Run shutdown hooks in workers stopped by fail-fast or a watch cancel | feature | P3 |
-| [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
 | [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
-| [13](13-keep-failures-of-vars-a-watch-t-filter-skips.md) | Keep failures of vars a watch t filter skips | bug | P3 |
-| [14](14-recompute-the-randomize-seed-when-tests-edn-changes-in.md) | Recompute the randomize seed when tests.edn changes in watch mode | bug | P3 |
-| [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |
 
 ### Ready
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+| [8](8-run-shutdown-hooks-in-workers-stopped-by-fail-fast-or-a.md) | Run shutdown hooks in workers stopped by fail-fast or a watch cancel | feature | P3 |
+| [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
+| [13](13-keep-failures-of-vars-a-watch-t-filter-skips.md) | Keep failures of vars a watch t filter skips | bug | P3 |
+| [14](14-recompute-the-randomize-seed-when-tests-edn-changes-in.md) | Recompute the randomize seed when tests.edn changes in watch mode | bug | P3 |
+| [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |
 
 ### Review
 
