@@ -1,6 +1,6 @@
 {:id 10
  :title "Notice deps.edn changes in watch mode and the JVM classpath cache"
- :status :ready
+ :status :review
  :type :feature
  :priority :p3
  :created "2026-10-18"
