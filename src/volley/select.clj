@@ -15,8 +15,8 @@
   the closed form of the same rules for one var, which is what workers
   evaluate."
   (:require
-   [volley.discover :as discover]
    [volley.filters :as filters]
+   [volley.paths :as paths]
    [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@
   "Infos belonging to `suite`, one per namespace, ordered by name."
   [suite infos]
   (->> infos
-       (filter #(discover/suite-member? suite %))
+       (filter #(paths/suite-member? suite %))
        (sort-by (juxt (comp str :ns) :file))
        (into [] (comp (remove :error) (remove #(nil? (:ns %)))
                       (partition-by :ns) (map first)))))
@@ -217,7 +217,7 @@
 (defn- load-errors [suite infos]
   (into []
         (comp (filter :error)
-              (filter #(discover/suite-member? suite %))
+              (filter #(paths/suite-member? suite %))
               (map #(select-keys % [:file :error])))
         infos))
 

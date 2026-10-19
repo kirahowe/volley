@@ -28,6 +28,7 @@
    [volley.config :as config]
    [volley.deps-graph :as deps]
    [volley.discover :as discover]
+   [volley.paths :as paths]
    [volley.run-state :as rs]
    [volley.select :as select]
    [clojure.set :as set]
@@ -133,7 +134,7 @@
           (concat added modified)))
 
 (defn- graph-of [suites infos]
-  (deps/graph (discover/mark-tests suites (vals infos))))
+  (deps/graph (paths/mark-tests suites (vals infos))))
 
 (defn affected-by
   "Test namespaces affected by `changes`: added and modified files are

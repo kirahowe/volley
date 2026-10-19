@@ -47,20 +47,6 @@
     (let [{:keys [requires as-alias-only]} (discover/ns-info "x.clj" text)]
       (empty? (filter requires as-alias-only)))))
 
-(defspec test-file-requires-a-test-path 200
-  (prop/for-all [dir (gen/elements ["test" "test/unit" "./test" "src"])
-                 file g/segment]
-    (let [suite {:test-paths ["test"]}
-          path (str dir "/" file ".clj")]
-      (= (boolean (re-find #"^(\./)?test/" path))
-         (discover/test-file? suite path)))))
-
-(defspec ns-match-is-re-find-on-the-name 200
-  (prop/for-all [nm g/ns-sym
-                 pat (gen/elements ["-test$" "^app\\." "core" ".*" "^$"])]
-    (= (boolean (re-find (re-pattern pat) (str nm)))
-       (discover/ns-match? {:ns-patterns [pat]} nm))))
-
 ;; ---------------------------------------------------------------------------
 ;; Examples
 
@@ -128,26 +114,3 @@
   (testing "no ns form at all"
     (is (= {:file "x.clj"} (discover/ns-info "x.clj" "(println 1)")))
     (is (= {:file "x.clj"} (discover/ns-info "x.clj" "")))))
-
-(deftest suite-membership-test
-  (let [suite {:id :unit :test-paths ["test"] :ns-patterns ["-test$"]}]
-    (testing "kaocha.load/ns-match?: re-find against the namespace name"
-      (is (discover/ns-match? suite 'my.app-test))
-      (is (not (discover/ns-match? suite 'my.app-test-helpers)))
-      (is (discover/ns-match? {:ns-patterns ["-test$" "^it\\."]} 'it.thing)))
-    (testing "test-file? needs a test path and a Clojure extension"
-      (is (discover/test-file? suite "test/a/b_test.clj"))
-      (is (discover/test-file? suite "test/a/b_test.cljc"))
-      (is (discover/test-file? suite "./test/a_test.clj"))
-      (is (not (discover/test-file? suite "test/a/data.edn")))
-      (is (not (discover/test-file? suite "src/a_test.clj")))
-      (is (not (discover/test-file? suite "testing/a_test.clj"))))
-    (testing "kaocha.load/find-test-nss: unreadable ns forms are kept so they get reported"
-      (is (discover/suite-member? suite {:file "test/x.clj" :error "boom"}))
-      (is (not (discover/suite-member? suite {:file "test/x.clj"})))
-      (is (not (discover/suite-member? suite {:file "src/x.clj" :ns 'x-test}))))
-    (testing "mark-tests"
-      (is (= [true false]
-             (mapv :test? (discover/mark-tests [suite]
-                                               [{:file "test/a_test.clj" :ns 'a-test}
-                                                {:file "src/a.clj" :ns 'a}])))))))

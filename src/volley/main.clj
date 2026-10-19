@@ -9,7 +9,6 @@
   (:require
    [volley.cli :as cli]
    [volley.config :as config]
-   [volley.discover :as discover]
    [volley.engine :as engine]
    [volley.runtime :as core-runtime]
    [volley.select :as select]
@@ -84,13 +83,53 @@
      :config-missing? missing?
      :config-file file}))
 
+(defn- parse-ns-info
+  "`volley.discover/ns-info`, loaded on first use: the parser it needs
+  (edamame, with tools.reader) is a third of the JVM parent's load time."
+  [path text]
+  ((requiring-resolve 'volley.discover/ns-info) path text))
+
+(defn- parser-key
+  "What a cached namespace info depends on besides its file's text: the
+  parser's own source and edamame's version."
+  []
+  (bfs/sha256 (str (some-> (io/resource "volley/discover.clj") slurp)
+                   (some-> (io/resource "EDAMAME_VERSION") slurp))))
+
+(defn- cached-ns-infos
+  "Namespace infos for `files`, reusing the last run's for any file whose
+  text is unchanged (`ns-info` is a function of path and text alone) and
+  saving the new set when anything changed. Parses, and so loads the
+  parser, only for files that changed."
+  [files]
+  (let [key (parser-key)
+        cache (bfs/read-ns-info-cache)
+        known (if (= key (:parser cache)) (:files cache) {})
+        entries (mapv (fn [path]
+                        (let [text (bfs/read-file path)
+                              sha (bfs/sha256 text)
+                              hit (get known path)]
+                          (if (and hit (= sha (:sha hit)))
+                            {:path path :sha sha :info (:info hit) :hit? true}
+                            {:path path :sha sha :info (parse-ns-info path text)})))
+                      files)]
+    (when-not (and (every? :hit? entries) (= (count known) (count entries)))
+      (bfs/write-ns-info-cache!
+       {:parser key
+        :files (into {} (keep (fn [{:keys [path sha info]}]
+                                (when (bfs/edn-safe? info) [path {:sha sha :info info}])))
+                     entries)}))
+    (mapv :info entries)))
+
 (defn- discover-all
-  "Namespace info for every Clojure file under the suites' test paths."
+  "Namespace info for every Clojure file under the suites' test paths. On
+  the JVM they come through `cached-ns-infos`; babashka has the parser
+  built in, so parsing there costs less than the cache would."
   [cfg]
-  (->> (:tests cfg)
-       (mapcat :test-paths)
-       bfs/clojure-files
-       (mapv #(discover/ns-info % (bfs/read-file %)))))
+  (let [files (->> (:tests cfg) (mapcat :test-paths) bfs/clojure-files)]
+    (if (runtime/bb?)
+      (mapv #(parse-ns-info % (bfs/read-file %)) files)
+      (cached-ns-infos files))))
 
 (defn- reporter
   "`:live` needs a terminal; anything else gets the append-only CI output.

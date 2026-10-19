@@ -1,6 +1,7 @@
 (ns volley.shell.fs
   "File system and environment edge: globbing source files, reading them,
-  resolving `#include`, and remembering namespace timings. Everything here
+  resolving `#include`, and remembering namespace timings, run times and
+  parsed namespace infos between runs. Everything here
   hands plain data to the pure core."
   (:require
    [babashka.fs :as fs]
@@ -123,6 +124,45 @@
   (try
     (fs/create-dirs (fs/parent history-file))
     (spit history-file (pr-str history))
+    (catch Exception _ nil)))
+
+(def ns-info-cache-file
+  "Where the namespace infos of the last run's files are kept."
+  ".volley/ns-infos.edn")
+
+(defn sha256
+  "Hex SHA-256 of `text`'s UTF-8 bytes."
+  [^String text]
+  (let [md (java.security.MessageDigest/getInstance "SHA-256")]
+    (apply str (map #(format "%02x" (bit-and % 0xff))
+                    (.digest md (.getBytes (str text) "UTF-8"))))))
+
+(defn read-ns-info-cache
+  "What `write-ns-info-cache!` saved, `{:parser key :files {path {:sha
+  hex :info ns-info}}}`; empty when absent or unreadable."
+  []
+  (try
+    (let [m (edn/read-string (slurp ns-info-cache-file))]
+      (if (and (map? m) (map? (:files m))) m {}))
+    (catch Exception _ {})))
+
+(defn edn-safe?
+  "True when `v` prints as EDN that reads back equal, so it can be cached."
+  [v]
+  (try
+    (= v (edn/read-string (binding [*print-length* nil *print-level* nil *print-meta* false
+                                    *print-namespace-maps* false *print-readably* true]
+                            (pr-str v))))
+    (catch Exception _ false)))
+
+(defn write-ns-info-cache!
+  "Save `cache` for the next run. Failure to write is not an error."
+  [cache]
+  (try
+    (fs/create-dirs (fs/parent ns-info-cache-file))
+    (spit ns-info-cache-file (binding [*print-length* nil *print-level* nil *print-meta* false
+                                       *print-namespace-maps* false *print-readably* true]
+                               (pr-str cache)))
     (catch Exception _ nil)))
 
 (defn write-file!

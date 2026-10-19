@@ -6,7 +6,7 @@
    [volley.e2e.support :as e2e]
    [clojure.edn :as edn]
    [clojure.string :as str]
-   [clojure.test :refer [deftest is]]))
+   [clojure.test :refer [deftest is testing]]))
 
 (def ^:private expected-summary "4 tests | 4 passed | 0 failed | 0 errors | 0 skipped")
 
@@ -54,4 +54,11 @@
     (is (= [:workers-ms] (keys (history)))
         "test namespaces the parent cannot load: worker processes, whatever the history")
     (passes? (run ["src" "extra" "test"]))
-    (is (seq (:in-process-ms (history))) "a short run on record: in process")))
+    (is (seq (:in-process-ms (history))) "a short run on record: in process")
+    (testing "namespace infos are reused only for files whose text is unchanged"
+      (is (fs/exists? (fs/path dir ".volley" "ns-infos.edn")))
+      (spit (str (fs/path dir "test" "jvmfix" "runtime_test.clj"))
+            "\n(deftest added-later (is true))\n" :append true)
+      (let [{:keys [exit out]} (run ["src" "extra" "test"] "--print-test-plan")]
+        (is (= 0 exit))
+        (is (str/includes? out "jvmfix.runtime-test/added-later"))))))

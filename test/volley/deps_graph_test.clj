@@ -2,6 +2,7 @@
   (:require
    [volley.deps-graph :as deps]
    [volley.discover :as discover]
+   [volley.paths :as paths]
    [volley.gen.compat :as g]
    [clojure.set :as set]
    [clojure.test :refer [deftest is testing]]
@@ -102,7 +103,7 @@
       (is (not (contains? (:deps graph) 'next.jdbc))))))
 
 (deftest built-from-discover-output-test
-  (let [infos (discover/mark-tests
+  (let [infos (paths/mark-tests
                [{:test-paths ["test"] :ns-patterns ["-test$"]}]
                [(discover/ns-info "src/a.clj" "(ns a)")
                 (discover/ns-info "test/a_test.clj" "(ns a-test (:require [a :as a] [clojure.test]))")])
