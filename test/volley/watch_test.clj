@@ -218,22 +218,32 @@
 
 (defspec failures-of-vars-a-filter-skipped-are-kept 300
   (prop/for-all [{:keys [prev run]} gw/outcome-pair]
-    (let [merged (:failed (watch/merge-outcome prev run))
-          old (:failed prev)]
-      (and (every? (fn [[ns vars]]
-                     (let [kept (set/intersection (set (get old ns)) vars)]
-                       (or (empty? kept)
-                           (= #{} (get merged ns))
-                           (set/subset? kept (get merged ns)))))
-                   (:skipped run))
-           ;; Nothing else of a namespace the run covered carries over.
-           (every? (fn [ns]
-                     (let [now (get-in run [:failed ns])
-                           kept (set/intersection (set (get old ns)) (set (get-in run [:skipped ns])))]
-                       (if (= #{} now)
-                         (= #{} (get merged ns))
-                         (= (not-empty (set/union (set now) kept)) (get merged ns)))))
-                   (:ran run))))))
+    (let [{:keys [ran failed skipped]} run
+          old (:failed prev)
+          merged (:failed (watch/merge-outcome prev run))
+          old-failure? (fn [ns v] (contains? (get old ns) v))
+          explained? (fn [ns v]
+                       (or (contains? (get failed ns) v)
+                           (and (contains? (get skipped ns) v) (old-failure? ns v))
+                           (and (not (ran ns)) (old-failure? ns v))))]
+      (and
+       ;; Every merged failure failed this run, is an old failure of a
+       ;; skipped var, or belongs to a namespace outside :ran.
+       (every? (fn [[ns vars]]
+                 (if (= #{} vars)
+                   (or (= #{} (get failed ns))
+                       (and (not (ran ns)) (= #{} (get old ns))))
+                   (every? #(explained? ns %) vars)))
+               merged)
+       ;; Namespaces outside :ran carry over unchanged.
+       (every? (fn [[ns vars]] (or (ran ns) (= vars (get merged ns)))) old)
+       ;; Old failures of skipped vars survive, unless the whole namespace
+       ;; failed this run.
+       (every? (fn [[ns vars]]
+                 (let [now (get merged ns)]
+                   (or (= #{} now)
+                       (every? #(or (not (old-failure? ns %)) (contains? now %)) vars))))
+               skipped)))))
 
 (defn- run-of
   "A finished run of `a-test`: var `ok` passes, and the vars in `failing`
