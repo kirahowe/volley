@@ -14,7 +14,6 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
-| [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
 
 ### Review
 
@@ -26,6 +25,7 @@
 | [6](6-run-once-fixtures-for-namespaces-whose-vars-are-all-pending.md) | Run :once fixtures for namespaces whose vars are all pending | bug | P3 |
 | [7](7-exit-249-when-a-plugin-namespace-defines-no-plugin.md) | Exit 249 when a plugin namespace defines no plugin | bug | P3 |
 | [8](8-run-shutdown-hooks-in-workers-stopped-by-fail-fast-or-a.md) | Run shutdown hooks in workers stopped by fail-fast or a watch cancel | feature | P3 |
+| [9](9-apply-wrap-run-hooks-to-suites-and-vars-not-only-namespaces.md) | Apply wrap-run hooks to suites and vars, not only namespaces | feature | P3 |
 | [10](10-notice-deps-edn-changes-in-watch-mode-and-the-jvm-classpath.md) | Notice deps.edn changes in watch mode and the JVM classpath cache | feature | P3 |
 | [11](11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md) | Run a namespace found under two test paths twice, as Kaocha does | bug | P3 |
 | [13](13-keep-failures-of-vars-a-watch-t-filter-skips.md) | Keep failures of vars a watch t filter skips | bug | P3 |
