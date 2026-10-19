@@ -141,12 +141,34 @@
                                            (assoc :in-process-ok? true :workers-set? false :serial-ms serial)
                                            (update :history assoc :in-process-ms [slow] :workers-ms short-wk))))))
 
-(defspec serial-ms-sums-the-planned-namespaces-on-record 300
+(defspec serial-ms-cannot-stop-the-first-try 300
+  ;; with no in-process run on record and short worker runs, the run goes
+  ;; in process however long the namespaces took one after another
+  (prop/for-all [in g/worker-plan-input
+                 short-wk (gen/vector (gen/choose 0 runtime/in-process-limit-ms) 1 3)
+                 serial (gen/one-of [(gen/return nil) (gen/choose 0 600000)])]
+    (:in-process? (runtime/worker-plan (-> in
+                                           (assoc :in-process-ok? true :workers-set? false :serial-ms serial)
+                                           (update :history assoc :in-process-ms [] :workers-ms short-wk))))))
+
+(defspec serial-ms-is-nil-only-when-no-planned-namespace-is-on-record 300
   (prop/for-all [durations (gen/map g/ns-sym (gen/choose 0 60000) {:max-elements 5})
                  nses (gen/vector g/ns-sym 0 6)]
-    (let [known (keep durations (distinct nses))]
-      (= (runtime/serial-ms durations nses)
-         (when (seq known) (reduce + known))))))
+    (= (nil? (runtime/serial-ms durations nses))
+       (not-any? #(contains? durations %) nses))))
+
+(defspec serial-ms-counts-repeated-namespaces-once 300
+  (prop/for-all [durations (gen/map g/ns-sym (gen/choose 0 60000) {:max-elements 5})
+                 nses (gen/vector g/ns-sym 0 6)]
+    (= (runtime/serial-ms durations nses)
+       (runtime/serial-ms durations (concat nses nses)))))
+
+(defspec serial-ms-is-within-the-recorded-durations 300
+  (prop/for-all [durations (gen/map g/ns-sym (gen/choose 0 60000) {:max-elements 5})
+                 nses (gen/vector g/ns-sym 0 6)]
+    (let [ms (runtime/serial-ms durations nses)]
+      (or (nil? ms)
+          (<= (apply max (keep durations nses)) ms (reduce + (vals durations)))))))
 
 (defspec short-worker-runs-lead-back-in-process 300
   ;; one slow in-process run (a busy machine, a run that scaled out) must
