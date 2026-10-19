@@ -101,3 +101,19 @@
       (is (= '#{ordered.a-test ordered.b-test ordered.shared-state-test ordered.var-serial-test}
              (set (keys timings))))
       (is (every? nat-int? (vals timings))))))
+
+(deftest a-namespace-under-two-test-paths-runs-once
+  ;; kaocha.load/find-test-nss mapcats over the test paths with no distinct,
+  ;; so Kaocha runs the namespace twice; volley plans one per name
+  (let [dup-ns (fn [test-name]
+                 (str "(ns g.dup-test (:require [clojure.test :refer [deftest is]]))\n"
+                      "(deftest " test-name " (is true))\n"))
+        files {"tests.edn" "#kaocha/v1 {:tests [{:test-paths [\"test\" \"test2\"]}]}"
+               "test/g/dup_test.clj" (dup-ns "first-path")
+               "test2/g/dup_test.clj" (dup-ns "second-path")}
+        {:keys [exit out]} (e2e/run nil ["--print-result"] files)
+        res (e2e/print-result out)]
+    (is (= 0 exit))
+    (is (= 1 (get-in res [:totals :tests])) "Kaocha counts 2")
+    (is (= '{g.dup-test/first-path :passed} (e2e/executed res))
+        "the file on the first test path wins")))
