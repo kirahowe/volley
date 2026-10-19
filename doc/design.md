@@ -625,7 +625,13 @@ isolated never runs a test. A load hook that throws is that namespace's
 load error, a namespace or var hook that throws is a namespace error
 (phase `:run`), and the error names the hook (the `:ns/error` carries
 `:hook {:kind kw :entry entry}`, and the report says "the pre-test hook
-my.hooks/check failed" rather than blaming a fixture). A `pre-report` hook that
+my.hooks/check failed" rather than blaming a fixture). This includes a
+`wrap-run` hook that throws around a namespace or a var; Kaocha does not
+catch that error at all. With several `wrap-run` hooks, the error names the
+one that threw, and an error thrown by the run itself (a fixture) passes
+through them unchanged. The vars that did not run, including the one whose
+hook threw before it started, are listed as not run (reason
+`:fixture-failed`). A `pre-report` hook that
 throws is printed to the worker's stderr and the event is counted as it
 was. A shutdown hook that throws is sent as `:worker/error` (with `:hook`)
 and counts as one failure per hook and message, however many workers

@@ -247,14 +247,28 @@
                 (seq (get-in hs [:msg :hooks :wrap-run]))
                 (not (contains? (:suites-wrapped hs) suite)))))
 
-(defn- wrap-error
-  "`e`, thrown by calling the wrapped run function, named as a `wrap-run`
-  hook error unless a hook error already names it."
-  [hs e]
-  (if (keyword? (:hook (ex-data (unwrap e))))
-    e
-    (let [entries (get-in hs [:msg :hooks :wrap-run])]
-      (hook-error :wrap-run (if (next entries) entries (first entries)) e))))
+(defn- hook-error? [e] (keyword? (:hook (ex-data (unwrap e)))))
+
+(defn- wrapped-run
+  "`base` wrapped by the `wrap-run` hooks, as Kaocha's `(reduce #(%2 %1)
+  run hooks)` does. What a hook's wrapper throws is named as that hook's
+  error; what `base` throws (a fixture's error, say) and what an inner
+  hook's wrapper threw pass through unchanged."
+  [hs base]
+  (let [[fs entries] (top hs :wrap-run)
+        own (volatile! nil)
+        base (fn [t p]
+               (try (base t p)
+                    (catch ^:sci/error Throwable e (vreset! own (unwrap e)) (throw e))))
+        layer (fn [run [f entry]]
+                (let [wrapped (run-chain :wrap-run [[f] [entry]] run)]
+                  (fn [t p]
+                    (try (wrapped t p)
+                         (catch ^:sci/error Throwable e
+                           (throw (if (or (hook-error? e) (identical? (unwrap e) @own))
+                                    e
+                                    (hook-error :wrap-run entry e))))))))]
+    (reduce layer base (map vector fs entries))))
 
 (defn wrap-suite
   "Call the `wrap-run` hooks once with the testable of `suite` around
@@ -271,12 +285,12 @@
           base (fn [testable _plan]
                  (let [final (vreset! end (body hs))]
                    (assoc testable :kaocha.result/tests (get-in final [:results suite] []))))]
-      (try ((run-chain :wrap-run (top hs :wrap-run) base) (suite-testable hs suite) (plan hs))
+      (try ((wrapped-run hs base) (suite-testable hs suite) (plan hs))
            (if-let [final @end]
              [final true]
              [(update hs :suites-unrun conj suite) false])
            (catch ^:sci/error Throwable e
-             (let [e (wrap-error hs e)]
+             (let [e (unwrap e)]
                (if-let [final @end]
                  [(update final :late-errors conj e) true]
                  [(assoc hs :setup-error e) false])))))))
@@ -297,8 +311,7 @@
           t (assoc (testable/ns-testable ns-sym) :kaocha.ns/ns ns-obj :kaocha.testable/meta (meta ns-obj))
           t (run-chain :pre-test (top hs :pre-test) t p)
           base (fn [testable _plan] (assoc testable :kaocha.result/tests (run)))
-          wrapped (run-chain :wrap-run (top hs :wrap-run) base)
-          r (wrapped t p)
+          r ((wrapped-run hs base) t p)
           r (if (map? r) r (assoc t :kaocha.result/tests []))
           r (run-chain :post-test (top hs :post-test) r p)]
       [(update-in hs [:results suite] (fnil conj []) r) r])))
@@ -320,7 +333,7 @@
         (if (:kaocha.testable/skip t)
           t
           (let [base (fn [testable _plan] (test!) (testable/with-result testable (counts)))
-                r ((run-chain :wrap-run (top hs :wrap-run) base) t p)]
+                r ((wrapped-run hs base) t p)]
             (run-chain :post-test (top hs :post-test) (if (map? r) r t) p)))))))
 
 (defn- call-reporters

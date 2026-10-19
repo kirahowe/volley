@@ -324,6 +324,72 @@
                  " so it did not run (Kaocha does not run it either)")]
            (keep #(when (= :worker/warning (:event %)) (:message %)) @events)))))
 
+(defn- hooked-events
+  "Run namespace `ns-sym` with hooks `hooks`. Returns its events."
+  [hooks ns-sym]
+  (let [events (volatile! [])]
+    (worker/run-assignment! #(vswap! events conj %) worker/run-everything
+                            (hooks/init {:hooks hooks :config {}})
+                            {:ns ns-sym :run-id 1 :suite :unit})
+    @events))
+
+(defn- throw-at
+  "A wrap-run hook that throws for testable `id`, `:before` or `:after`
+  calling run."
+  [id when]
+  (let [boom '(throw (ex-info "boom" {}))]
+    (list 'fn '[run]
+          (list 'fn '[t p]
+                (list 'if (list '= id '(:kaocha.testable/id t))
+                      (if (= :before when) boom (list 'do '(run t p) boom))
+                      '(run t p))))))
+
+(defn- ns-error [events] (first (filter #(= :ns/error (:event %)) events)))
+
+(defn- not-run [events]
+  (keep #(when (= :fixture-failed (:reason %)) (:var %)) events))
+
+(deftest a-var-wrap-run-that-throws-is-named-and-its-vars-are-not-run
+  (let [hook (throw-at :exec.pass-test/adds :before)
+        events (hooked-events {:wrap-run [hook]} 'exec.pass-test)
+        error (ns-error events)]
+    (is (= {:kind :wrap-run :entry hook} (:hook error)))
+    (is (= :run (:phase error)))
+    (is (str/starts-with? (:message (:error error)) "volley: wrap-run hook"))
+    (is (= "boom" (get-in error [:error :cause :message])))
+    (is (= '[adds strings] (not-run events)) "the var whose hook threw did not run either")))
+
+(deftest a-var-wrap-run-that-throws-after-running-counts-the-var
+  (let [hook (throw-at :exec.pass-test/adds :after)
+        events (hooked-events {:wrap-run [hook]} 'exec.pass-test)]
+    (is (= {:kind :wrap-run :entry hook} (:hook (ns-error events))))
+    (is (= {:pass 2 :fail 0 :error 0} (counts events)))
+    (is (= '[strings] (not-run events)))))
+
+(deftest a-namespace-wrap-run-that-throws-is-named
+  (let [hook (throw-at :exec.pass-test :before)
+        events (hooked-events {:wrap-run [hook]} 'exec.pass-test)]
+    (is (= {:kind :wrap-run :entry hook} (:hook (ns-error events))))
+    (is (= '[adds strings] (not-run events)))))
+
+(deftest the-wrap-run-hook-that-threw-is-the-one-named
+  (let [bad (throw-at :exec.pass-test/strings :before)
+        events (hooked-events {:wrap-run [logging-wrap-run bad]} 'exec.pass-test)]
+    (is (= {:kind :wrap-run :entry bad} (:hook (ns-error events))))
+    (is (= '[strings] (not-run events)))))
+
+(deftest a-fixture-error-inside-a-wrap-run-still-blames-the-fixture
+  (let [events (hooked-events {:wrap-run [logging-wrap-run]} 'exec.once-error-test)
+        error (ns-error events)]
+    (is (nil? (:hook error)))
+    (is (= "once fixture failed" (get-in error [:error :message])))))
+
+(deftest a-var-pre-test-that-throws-lists-the-var-as-not-run
+  (let [hook '(fn [t _] (if (= :exec.pass-test/adds (:kaocha.testable/id t)) (throw (ex-info "boom" {})) t))
+        events (hooked-events {:pre-test [hook]} 'exec.pass-test)]
+    (is (= :pre-test (get-in (ns-error events) [:hook :kind])))
+    (is (= '[adds strings] (not-run events)))))
+
 (defn- serve-lines
   "Serve `commands` to the worker's command loop. Returns its events and
   final hook state."

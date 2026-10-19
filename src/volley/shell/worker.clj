@@ -364,24 +364,27 @@
   `fail-fast?` the rest of the vars are not run once one fails, as Kaocha
   stops at the first failure. Returns `[hs error]`: error is nil, or the
   Throwable that escaped (a failing fixture or hook, for instance). The
-  vars it kept from running are sent as skipped with reason
-  `:fixture-failed`, so none of them vanishes. The third element is the
+  vars it kept from running, the one whose hook threw before it ran
+  included, are sent as skipped with reason `:fixture-failed`, so none of
+  them vanishes. The third element is the
   number of passing assertions made outside any var.
 
   clojure.test reports through a callback and fixtures return nothing of
   the tests they wrap, so two mutable cells carry what the run learns out
   of them: `acc`, the open var's counters, which the report callback
-  updates, and `progress`, the vars reached, their results and the passes
-  outside any var, which must survive a fixture that throws."
+  updates, and `progress`, the vars reached, those settled (started, or
+  done with by their hooks), their results and the passes outside any
+  var, which must survive a fixture that throws."
   [hs emit! suite ns-sym ns-obj {:keys [capture? fail-fast?]} vars]
   (let [acc (atom nil)
-        progress (volatile! {:reached #{} :results [] :outside 0})
+        progress (volatile! {:reached #{} :settled #{} :results [] :outside 0})
         outside #(:outside @progress)
         counts #(:ended @acc)
         run-var (fn [v test!]
                   (reset! acc nil)
                   (vswap! progress update :reached conj v)
                   (let [test! (fn []
+                                (vswap! progress update :settled conj v)
                                 (start-var! acc emit! ns-sym capture? v)
                                 (try (test!)
                                      (check-assertions! acc)
@@ -395,10 +398,11 @@
                       (emit! {:event :worker/warning
                               :message (str "the wrap-run hook did not call run for " ns-sym "/" (:name (meta v))
                                             ", so it did not run (Kaocha does not run it either)")}))
+                    (vswap! progress update :settled conj v)
                     r))
         stop? (fn [r] (and fail-fast? (failed? r)))
         abandon! (fn []
-                   (doseq [v vars :when (not (contains? (:reached @progress) v))]
+                   (doseq [v vars :when (not (contains? (:settled @progress) v))]
                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
     (try
       (binding [t/report (hooks/report-fn hs (make-report acc progress emit! ns-sym))
