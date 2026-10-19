@@ -388,3 +388,17 @@
                    :bindings {'volley.shell.worker-test/*bound* :bound}}
                   {:op :shutdown}])
     (is (= [:unit :bound] (first @wrap-log)))))
+
+(deftest a-suite-wrap-run-error-after-running-survives-a-later-setup-error
+  (let [hook '(fn [run]
+                (fn [t p]
+                  (let [r (run t p)]
+                    (if (= :unit (:kaocha.testable/id t)) (throw (ex-info "after suite" {})) r))))
+        pre-load '(fn [s _] (if (= :broken (:kaocha.testable/id s)) (throw (ex-info "no setup" {})) s))
+        [events hs] (serve-lines [{:op :configure :config {}
+                                   :hooks {:wrap-run [hook] :pre-load-test [pre-load]}}
+                                  {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit}
+                                  {:op :run :ns 'exec.sync-test :run-id 2 :suite :broken}
+                                  {:op :shutdown}])]
+    (is (= :setup (:phase (first (filter #(= :ns/error (:event %)) events)))))
+    (is (= ["after suite"] (map (comp ex-message ex-cause) (hooks/shutdown hs))))))

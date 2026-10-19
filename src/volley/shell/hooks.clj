@@ -362,10 +362,11 @@
   "When the worker is shut down cleanly: `post-test` with each suite
   testable this worker ran, then `post-run` with the result. Returns the
   Throwables hooks threw (it calls every hook regardless), with those a
-  suite's `wrap-run` threw after its run first."
+  suite's `wrap-run` threw after its run first. After a setup error it
+  calls no hooks but still returns those."
   [hs]
   (if-not (and (active? hs) (:started? hs) (not (setup-error hs)))
-    []
+    (vec (:late-errors hs))
     (let [p (plan hs)
           attempt (fn [f] (try (f) nil (catch ^:sci/error Throwable e e)))
           suite-done (fn [suite]
