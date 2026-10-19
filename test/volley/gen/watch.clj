@@ -98,3 +98,22 @@
        :config (g/config-for {} {:skip (:skip skip)})
        :selection (assoc sel :namespaces (pick picks))
        :failed failed})))
+
+(def ^:private failed-map
+  "`{ns #{var}}` over a few namespaces; an empty set means the whole
+  namespace."
+  (gen/map (gen/elements '[a-test b-test c-test])
+           (gen/set (gen/elements '[x y z]) {:max-elements 3})
+           {:max-elements 3}))
+
+(def outcome-pair
+  "A previous merged picture and the `volley.watch/outcome` of a later run,
+  whose `:skipped` vars are a subset of the namespaces it ran."
+  (gen/let [prev failed-map
+            ran (gen/set (gen/elements '[a-test b-test c-test]) {:max-elements 3})
+            failed failed-map
+            skipped failed-map]
+    {:prev (watch/merge-outcome nil {:ran #{} :failed prev})
+     :run {:ran (into ran (keys failed))
+           :failed failed
+           :skipped (into {} (filter (comp (into ran (keys failed)) key)) skipped)}}))

@@ -187,14 +187,30 @@
   [rec]
   (boolean (and (seq (:vars rec)) (rs/unselected? rec))))
 
+(defn- filter-skipped
+  "`{ns #{var}}` of the vars `run` skipped because a filter did not focus
+  them (`:not-focused`), such as those a `t` filter leaves out."
+  [run]
+  (into {}
+        (keep (fn [[ns {:keys [vars]}]]
+                (some->> (vals vars)
+                         (filter #(and (= :skipped (:phase %)) (= :not-focused (:reason %))))
+                         (map :var)
+                         seq
+                         set
+                         (vector ns))))
+        (:namespaces run)))
+
 (defn outcome
   "What the UI needs to remember about a finished run (a `volley.run-state`
-  value): `{:ran #{ns} :failed {key #{var}}}`. A key is a namespace, or the
-  path of an unreadable test file. A key whose failure is not tied to a var
-  (load error, crash, not run, unreadable file) has an empty set, meaning
-  \"all of it\". A namespace whose vars the filters all skipped is left out
-  of `:ran`, so its earlier failures carry over. One that finished with no
-  vars at all still counts as run and clears them."
+  value): `{:ran #{ns} :failed {key #{var}} :skipped {ns #{var}}}`. A key is
+  a namespace, or the path of an unreadable test file. A key whose failure
+  is not tied to a var (load error, crash, not run, unreadable file) has an
+  empty set, meaning \"all of it\". A namespace whose vars the filters all
+  skipped is left out of `:ran`, so its earlier failures carry over. One
+  that finished with no vars at all still counts as run and clears them.
+  `:skipped` holds the vars a filter did not focus, so `merge-outcome` can
+  keep their earlier failures."
   [run]
   (let [failed (reduce (fn [m {:keys [ns file var kind]}]
                          (let [k (or ns file)]
@@ -208,16 +224,30 @@
     {:ran (into #{}
                 (remove #(filtered-out? (get-in run [:namespaces %])))
                 (into (set (:planned run)) (keys (:namespaces run))))
-     :failed failed}))
+     :failed failed
+     :skipped (filter-skipped run)}))
+
+(defn- union-failures
+  "Two failure sets of one key; an empty set (all of it) wins."
+  [a b]
+  (if (or (= #{} a) (= #{} b)) #{} (set/union a b)))
 
 (defn merge-outcome
   "The picture after a run: failures of namespaces the run did not cover
-  carry over, those of namespaces it did cover are replaced. Unreadable
-  files are re-reported by every run, so they are never carried over.
-  `prev` may be nil. Returns `{:ok? bool :failures n :failed {key #{var}}}`."
-  [prev {:keys [ran failed]}]
-  (let [carried (into {} (remove (fn [[k _]] (or (string? k) (contains? ran k)))) (:failed prev))
-        failed (merge carried failed)]
+  carry over, those of namespaces it did cover are replaced, except for
+  vars the run's filters skipped (`:skipped`), whose earlier failures are
+  kept. Unreadable files are re-reported by every run, so they are never
+  carried over. `prev` may be nil. Returns `{:ok? bool :failures n :failed
+  {key #{var}}}`."
+  [prev {:keys [ran failed skipped]}]
+  (let [old (:failed prev)
+        carried (into {} (remove (fn [[k _]] (or (string? k) (contains? ran k)))) old)
+        kept (into {}
+                   (keep (fn [[ns vars]]
+                           (some->> (not-empty (set/intersection (set (get old ns)) vars))
+                                    (vector ns))))
+                   skipped)
+        failed (merge-with union-failures carried kept failed)]
     {:ok? (empty? failed)
      :failures (reduce + (map (fn [vars] (max 1 (count vars))) (vals failed)))
      :failed failed}))

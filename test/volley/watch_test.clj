@@ -216,6 +216,52 @@
     (is (= {} (:failed merged)))
     (is (:ok? merged))))
 
+(defspec failures-of-vars-a-filter-skipped-are-kept 300
+  (prop/for-all [{:keys [prev run]} gw/outcome-pair]
+    (let [merged (:failed (watch/merge-outcome prev run))
+          old (:failed prev)]
+      (and (every? (fn [[ns vars]]
+                     (let [kept (set/intersection (set (get old ns)) vars)]
+                       (or (empty? kept)
+                           (= #{} (get merged ns))
+                           (set/subset? kept (get merged ns)))))
+                   (:skipped run))
+           ;; Nothing else of a namespace the run covered carries over.
+           (every? (fn [ns]
+                     (let [now (get-in run [:failed ns])
+                           kept (set/intersection (set (get old ns)) (set (get-in run [:skipped ns])))]
+                       (if (= #{} now)
+                         (= #{} (get merged ns))
+                         (= (not-empty (set/union (set now) kept)) (get merged ns)))))
+                   (:ran run))))))
+
+(defn- run-of
+  "A finished run of `a-test`: var `ok` passes, and the vars in `failing`
+  fail. With `skipped`, the `t` filter skipped those vars instead."
+  [failing skipped]
+  (let [ev #(merge {:worker 0 :at 1000 :ns 'a-test} %)]
+    (reduce rs/apply-event (rs/init {:namespaces '[a-test]})
+            (concat [(ev {:event :ns/start})
+                     (ev {:event :var/start :var 'ok})
+                     (ev {:event :var/end :var 'ok :pass 1 :duration-ms 1})]
+                    (mapcat (fn [v] [(ev {:event :var/start :var v})
+                                     (ev {:event :assertion :var v :type :fail})
+                                     (ev {:event :var/end :var v :pass 0 :duration-ms 1})])
+                            failing)
+                    (map (fn [v] (ev {:event :var/skipped :var v :reason :not-focused})) skipped)
+                    [(ev {:event :ns/end :pass 1})]))))
+
+(deftest a-test-filter-that-skips-a-failing-var-keeps-its-failure
+  (let [fin (fn [run] {:event :run/finished :outcome (watch/outcome run) :known '#{a-test}})
+        [s effs] (run-inputs fresh (concat [{:event :start} (fin (run-of '[bad] []))]
+                                           (keys-of "t^ok$\r")
+                                           [(fin (run-of [] '[bad]))]))]
+    (is (= {'a-test #{'bad}} (get-in s [:last :failed])))
+    (is (str/starts-with? (first (:lines (last effs))) "FAIL  1 failure"))
+    (testing "running the var again replaces its failure"
+      (let [[s _] (run-inputs s (concat (keys-of "c") [(fin (run-of [] []))]))]
+        (is (= {} (get-in s [:last :failed])))))))
+
 (deftest keys-are-not-advertised-without-a-terminal
   (let [lines (-> (run-inputs (watch/init {:keys? false}) [{:event :start} {:event :run/finished :empty? true}])
                   second last :lines)]

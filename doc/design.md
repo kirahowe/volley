@@ -725,8 +725,10 @@ impossible.
 namespace, replaces them for the namespaces a run covered, and carries the
 rest, so PASS means nothing in the project failed, not that the affected
 subset passed. A namespace the filters left unselected (none of its vars
-ran) does not count as covered, so its failures carry over. Failures of
-namespaces that no longer exist are dropped.
+ran) does not count as covered, so its failures carry over. A var a
+filter skipped (`:not-focused`, as a `t` filter does) did not run either,
+so its earlier failure carries over too. Failures of namespaces that no
+longer exist are dropped.
 
 **Cancel.** When a debounced change (or `a`, `f`, `Enter`, `c`) arrives
 during a run, the shell kills the workers by handle, waits for their exit
