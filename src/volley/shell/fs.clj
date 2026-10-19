@@ -122,7 +122,7 @@
   "Save `history` for the next run. Failure to write is not an error."
   [history]
   (try
-    (fs/create-dirs (fs/parent history-file))
+    (ensure-cache-dir! (fs/parent history-file))
     (spit history-file (pr-str history))
     (catch Exception _ nil)))
 
@@ -159,7 +159,7 @@
   "Save `cache` for the next run. Failure to write is not an error."
   [cache]
   (try
-    (fs/create-dirs (fs/parent ns-info-cache-file))
+    (ensure-cache-dir! (fs/parent ns-info-cache-file))
     (spit ns-info-cache-file (binding [*print-length* nil *print-level* nil *print-meta* false
                                        *print-namespace-maps* false *print-readably* true]
                                (pr-str cache)))
