@@ -29,4 +29,6 @@ cache directory when it creates it.
   `.gitignore` of `*` when it creates `.volley/`; the timings and JVM
   classpath writers both call it. Covered by `test/volley/shell/fs_test.clj`,
   reworded the README note and mentioned it in doc/design.md. A `.volley/`
-  left by an older version gets no ignore file, matching pytest.
+  left by an older version gets no ignore file. That copies pytest's
+  `.pytest_cache/`, which gets its `.gitignore` only when the directory is
+  created.
