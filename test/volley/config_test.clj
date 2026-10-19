@@ -165,6 +165,36 @@
            (= (nil? (config/plugin-load-error plugin defined))
               (boolean (some #{definer} tried)))))))
 
+(defspec a-definition-counts-anywhere-down-the-requires-unless-commented-out 200
+  ;; Kaocha loads the candidate, and so everything it requires, before it
+  ;; checks the plugin registry (kaocha.plugin/try-load-third-party-lib)
+  (prop/for-all [plugin g/third-party-plugin
+                 depth (gen/choose 0 4)
+                 back-edges (gen/vector gen/nat 5)
+                 pick gen/nat
+                 how (gen/elements [:real :line-comment :discard :comment-form])]
+    (let [start (first (config/plugin-candidates plugin))
+          chain (into [start] (map #(symbol (str "my.chain.n" %))) (range depth))
+          at (mod pick (count chain))
+          defn-text (str "(defplugin " (symbol plugin) ")")
+          body {:real defn-text
+                :line-comment (str ";; " defn-text)
+                :discard (str "#_" defn-text)
+                :comment-form (str "(comment " defn-text ")")}
+          sources (into {}
+                        (map-indexed
+                         (fn [i ns-sym]
+                           (let [reqs (cond-> []
+                                        (< (inc i) (count chain)) (conj (chain (inc i)))
+                                        (pos? i) (conj (chain (mod (nth back-edges i) i))))]
+                             [ns-sym (cond-> (str "(ns " ns-sym " (:require " (str/join " " (map #(str "[" % "]") reqs)) "))")
+                                       (= i at) (str "\n" (body how)))])))
+                        chain)
+          result (config/plugin-load-error plugin sources)]
+      (if (= :real how)
+        (nil? result)
+        (= :plugin-undefined (:error result))))))
+
 (deftest missing-file-is-kaocha-defaults-test
   (let [c (config/normalize nil {})]
     (is (= [default-suite] (:tests c)))
