@@ -34,6 +34,12 @@ All notable changes to volley are recorded here. The format follows
 - The docs now record a deliberate divergence from Kaocha: a namespace
   that two test paths define runs once, from the file that comes first on
   the classpath, where Kaocha runs it twice. (volley#11)
+- Fail-fast and a watch-mode cancel ask busy workers to stop and give
+  them 1s before killing them. A worker that stops in time finishes its
+  current var and runs its `post-run` hooks. (volley#8)
+- `wrap-run` hooks wrap each var's run as well as each namespace's, as in
+  Kaocha. A suite-level `wrap-run` is called once per worker process
+  rather than once per run. (volley#9)
 
 ### Fixed
 
@@ -42,6 +48,10 @@ All notable changes to volley are recorded here. The format follows
   a namespace the filter skips stay counted. (volley#5)
 - A namespace whose vars are all pending runs its `:once` fixtures, as in
   Kaocha. A `^:kaocha/pending` namespace still runs none. (volley#6)
+- When a watch `t` filter skips some vars of a namespace, their earlier
+  failures stay counted instead of disappearing. (volley#13)
+- In watch mode, a reloaded `tests.edn` updates the randomize setting and
+  the seed for later runs. (volley#14)
 
 ## [0.1.0-alpha.1] - 2026-10-18
 
