@@ -36,9 +36,10 @@
 (defn run-opts
   "The `volley.engine/init` options of a watch run under `config`, the
   current one (reloaded when tests.edn changes): the session's
-  `engine-opts` with every option the config decides
-  (`volley.config/engine-opts`, given `run`'s JUnit `:timestamp` and
-  `:cwd`). Without a `:seed` the run is not randomized."
+  `engine-opts` with the options `volley.config/engine-opts` takes from
+  the config (given `run`'s JUnit `:timestamp` and `:cwd`). The reporter
+  and colour keep their startup values. Without a `:seed` the run is not
+  randomized."
   [engine-opts config run]
   (merge engine-opts (config/engine-opts config run)))
 

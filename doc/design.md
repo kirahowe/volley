@@ -707,9 +707,12 @@ queue, as in a one-shot run.
    rebuilds the graph, the snapshot and the worker command (whose
    classpath holds the suites' test paths, on either runtime); an invalid
    file, or a JVM classpath that cannot be computed, keeps the old config
-   and prints the error. Each run takes its hook options and run seed
-   from the current config (`volley.watch/run-opts`), so editing the
-   randomize settings changes the next run's order. The shell's random
+   and prints the error. Each run takes its engine options
+   (`volley.config/engine-opts`: workers, bindings, fail-fast,
+   capture-output, isolate, preload, JUnit report, hook options, run
+   seed) from the current config (`volley.watch/run-opts`), so editing
+   the randomize settings changes the next run's order. The reporter and
+   colour stay as they were at startup. The shell's random
    seed is drawn once, so a config without a seed keeps the session's.
 5. A change to deps.edn or bb.edn does the same with `:reload-deps?` in
    the selection: the worker command is rebuilt with a recomputed
