@@ -182,7 +182,12 @@
           events (run-events 'exec.all-pending-test {:decide filters/decide :select (skip-spec {})})]
       (is (= 1 @runs))
       (is (= [:ns/start :var/skipped :var/skipped :ns/end] (map :event events))
-          "no :each fixture runs, so nothing fails, and no hook warning"))))
+          "no :each fixture runs, so nothing fails, and no hook warning")))
+  (testing "a throwing :once fixture is an :ns/error, as for any namespace (Kaocha's kaocha.type.ns/-run lets it crash the run)"
+    (let [events (run-events 'exec.all-pending-once-error-test {:decide filters/decide :select (skip-spec {})})]
+      (is (= [:ns/start :var/skipped :ns/error :ns/end] (map :event events)))
+      (is (= :run (:phase (first (filter #(= :ns/error (:event %)) events)))))
+      (is (= "once fixture failed" (get-in events [2 :error :message]))))))
 
 (deftest a-failing-defspec-reports-its-check-at-the-var
   (let [events (run-events 'exec.property-test)
