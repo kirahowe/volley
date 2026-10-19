@@ -661,24 +661,29 @@
           (recur))
       (.put lines ::eof))))
 
+(defn- serve-from
+  "`serve`, from hook state `hs`."
+  [emit! decide next-line flush! hs]
+  (let [more #(serve-from emit! decide next-line flush! %)]
+    (loop [hs hs]
+      (if-let [line (next-line)]
+        (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
+                        (handle-line! emit! decide more hs line))]
+          (flush!)
+          (cond
+            (= :shutdown next-hs) hs
+            (reduced? next-hs) @next-hs
+            :else (recur next-hs)))
+        hs))))
+
 (defn serve
-  "Handle the parent's commands, a line from `(read-line)` at a time, until
-  `{:op :shutdown}` or the end of input (nil). Returns the final hook
-  state. Tests get an empty `*in*`, so a test that reads it cannot block
-  on or swallow a command."
-  ([emit! decide read-line] (serve emit! decide read-line (hooks/init nil)))
-  ([emit! decide read-line hs]
-   (let [more #(serve emit! decide read-line %)]
-     (loop [hs hs]
-       (if-let [line (read-line)]
-         (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
-                         (handle-line! emit! decide more hs line))]
-           (flush)
-           (cond
-             (= :shutdown next-hs) hs
-             (reduced? next-hs) @next-hs
-             :else (recur next-hs)))
-         hs)))))
+  "Handle the parent's commands, a line from `(next-line)` at a time, until
+  `{:op :shutdown}` or the end of input (nil), calling `(flush!)` (by
+  default `flush`) after each. Returns the final hook state. Tests get an
+  empty `*in*`, so a test that reads it cannot block on or swallow a
+  command."
+  ([emit! decide next-line] (serve emit! decide next-line flush))
+  ([emit! decide next-line flush!] (serve-from emit! decide next-line flush! (hooks/init nil))))
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
@@ -712,7 +717,9 @@
     (emit! {:event :worker/ready})
     (let [lines (java.util.concurrent.LinkedBlockingQueue.)
           _ (doto (Thread. ^Runnable #(read-commands! in lines)) (.setDaemon true) (.start))
-          hs (serve emit! decide #(let [line (.take lines)] (when-not (= ::eof line) line)))
+          hs (serve emit! decide
+                    #(let [line (.take lines)] (when-not (= ::eof line) line))
+                    #(.flush stray-writer))
           errors (hooks/shutdown hs)]
       (report-hook-errors! emit! errors)
       (.flush stray-writer)

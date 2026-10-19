@@ -330,8 +330,8 @@
   [commands]
   (let [lines (volatile! (map protocol/encode-command commands))
         events (volatile! [])
-        read-line (fn [] (let [[l & more] @lines] (vreset! lines more) l))
-        hs (worker/serve #(vswap! events conj %) worker/run-everything read-line)]
+        next-line (fn [] (let [[l & more] @lines] (vreset! lines more) l))
+        hs (worker/serve #(vswap! events conj %) worker/run-everything next-line)]
     [@events hs]))
 
 (deftest a-suite-is-wrapped-once-per-worker-around-all-its-namespaces
