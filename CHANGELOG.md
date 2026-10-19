@@ -40,6 +40,8 @@ All notable changes to volley are recorded here. The format follows
 - `wrap-run` hooks wrap each var's run as well as each namespace's, as in
   Kaocha. A suite-level `wrap-run` is called once per worker process
   rather than once per run. (volley#9)
+- A `wrap-run` hook that throws is reported by name, and the vars it kept
+  from running are listed as not run. (volley#18)
 
 ### Fixed
 
@@ -52,6 +54,10 @@ All notable changes to volley are recorded here. The format follows
   failures stay counted instead of disappearing. (volley#13)
 - In watch mode, a reloaded `tests.edn` updates the randomize setting and
   the seed for later runs. (volley#14)
+- In watch mode, every option `tests.edn` decides (workers, fail-fast,
+  output capture, isolation, bindings, the JUnit report and hooks) comes
+  from the reloaded config. The reporter and colour keep their startup
+  values. (volley#16)
 
 ## [0.1.0-alpha.1] - 2026-10-18
 
