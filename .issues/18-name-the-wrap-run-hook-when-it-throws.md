@@ -8,3 +8,12 @@ Found by QA on volley#9. A wrap-run hook that throws is reported as "<ns> failed
 
 - [ ] A throwing wrap-run hook is reported by name, like pre-test.
 - [ ] Vars that did not run are listed as not run.
+
+## Log
+
+- 2026-10-18: A wrap-run hook that throws is now named in the error, the
+  same way as pre-test, and an error from an inner hook or a fixture passes
+  through unchanged. Vars that never started after an escaped error are
+  listed as "not run:". Kaocha doesn't catch these errors at all, so
+  doc/design.md notes that the wording follows pre-test. Covered by new
+  tests in worker_test.clj.
