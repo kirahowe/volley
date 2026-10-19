@@ -4,6 +4,7 @@
    [volley.discover :as discover]
    [volley.filters :as filters]
    [volley.gen.watch :as gw]
+   [volley.hooks :as hooks]
    [volley.run-state :as rs]
    [volley.select :as select]
    [volley.watch :as watch]
@@ -399,6 +400,14 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Run options of a reloaded config
+
+(defspec run-opts-takes-seed-and-hooks-from-the-config 200
+  (prop/for-all [opts gw/engine-opts c gw/reloaded-config]
+    (let [o (watch/run-opts opts c)
+          derived [:seed :configure :post-summary]]
+      (and (= (:seed c) (:seed o))
+           (= (hooks/engine-opts c) (select-keys o [:configure :post-summary]))
+           (= (apply dissoc opts derived) (apply dissoc o derived))))))
 
 (deftest a-reloaded-config-decides-the-run-seed
   (let [started (config/normalize {:kaocha.plugin.randomize/seed 1234} {} {:seed 7})

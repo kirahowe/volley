@@ -1,7 +1,8 @@
 (ns volley.gen.watch
-  "Generators for `volley.watch`: snapshots, key sequences, change bursts and
-  rerun selections."
+  "Generators for `volley.watch`: snapshots, key sequences, change bursts,
+  rerun selections and the configs and options of a watch run."
   (:require
+   [volley.config :as config]
    [volley.gen.compat :as g]
    [volley.watch :as watch]
    [clojure.test.check.generators :as gen]))
@@ -117,3 +118,20 @@
      :run {:ran (into ran (keys failed))
            :failed failed
            :skipped (into {} (filter (comp (into ran (keys failed)) key)) skipped)}}))
+
+(def reloaded-config
+  "A normalized config as a tests.edn reload gives it: raw tests.edn data,
+  perhaps with a randomize seed, and a session seed in the env."
+  (gen/let [raw g/raw-config
+            seed (gen/elements [nil 0 99 1234])
+            env-seed gen/nat]
+    (config/normalize (cond-> raw seed (assoc :kaocha.plugin.randomize/seed seed))
+                      {} {:seed env-seed})))
+
+(def engine-opts
+  "Session `volley.engine/init` options, with stale seed and hook entries."
+  (gen/let [base (gen/map (gen/elements [:workers :fail-fast? :isolate? :bindings :junit-xml])
+                          gen/small-integer {:max-elements 4})
+            stale (gen/map (gen/elements [:seed :configure :post-summary])
+                           gen/small-integer {:max-elements 3})]
+    (merge base stale)))
