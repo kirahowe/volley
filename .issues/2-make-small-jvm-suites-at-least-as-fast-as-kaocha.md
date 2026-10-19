@@ -28,3 +28,7 @@ Kaocha, 57s with volley), but small ones lose:
       function with property tests, and the user can override it
       (`--workers`).
 - [ ] `doc/benchmarks.md` updated with the new numbers.
+
+## Log
+
+- 2026-10-19: Landed on main (fb6c436..96a9517), together with volley#12. A JVM parent now runs the tests in its own process when recent runs took 10s or less (pure `volley.runtime/worker-plan`, with properties; `--workers` overrides it) and scales out to worker JVMs if a run goes long. It also caches parsed ns forms in `.volley/ns-infos.edn`. hosted-clay: about 6.2s, level with Kaocha within noise (the machine was loaded). Reader and secrets keep their gains. Numbers are in doc/benchmarks.md. The first run with no history still starts worker JVMs. Gate: bb lint clean, bb test 465/465.

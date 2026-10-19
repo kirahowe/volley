@@ -13,7 +13,6 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
 | [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
 
 ### Review
@@ -21,6 +20,7 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
+| [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
 | [4](4-support-random-test-order-kaocha-randomize-plugin.md) | Support random test order (Kaocha randomize plugin) | feature | P3 |
 | [5](5-watch-mode-test-name-filter-misses-macro-defined-tests.md) | Watch mode test-name filter misses macro-defined tests | bug | P3 |
 | [6](6-run-once-fixtures-for-namespaces-whose-vars-are-all-pending.md) | Run :once fixtures for namespaces whose vars are all pending | bug | P3 |

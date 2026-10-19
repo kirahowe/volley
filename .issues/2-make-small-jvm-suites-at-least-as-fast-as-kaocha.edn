@@ -1,6 +1,6 @@
 {:id 2
  :title "Make small JVM suites at least as fast as Kaocha"
- :status :ready
+ :status :review
  :type :feature
  :priority :p2
  :created "2026-10-18"
