@@ -1,6 +1,6 @@
 {:id 11
  :title "Run a namespace found under two test paths twice, as Kaocha does"
- :status :ready
+ :status :review
  :type :bug
  :priority :p3
  :created "2026-10-18"

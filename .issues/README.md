@@ -22,6 +22,11 @@
 | [6](6-run-once-fixtures-for-namespaces-whose-vars-are-all-pending.md) | Run :once fixtures for namespaces whose vars are all pending | bug | P3 |
 | [7](7-exit-249-when-a-plugin-namespace-defines-no-plugin.md) | Exit 249 when a plugin namespace defines no plugin | bug | P3 |
 | [10](10-notice-deps-edn-changes-in-watch-mode-and-the-jvm-classpath.md) | Notice deps.edn changes in watch mode and the JVM classpath cache | feature | P3 |
+
+### Review
+
+| ID | Title | Type | Priority |
+| --- | --- | --- | --- |
 | [11](11-run-a-namespace-found-under-two-test-paths-twice-as-kaocha.md) | Run a namespace found under two test paths twice, as Kaocha does | bug | P3 |
 
 ## Done

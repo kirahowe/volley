@@ -8,3 +8,10 @@ When the same namespace is found under two test paths (for example `test` and `t
 
 - [ ] Decide: match Kaocha, or document the divergence in doc/design.md and the README.
 - [ ] If matching, a Kaocha diff case with a duplicated namespace.
+
+## Log
+
+- 2026-10-18: Kept the divergence instead of matching Kaocha. volley runs
+  the namespace once, from the file that comes first on the classpath.
+  Documented it in doc/design.md and the README, and pinned it with the
+  e2e test `a-namespace-under-two-test-paths-runs-once`.
