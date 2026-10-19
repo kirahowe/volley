@@ -1,6 +1,6 @@
 {:id 5
  :title "Watch mode test-name filter misses macro-defined tests"
- :status :inbox
+ :status :ready
  :type :bug
  :priority :p3
  :created "2026-10-18"

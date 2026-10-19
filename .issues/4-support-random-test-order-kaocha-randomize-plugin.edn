@@ -1,6 +1,6 @@
 {:id 4
  :title "Support random test order (Kaocha randomize plugin)"
- :status :inbox
+ :status :ready
  :type :feature
  :priority :p3
  :created "2026-10-18"

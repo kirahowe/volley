@@ -1,6 +1,6 @@
 {:id 6
  :title "Run :once fixtures for namespaces whose vars are all pending"
- :status :inbox
+ :status :ready
  :type :bug
  :priority :p3
  :created "2026-10-18"

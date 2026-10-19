@@ -1,6 +1,6 @@
 {:id 7
  :title "Exit 249 when a plugin namespace defines no plugin"
- :status :inbox
+ :status :ready
  :type :bug
  :priority :p3
  :created "2026-10-18"
