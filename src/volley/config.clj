@@ -336,8 +336,8 @@
 (def ^:private supported-plugins
   "Plugins volley implements or stands in for: filtering, capture,
   hooks and junit-xml are built in; profiling is volley's slowest-tests
-  list and print-invocations its rerun command. Randomize is one of
-  Kaocha's defaults; volley accepts it and orders by timings instead."
+  list and print-invocations its rerun command. Randomize shuffles the
+  vars of each namespace (`volley.order`)."
   #{:kaocha.plugin/filter :kaocha.plugin/capture-output :kaocha.plugin/randomize
     :kaocha.plugin/print-invocations :kaocha.plugin/profiling :kaocha.plugin/hooks
     :kaocha.plugin/junit-xml})
@@ -393,7 +393,7 @@
     ;; unqualified leftovers that kaocha-normalize copies through
     :capture-output? :diff-style :bindings :kaocha/bindings
     ;; volley's own shape, so a normalized config can be normalized again
-    :workers :isolate? :preload? :runtime :warnings :errors :filters :reporter :reporters
+    :workers :isolate? :preload? :seed :runtime :warnings :errors :filters :reporter :reporters
     :hooks :worker-setup :junit-xml :unknown-plugins :invalid
     ;; read by volley.hooks
     :volley/worker-setup})
@@ -549,15 +549,25 @@
            from-config
            (cli-filters cli-options))))
 
-(defn- cli-warnings [options]
-  (cond-> []
-    (or (contains? options :seed) (:randomize options))
-    (conj "--randomize and --seed are ignored: volley does not randomize test order")))
-
 (defn- pick
   "First of the candidates that is not nil (false counts)."
   [& xs]
   (first (filter some? xs)))
+
+(defn- randomize
+  "`{:randomize? b :seed n}` as `kaocha.plugin.randomize/config` settles
+  them: on by default with the plugin, `--[no-]randomize` deciding, and
+  the seed from `--seed`, tests.edn, or the shell's random `env-seed`.
+  `:seed` is left out when the order is not randomized or no seed is
+  known."
+  [cfg raw cli-options plugins env-seed]
+  (let [on? (boolean (pick (:randomize cli-options)
+                           (when (some #{:kaocha.plugin/randomize} plugins)
+                             (pick (:kaocha.plugin.randomize/randomize? cfg) true))
+                           false))
+        seed (when on? (pick (:seed cli-options) (:kaocha.plugin.randomize/seed cfg) (:seed raw) env-seed))]
+    (cond-> {:randomize? on?}
+      (int? seed) (assoc :seed seed))))
 
 (defn- spec-errors
   "What Kaocha's config spec rejects (\"Invalid configuration file\", exit
@@ -614,7 +624,8 @@
   Applies Kaocha's `#kaocha/v1` defaults and `normalize`, then the CLI
   overrides of `kaocha.config/apply-cli-opts`; the CLI always wins. Accepts
   both `:test-paths` and `:kaocha/test-paths` style keys. Unsupported plugins
-  and options become `:warnings` entries. `env` may carry `:cpus` for the
+  and options become `:warnings` entries. `env` may carry `:seed`, the
+  random seed to use when neither `--seed` nor tests.edn gives one, `:cpus` for the
   default worker count and `:bb?` (default true) for the runtime of the
   parent, which is also the default worker runtime.
 
@@ -691,7 +702,6 @@
               (:warnings top-hooks)
               (mapcat :warnings suite-hooks)
               reporter-warnings
-              (cli-warnings cli-options)
               (when (and (:print-result cli-options) (pick (:watch cli-options) (:kaocha/watch? cfg)))
                 ["--watch ignored with --print-result: volley runs once and prints the result"]))))}
        (seq (spec-errors suites)) (assoc :invalid (spec-errors suites))
@@ -701,5 +711,6 @@
        ;; (:reporters raw): a normalized config normalized again keeps them
        (seq (concat custom-reporters (:reporters raw)))
        (assoc :reporters (vec (distinct (concat custom-reporters (:reporters raw)))))
-       (map? (:kaocha/bindings cfg)) (assoc :bindings (:kaocha/bindings cfg)))
+       (map? (:kaocha/bindings cfg)) (assoc :bindings (:kaocha/bindings cfg))
+       true (merge (randomize cfg raw cli-options plugins (:seed env))))
       top-hooks))))

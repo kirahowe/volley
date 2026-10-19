@@ -204,9 +204,8 @@
     (is (= ["volley does not run these plugins and ignores their options: :kaocha.plugin/notifier, :my.plugin/thing"]
            (:warnings (config/normalize {:plugins [:notifier :my.plugin/thing]
                                          :kaocha.plugin.notifier/command "say"} {})))))
-  (testing "--randomize and --seed: one warning"
-    (is (= ["--randomize and --seed are ignored: volley does not randomize test order"]
-           (:warnings (config/normalize nil {:randomize true :seed 3}))))
+  (testing "--randomize and --seed do not warn"
+    (is (= [] (:warnings (config/normalize nil {:randomize true :seed 3}))))
     (is (= [] (:warnings (config/normalize nil {:randomize false})))))
   (testing "unsupported options warn rather than vanish"
     (let [w (:warnings (config/normalize {:kaocha/nonsense 1 :kaocha.hooks/pre-load 'x/y} {}))]
@@ -223,8 +222,6 @@
   (testing "unknown suite keys warn"
     (is (some #(str/includes? % ":kaocha.hooks/pre-test")
               (:warnings (config/normalize {:tests [{:kaocha.hooks/pre-test 'x/y}]} {})))))
-  (testing "--seed is accepted but warned about, randomize ordering is per worker"
-    (is (some #(str/includes? % "--seed") (:warnings (config/normalize nil {:seed 1})))))
   (testing "a non-map config falls back to defaults with a warning"
     (let [c (config/normalize [1 2] {})]
       (is (= [default-suite] (:tests c)))
@@ -436,3 +433,29 @@
     (let [c (config/normalize {:watch? true} {:print-result true})]
       (is (false? (:watch? c)))
       (is (some #(str/includes? % "--watch ignored with --print-result") (:warnings c))))))
+
+;; ---------------------------------------------------------------------------
+;; Randomize (kaocha.plugin.randomize/config)
+
+(deftest randomize-test
+  (testing "on by default with the plugin, which #kaocha/v1 lists"
+    (is (= {:randomize? true :seed 5}
+           (select-keys (config/normalize nil {} {:seed 5}) [:randomize? :seed]))))
+  (testing "--no-randomize, or randomize? false in tests.edn, turns it off and drops the seed"
+    (is (= {:randomize? false} (select-keys (config/normalize nil {:randomize false} {:seed 5})
+                                            [:randomize? :seed])))
+    (is (false? (:randomize? (config/normalize {:kaocha.plugin.randomize/randomize? false} {} {:seed 5})))))
+  (testing "without the plugin it is off unless --randomize asks"
+    (is (false? (:randomize? (config/normalize {:plugins ^:replace [:kaocha.plugin/filter]} {} {:seed 5}))))
+    (is (true? (:randomize? (config/normalize {:plugins ^:replace [:kaocha.plugin/filter]}
+                                              {:randomize true} {:seed 5})))))
+  (testing "--seed wins over tests.edn, which wins over the shell's random seed"
+    (is (= 3 (:seed (config/normalize {:kaocha.plugin.randomize/seed 4} {:seed 3} {:seed 5}))))
+    (is (= 4 (:seed (config/normalize {:kaocha.plugin.randomize/seed 4} {} {:seed 5})))))
+  (testing "a normalized config normalizes to the same seed"
+    (let [c (config/normalize nil {:seed 3} {:seed 5})]
+      (is (= {:randomize? true :seed 3} (select-keys (config/normalize c {}) [:randomize? :seed])))))
+  (testing "--print-config shows Kaocha's randomize keys"
+    (is (= {:kaocha.plugin.randomize/randomize? true :kaocha.plugin.randomize/seed 3}
+           (select-keys (config/kaocha-shaped (config/normalize nil {:seed 3}))
+                        [:kaocha.plugin.randomize/randomize? :kaocha.plugin.randomize/seed])))))

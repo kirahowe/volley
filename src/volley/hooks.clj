@@ -138,7 +138,9 @@
           :kaocha/plugins (:plugins config)
           :kaocha/fail-fast? (boolean (:fail-fast? config))
           :kaocha/color? (boolean (:color? config))
-          :kaocha.plugin.capture-output/capture-output? (boolean (:capture-output? config))}
+          :kaocha.plugin.capture-output/capture-output? (boolean (:capture-output? config))
+          :kaocha.plugin.randomize/randomize? (boolean (:randomize? config))}
+         (when (:seed config) {:kaocha.plugin.randomize/seed (:seed config)})
          (kaocha-hook-keys (:hooks config))))
 
 (defn configure-message
