@@ -243,6 +243,12 @@
   (.flush ^java.io.PrintStream stream)
   (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
 
+(def ^:private stop-requested
+  "Set as soon as the parent's `:shutdown` arrives, even while a namespace
+  is running; that namespace then runs no more vars, so the worker can run
+  its shutdown hooks before the parent gives up and kills it."
+  (atom false))
+
 (def ^:private live-capture
   "The capture buffer of the test running right now, so that a test that
   exits the process does not take its output with it (see `-main`)."
@@ -382,7 +388,7 @@
                     (when (:kaocha.testable/skip r)
                       (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))
                     r))
-        stop? (fn [r] (and fail-fast? (failed? r)))
+        stop? (fn [r] (or @stop-requested (and fail-fast? (failed? r))))
         abandon! (fn []
                    (doseq [v vars :when (not (contains? (:reached @progress) v))]
                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
@@ -607,6 +613,19 @@
                  (do (binding [*out* *err*] (println "volley worker: unknown op" (:op command))) hs))
       :invalid (do (binding [*out* *err*] (println "volley worker: bad message:" error)) hs))))
 
+(defn- read-commands!
+  "Put each line of `in` on `lines`, then `::eof`. Runs on its own thread so
+  that a `:shutdown` is seen while a namespace runs: it sets
+  `stop-requested` at once."
+  [^java.io.BufferedReader in ^java.util.concurrent.BlockingQueue lines]
+  (loop []
+    (if-let [line (try (.readLine in) (catch java.io.IOException _ nil))]
+      (do (when (= :shutdown (get-in (protocol/decode-command line) [:command :op]))
+            (reset! stop-requested true))
+          (.put lines line)
+          (recur))
+      (.put lines ::eof))))
+
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
   else a test prints goes to stderr. The one argument, when given, is the
@@ -637,13 +656,16 @@
     ;; the project's reporters print here (`volley.shell.hooks/report-fn`)
     (alter-var-root #'t/*test-out* (constantly stray-writer))
     (emit! {:event :worker/ready})
-    (let [hs (loop [hs (hooks/init nil)]
-               (if-let [line (.readLine in)]
-                 (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
-                                 (handle-line! emit! decide hs line))]
-                   (.flush stray-writer)
-                   (if (= :shutdown next-hs) hs (recur next-hs)))
-                 hs))
+    (let [lines (java.util.concurrent.LinkedBlockingQueue.)
+          _ (doto (Thread. ^Runnable #(read-commands! in lines)) (.setDaemon true) (.start))
+          hs (loop [hs (hooks/init nil)]
+               (let [line (.take lines)]
+                 (if (= ::eof line)
+                   hs
+                   (let [next-hs (binding [*in* (java.io.BufferedReader. (java.io.StringReader. ""))]
+                                   (handle-line! emit! decide hs line))]
+                     (.flush stray-writer)
+                     (if (= :shutdown next-hs) hs (recur next-hs))))))
           errors (hooks/shutdown hs)]
       (report-hook-errors! emit! errors)
       (.flush stray-writer)

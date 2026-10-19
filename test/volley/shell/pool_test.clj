@@ -117,3 +117,18 @@
     (is (= 1 (count (filter #(= :fail (:type %))
                             (filter #(= 'exec.fail-test (:ns %)) (events-of r :assertion)))))
         "the nested-data mismatch")))
+
+(deftest a-worker-asked-to-stop-mid-namespace-stops-after-the-current-var
+  (let [queue (pool/new-queue)
+        w (pool/start-worker! {:queue queue} 1)]
+    (try
+      (drain queue #(= :worker/ready (:event %)) 30000)
+      (pool/send! w {:op :run :ns 'exec.steps-test :run-id 1 :capture-output? true})
+      (drain queue #(= :var/end (:event %)) 30000)
+      (pool/stop! w)
+      (let [evs (drain queue #(= :worker/exit (:event %)) 3000)
+            ended (filter #(= :var/end (:event %)) evs)]
+        (is (= [0] (map :code (filter #(= :worker/exit (:event %)) evs))) "it exits cleanly, in time")
+        (is (some #(= :ns/end (:event %)) evs) "its namespace still ends")
+        (is (<= (count ended) 1) "no var starts after the request"))
+      (finally (pool/kill! w)))))
