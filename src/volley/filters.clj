@@ -113,6 +113,18 @@
        {:run? false :reason :pending}
        :else {:run? true :reason :selected}))))
 
+(defn runs-namespace?
+  "Whether a namespace with metadata `ns-meta` and vars split by
+  `volley.shell.worker/partition-vars` (`{:run [var ...] :skipped [[var
+  reason] ...]}`) is run at all: its hooks and `:once` fixtures around the
+  vars in `run`. `kaocha.testable/run-testable` runs a namespace
+  unless it is pending itself or every test in it is skipped, and a
+  pending var is not skipped, so a namespace whose vars are all pending
+  still runs its `:once` fixtures."
+  [ns-meta {:keys [run skipped]}]
+  (boolean (and (not (:kaocha/pending ns-meta))
+                (or (seq run) (some (fn [[_ reason]] (= :pending reason)) skipped)))))
+
 (defn used-meta
   "Metadata keys that are truthy in any of `metas` (namespace and var
   metadata), as keywords, like `kaocha.plugin.filter/truthy-keys`."

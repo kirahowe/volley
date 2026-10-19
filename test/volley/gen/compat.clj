@@ -201,6 +201,16 @@
               skip-meta (gen/vector meta-key 0 2)]
       {:focus focus :skip skip :focus-meta focus-meta :skip-meta skip-meta})))
 
+(def var-partition
+  "Generates `[ns-meta parts]`: a namespace's metadata, sometimes
+  `:kaocha/pending`, and its vars split as `volley.shell.worker/partition-vars`
+  splits them, with symbols for vars and every reason `volley.filters/decide`
+  gives a skipped var."
+  (gen/let [pending? gen/boolean
+            run (gen/vector var-sym 0 3)
+            skipped (gen/vector (gen/tuple var-sym (gen/elements [:skip :skip-meta :not-focused :pending])) 0 3)]
+    [(if pending? {:kaocha/pending true} {}) {:run run :skipped skipped}]))
+
 (defn config-for
   "A normalized config with one suite, `:unit`, over test path \"test\"."
   [suite-filters global-filters]

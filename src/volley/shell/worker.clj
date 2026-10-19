@@ -54,17 +54,6 @@
           {:run [] :skipped []}
           vars))
 
-(defn runs-namespace?
-  "Whether a namespace with metadata `ns-meta` and vars split by
-  `partition-vars` is run at all: its hooks and `:once` fixtures around
-  the vars in `run`. `kaocha.testable/run-testable` runs a namespace
-  unless it is pending itself or every test in it is skipped, and a
-  pending var is not skipped, so a namespace whose vars are all pending
-  still runs its `:once` fixtures."
-  [ns-meta {:keys [run skipped]}]
-  (boolean (and (not (:kaocha/pending ns-meta))
-                (or (seq run) (some (fn [[_ reason]] (= :pending reason)) skipped)))))
-
 (defn- throwable? [x] (instance? Throwable x))
 
 (defn safely
@@ -518,7 +507,7 @@
             (partition-vars decide select ns ns-meta (test-vars-of ns-obj))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
-        (if (runs-namespace? ns-meta parts)
+        (if (filters/runs-namespace? ns-meta parts)
           (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
                                                                 :fail-fast? (boolean fail-fast?)}
                                        run)]

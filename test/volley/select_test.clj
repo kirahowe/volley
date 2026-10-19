@@ -84,6 +84,16 @@
                       :when (#{:selected :pending} reason)]
                   (:id v))))))))
 
+;; kaocha.testable/run-testable: a pending namespace never runs; otherwise it
+;; runs when some var runs or is pending, since a pending var is not skipped.
+(defspec runs-namespace-unless-pending-or-every-var-skipped 300
+  (prop/for-all [[ns-meta {:keys [run skipped] :as parts}] g/var-partition]
+    (= (filters/runs-namespace? ns-meta parts)
+       (cond
+         (:kaocha/pending ns-meta) false
+         (seq run) true
+         :else (boolean (some #(= :pending (second %)) skipped))))))
+
 (defspec without-filters-everything-runs 200
   (prop/for-all [corpus g/corpus]
     (= (all-ids corpus) (run-ids (cfg {:skip-meta []} {}) corpus))))

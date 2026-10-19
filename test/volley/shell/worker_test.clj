@@ -150,12 +150,7 @@
   (is (= {:run [#'inc] :skipped [[#'dec :no]]}
          (worker/partition-vars (fn [_ _ _ v _] (if (= v 'inc) {:run? true} {:run? false :reason :no}))
                                 nil 'x {} [#'inc #'dec]))
-      "partition-vars hands decide the var's name and metadata")
-  (testing "runs-namespace?: something to run, or a pending var, in a namespace that is not pending"
-    (is (worker/runs-namespace? {} {:run [#'inc] :skipped []}))
-    (is (worker/runs-namespace? {} {:run [] :skipped [[#'inc :skip] [#'dec :pending]]}))
-    (is (not (worker/runs-namespace? {} {:run [] :skipped [[#'inc :skip]]})))
-    (is (not (worker/runs-namespace? {:kaocha/pending true} {:run [] :skipped [[#'inc :pending]]})))))
+      "partition-vars hands decide the var's name and metadata"))
 
 (defn- skip-spec
   "A `:select` spec as `volley.select/plan` builds it, with an empty static
