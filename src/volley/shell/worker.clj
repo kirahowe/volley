@@ -337,7 +337,7 @@
   `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
   inside the `:each` fixtures, and returns its result; after each var
   `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
-  still finish). Each result is added to `(:results @progress)`, since a
+  still finish), and no var starts once `stop-requested` is set. Each result is added to `(:results @progress)`, since a
   `:once` fixture does not hand back what the tests return. Returns the
   results."
   [ns-obj vars run-var stop? progress]
@@ -346,9 +346,11 @@
         each (t/join-fixtures (:clojure.test/each-fixtures m))]
     (once (fn []
             (reduce (fn [_ v]
-                      (let [r (run-var v #(each (fn [] (t/test-var v))))]
-                        (vswap! progress update :results conj r)
-                        (when (stop? r) (reduced nil))))
+                      (if @stop-requested
+                        (reduced nil)
+                        (let [r (run-var v #(each (fn [] (t/test-var v))))]
+                          (vswap! progress update :results conj r)
+                          (when (stop? r) (reduced nil)))))
                     nil
                     vars)))
     (:results @progress)))
@@ -388,7 +390,7 @@
                     (when (:kaocha.testable/skip r)
                       (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :pre-test-hook}))
                     r))
-        stop? (fn [r] (or @stop-requested (and fail-fast? (failed? r))))
+        stop? (fn [r] (and fail-fast? (failed? r)))
         abandon! (fn []
                    (doseq [v vars :when (not (contains? (:reached @progress) v))]
                      (emit! {:event :var/skipped :ns ns-sym :var (:name (meta v)) :reason :fixture-failed})))]
@@ -398,8 +400,9 @@
                 *err* *err*]
         (try
           (let [[hs _] (hooks/run-ns hs suite ns-sym ns-obj #(test-vars! ns-obj vars run-var stop? progress))]
-            ;; with vars to run, a run that reached none was never started
-            (when (and (seq vars) (empty? (:reached @progress)))
+            ;; with vars to run, a run that reached none, with no stop
+            ;; requested, was never started
+            (when (and (seq vars) (empty? (:reached @progress)) (not @stop-requested))
               (emit! {:event :worker/warning
                       :message (str "the wrap-run hook did not call run for " ns-sym
                                     ", so its " (count vars) " test" (when (next vars) "s")
