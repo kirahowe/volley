@@ -49,9 +49,9 @@
                   (is (= 0 exit) (str out err))
                   (is (= expected-summary (summary out))))]
     (passes? (run ["src" "extra"]))
-    (is (= [:workers-ms] (keys (history))) "no history: worker processes")
+    (is (nil? (:in-process-ms (history))) "no history: worker processes")
     (passes? (run ["src" "extra"]))
-    (is (= [:workers-ms] (keys (history)))
+    (is (nil? (:in-process-ms (history)))
         "test namespaces the parent cannot load: worker processes, whatever the history")
     (passes? (run ["src" "extra" "test"]))
     (is (seq (:in-process-ms (history))) "a short run on record: in process")

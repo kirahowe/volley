@@ -106,14 +106,17 @@
   ".volley/history.edn")
 
 (defn read-history
-  "What `write-history!` saved, `{:in-process-ms [ms ...] :workers-ms [ms ...]}`,
-  either key possibly absent; empty when absent or unreadable."
+  "What `write-history!` saved, `{:in-process-ms [ms ...] :workers-ms [ms
+  ...] :workers-streak n}`, any key possibly absent; empty when absent or
+  unreadable."
   []
   (try
     (let [m (edn/read-string (slurp history-file))]
       (if (map? m)
-        (into {} (keep (fn [[k v]] (when (and (#{:in-process-ms :workers-ms} k) (sequential? v))
-                                      [k (filterv number? v)])))
+        (into {} (keep (fn [[k v]]
+                         (cond
+                           (and (#{:in-process-ms :workers-ms} k) (sequential? v)) [k (filterv number? v)]
+                           (and (= :workers-streak k) (nat-int? v)) [k v])))
               m)
         {}))
     (catch Exception _ {})))

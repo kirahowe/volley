@@ -74,9 +74,15 @@
 
 (def history
   "What `.volley/history.edn` may hold: the recent in-process run times
-  and worker-process run times, newest last, each possibly absent."
-  (gen/fmap (fn [[ip wk]] (cond-> {} (seq ip) (assoc :in-process-ms ip) (seq wk) (assoc :workers-ms wk)))
-            (gen/tuple (gen/vector wall-ms 0 3) (gen/vector wall-ms 0 3))))
+  and worker-process run times, newest last, and the short worker-process
+  runs since the last in-process one, each possibly absent."
+  (gen/fmap (fn [[ip wk streak]]
+              (cond-> {}
+                (seq ip) (assoc :in-process-ms ip)
+                (seq wk) (assoc :workers-ms wk)
+                streak (assoc :workers-streak streak)))
+            (gen/tuple (gen/vector wall-ms 0 3) (gen/vector wall-ms 0 3)
+                       (gen/one-of [(gen/return nil) (gen/choose 0 8)]))))
 
 (def worker-plan-input
   "Input for `volley.runtime/worker-plan`."

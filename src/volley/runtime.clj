@@ -60,6 +60,16 @@
   (when (seq times)
     (nth (sort times) (quot (dec (count times)) 2))))
 
+(def retry-after
+  "How many short worker-process runs since the last in-process run make
+  the next one try in process again, though the in-process runs on record
+  were slow. A busy machine or a run that scaled out can make in-process runs
+  look slow, and only another in-process run can show otherwise."
+  5)
+
+(defn- short-run? [ms]
+  (and (number? ms) (<= ms in-process-limit-ms)))
+
 (defn worker-plan
   "How a run gets its workers: `{:workers n :in-process? bool}`.
   `:in-process?` runs the tests on a thread of the parent JVM, starting
@@ -69,35 +79,43 @@
   * `:workers`         the configured or default worker count
   * `:workers-set?`    true when `--workers` or tests.edn chose it: then
                        always that many worker processes
-  * `:in-process-ok?`  whether the shell can run this plan in process (a
-                       JVM parent with JVM workers, no watch or isolate
-                       mode, every namespace on the parent's classpath)
+  * `:in-process-ok?`  whether the shell can run this plan in process
+                       (`in-process-ok?`)
   * `:history`         `record-run`'s map from earlier runs
 
   In process when the recent in-process runs typically took at most
-  `in-process-limit-ms`, or, with no in-process run on record, when the
-  recent runs with worker processes did. Typically means the median of
-  the last `recent-runs` (the lower middle one of two), so one slow run
-  on a busy machine changes nothing. With no history, worker processes:
-  a first run (or CI) behaves as before."
+  `in-process-limit-ms`. Otherwise the recent runs with worker processes
+  must typically have been that short, and then in process when fewer
+  than two in-process runs are on record (one slow run proves nothing) or
+  after `retry-after` short worker-process runs. Typically means the
+  median of the last `recent-runs` (the lower middle one of two), so one
+  slow run on a busy machine changes nothing. With no history, worker
+  processes: a first run (or CI) behaves as before."
   [{:keys [workers workers-set? in-process-ok? history]}]
-  (let [{:keys [in-process-ms workers-ms]} history
-        short? #(and (number? %) (<= % in-process-limit-ms))]
+  (let [{:keys [in-process-ms workers-ms workers-streak]} history]
     {:workers workers
      :in-process? (boolean (and in-process-ok?
                                 (not workers-set?)
-                                (if (seq in-process-ms)
-                                  (short? (typical in-process-ms))
-                                  (short? (typical workers-ms)))))}))
+                                (or (short-run? (typical in-process-ms))
+                                    (and (short-run? (typical workers-ms))
+                                         (or (< (count in-process-ms) 2)
+                                             (>= (or workers-streak 0) retry-after))))))}))
 
 (defn record-run
   "`history` after a run that ran every planned namespace, in process
   (`:in-process?`) or not, in `:wall-ms`: the run's mode keeps its last
-  `recent-runs` times, newest last; the other mode keeps its own."
+  `recent-runs` times, newest last; the other mode keeps its own.
+  `:workers-streak` counts the short worker-process runs since the last
+  in-process one; a slow one leaves it as it was."
   [history {:keys [in-process? wall-ms]}]
-  (update (if (map? history) history {})
-          (if in-process? :in-process-ms :workers-ms)
-          (fn [times] (vec (take-last recent-runs (conj (vec (filter number? times)) (long wall-ms)))))))
+  (let [history (if (map? history) history {})
+        streak (if (nat-int? (:workers-streak history)) (:workers-streak history) 0)]
+    (-> history
+        (update (if in-process? :in-process-ms :workers-ms)
+                (fn [times] (vec (take-last recent-runs (conj (vec (filter number? times)) (long wall-ms))))))
+        (assoc :workers-streak (cond in-process? 0
+                                     (short-run? wall-ms) (inc streak)
+                                     :else streak)))))
 
 ;; ---------------------------------------------------------------------------
 ;; JVM options

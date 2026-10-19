@@ -66,10 +66,21 @@
 
 (defspec in-process-needs-short-runs-on-record 300
   (prop/for-all [in g/worker-plan-input]
-    (let [{:keys [in-process-ms workers-ms]} (:history in)]
+    (let [{:keys [in-process-ms workers-ms workers-streak]} (:history in)]
       (= (:in-process? (runtime/worker-plan in))
          (and (:in-process-ok? in) (not (:workers-set? in))
-              (short? (runtime/typical (if (seq in-process-ms) in-process-ms workers-ms))))))))
+              (or (short? (runtime/typical in-process-ms))
+                  (and (short? (runtime/typical workers-ms))
+                       (or (< (count in-process-ms) 2)
+                           (>= (or workers-streak 0) runtime/retry-after)))))))))
+
+(defspec short-worker-runs-lead-back-in-process 300
+  ;; one slow in-process run (a busy machine, a run that scaled out) must
+  ;; not keep a checkout on worker processes for good
+  (prop/for-all [history g/history
+                 walls (gen/vector (gen/choose 0 runtime/in-process-limit-ms) runtime/retry-after)]
+    (let [after (reduce #(runtime/record-run %1 {:in-process? false :wall-ms %2}) history walls)]
+      (:in-process? (runtime/worker-plan {:workers 4 :in-process-ok? true :history after})))))
 
 (defspec one-slow-run-does-not-change-the-plan 300
   ;; a busy machine slows one run down; the next plan is the same as if
@@ -97,9 +108,13 @@
            (= (get history other) (get after other))))))
 
 (deftest record-run-accepts-a-missing-or-broken-history
-  (is (= {:workers-ms [812]} (runtime/record-run nil {:in-process? false :wall-ms 812.4})))
-  (is (= {:in-process-ms [5]} (runtime/record-run [:junk] {:in-process? true :wall-ms 5})))
-  (is (= {:in-process-ms [1 5]} (runtime/record-run {:in-process-ms [:x 1]} {:in-process? true :wall-ms 5}))))
+  (is (= {:workers-ms [812] :workers-streak 1} (runtime/record-run nil {:in-process? false :wall-ms 812.4})))
+  (is (= {:in-process-ms [5] :workers-streak 0} (runtime/record-run [:junk] {:in-process? true :wall-ms 5})))
+  (is (= {:in-process-ms [1 5] :workers-streak 0}
+         (runtime/record-run {:in-process-ms [:x 1] :workers-streak :y} {:in-process? true :wall-ms 5})))
+  (is (= {:workers-ms [20000] :workers-streak 2}
+         (runtime/record-run {:workers-streak 2} {:in-process? false :wall-ms 20000}))
+      "a slow worker-process run leaves the streak alone"))
 
 ;; ---------------------------------------------------------------------------
 ;; JVM options

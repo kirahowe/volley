@@ -891,10 +891,14 @@ were skipped` warning (`rs/all-skipped`).
     `*ns*` and the rest), as a worker process's `-main` has them.
     `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
     last three wall times (engine start to end) of runs in process and of
-    runs with worker processes. A run goes in process when the median of
-    the recent in-process runs is at most `in-process-limit-ms` (10s), or,
-    with none on record, when the median of the worker runs is. With no
-    history (a first run, CI without a cached `.volley/`) it starts
+    runs with worker processes, and how many short worker runs came
+    since the last in-process one. A run goes in process when the median
+    of the recent in-process runs is at most `in-process-limit-ms` (10s).
+    Otherwise the median of the worker runs must be that short, and then
+    the run goes in process when fewer than two in-process runs are on
+    record, or once `retry-after` (5) short worker runs have passed, so a
+    slow in-process run on a busy machine cannot keep a checkout on worker
+    processes for good. With no history (a first run, CI without a cached `.volley/`) it starts
     worker processes. Never in process: `--workers` or `:workers` set
     (`:workers-set?`), a babashka parent or babashka workers, watch and
     isolate mode, or a plan with a namespace the parent's classpath cannot
