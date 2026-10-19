@@ -118,10 +118,10 @@
 
 (defspec local-roots-finds-every-local-dep 200
   (prop/for-all [roots (gen/vector (gen/such-that seq gen/string-alphanumeric) 0 5)
-                 in-alias? gen/boolean]
+                 alias-key (gen/elements [nil :extra-deps :override-deps :default-deps :replace-deps :deps])]
     (let [deps (into {} (map-indexed (fn [i r] [(symbol "lib" (str "l" i)) {:local/root r}])) roots)
-          text (pr-str (if in-alias?
-                         {:aliases {:test {:extra-deps deps}}}
+          text (pr-str (if alias-key
+                         {:aliases {:test {alias-key deps}}}
                          {:deps (assoc deps 'org/m {:mvn/version "1"})}))]
       (= (vec (sort (distinct roots))) (runtime/local-roots text)))))
 

@@ -125,7 +125,7 @@
 
 (def ^:private dep-map-keys
   "The keys of an alias that hold a dependency map."
-  [:extra-deps :override-deps :replace-deps :deps])
+  [:extra-deps :override-deps :default-deps :replace-deps :deps])
 
 (defn local-roots
   "The `:local/root` paths in deps.edn (text, or nil), sorted: from `:deps`
