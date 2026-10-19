@@ -176,13 +176,15 @@ too:
   Workers also get `-XX:TieredStopAtLevel=1`. With `-Xmx2g` and four
   workers, the tests can use up to four times that heap.
 - The default worker count is the CPU count, at most 4.
-- Each worker is a JVM that starts and loads your code again, so a suite
-  that takes Kaocha under about 10 seconds may be no faster under volley,
-  or a little slower. In one adoption test, a 70-test suite took 9.3s
-  with volley against 6.3 and 9.8s with Kaocha. Large suites gain the
-  most: a 244-test suite (1440 assertions, the same results under both)
-  took 40s with volley against 215s with Kaocha. The machine was busy
-  during both measurements. See [doc/benchmarks.md](doc/benchmarks.md).
+- Each worker is a JVM that starts and loads your code again, which a
+  suite of a few seconds does not win back. So once recent runs took at
+  most 10 seconds, volley runs the tests in its own JVM instead, and
+  starts worker JVMs only if a run outlasts that with work still waiting.
+  The first run, with no `.volley/` yet, always uses worker JVMs. A
+  70-test suite took 6.1s that way against Kaocha's 6.2s (9.9s with
+  worker JVMs). Large suites gain the most: a 244-test suite took 40s
+  with volley against 104s with Kaocha. See
+  [doc/benchmarks.md](doc/benchmarks.md).
 
 To keep the parent on babashka and run tests on the JVM, use
 `bb -m volley.main --runtime jvm`. volley runs `clojure -Spath` for the
@@ -241,8 +243,9 @@ The list of deliberate behaviour differences is in the
 [divergences section of doc/design.md](doc/design.md#deliberate-divergences-from-kaocha).
 In short: a namespace that fails to load is one error rather than failing
 the whole suite, a test that calls `System/exit` crashes one worker rather
-than the run, fail-fast finishes the failing test before stopping, and a
-namespace is loaded in the worker that runs it unless you pass `--preload`.
+than the run (unless the run is in volley's own JVM), fail-fast finishes
+the failing test before stopping, and a namespace is loaded in the worker
+that runs it unless you pass `--preload`.
 
 ## Before you switch
 
@@ -331,7 +334,9 @@ error.
 ## Flags of its own
 
 - `--workers N`: number of worker processes. Default: the CPU count, at
-  most 8 on babashka and at most 4 on the JVM.
+  most 8 on babashka and at most 4 on the JVM. Setting it, here or as
+  `:workers` in `tests.edn`, also keeps a short JVM run out of volley's
+  own JVM.
 - `--[no-]isolate`: start a fresh worker for every namespace. It is slow and
   prints a warning.
 - `--runtime bb|jvm`: the worker runtime. Default: the runtime volley runs on.
@@ -373,8 +378,11 @@ reports `1 test`. When the filters leave nothing to run, volley prints
 Kaocha's "All N tests were skipped" warning.
 
 volley saves namespace durations in `.volley/timings.edn`, and the next run
-starts the slowest namespaces first. When it creates `.volley/` it puts a
-`.gitignore` containing `*` inside, so git and jj leave the directory alone.
+starts the slowest namespaces first. On the JVM it also keeps recent run
+times in `.volley/history.edn`, to decide whether a run goes in its own
+JVM, and the parsed `ns` forms of your test files in
+`.volley/ns-infos.edn`. When it creates `.volley/` it puts a `.gitignore`
+containing `*` inside, so git and jj leave the directory alone.
 
 ## CI
 
@@ -400,8 +408,9 @@ starts the slowest namespaces first. When it creates `.volley/` it puts a
   port starts N of them.
 - Overlapping suites that select the same namespace run it once, with the
   first suite's selection. Kaocha runs it twice.
-- JVM suites that take Kaocha under about 10 seconds may be no faster,
-  or a little slower. See [doc/benchmarks.md](doc/benchmarks.md).
+- The first run of a short JVM suite, with no `.volley/` yet (in CI,
+  unless you cache it), uses worker JVMs and is slower than Kaocha. See
+  [doc/benchmarks.md](doc/benchmarks.md).
 
 The full list, with reasons, is in [doc/design.md](doc/design.md).
 
@@ -410,9 +419,8 @@ The full list, with reasons, is in [doc/design.md](doc/design.md).
 volley ran a 507-test babashka suite in 27.5s with 8 workers, against 153.8s
 for that project's own runner. On a 26-test babashka suite it took 0.43 to
 0.50s against 0.50 to 0.65s. On the JVM it ran a 244-test suite in 40s
-against Kaocha's 215s; on suites that take Kaocha a few seconds it is no
-faster, or slower by about half a second. The runs were on a loaded
-16-core Mac. Numbers, conditions and caveats are
+against Kaocha's 104s, and a 70-test suite in 6.1s against 6.2s. The runs
+were on a 16-core Mac with other work on it. Numbers, conditions and caveats are
 in [doc/benchmarks.md](doc/benchmarks.md).
 
 ## Contributing

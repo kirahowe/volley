@@ -59,6 +59,12 @@ This is structural, not a guideline:
   engine's state; when the run ends, or the process shuts down, the parent
   kills whatever processes it started that are still alive (its
   descendants), so no handle has to be reachable from a shutdown hook.
+  An in-process worker (`volley.shell.in-process`, see "JVM mode") adds
+  the mutable objects a worker process has in the operating system
+  instead: a queue of command lines, the line buffers of its two output
+  streams, and a flag that makes its exit event a one-time thing. They
+  live in its handle and its thread; the loop still reads only the one
+  event queue.
 
 ### Namespaces
 
@@ -68,7 +74,8 @@ Pure core:
 |---|---|
 | `volley.cli` | argv → options map, or a list of errors. Kaocha flags plus volley's own. |
 | `volley.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
-| `volley.discover` | File path + file text → namespace info (name, requires). Path filtering by `ns-patterns`. |
+| `volley.discover` | File path + file text → namespace info (name, requires), parsed with edamame. |
+| `volley.paths` | Which files and namespaces belong to a suite: test paths and `ns-patterns`. Apart from `volley.discover`, so planning from cached namespace infos does not load the parser. |
 | `volley.select` | Config + namespace infos → the plan's namespaces. |
 | `volley.filters` | Kaocha's filter rules for one var (`decide`), and the focus-meta keys a worker settles. The only selection code a worker loads; `volley.select` uses it too. |
 | `volley.deps-graph` | Namespace infos → dependency graph; changed files → affected test namespaces. |
@@ -82,16 +89,17 @@ Pure core:
 | `volley.hooks` | Kaocha's hooks plugin and `:volley/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
 | `volley.order` | The seeded random order of a namespace's vars, from the run seed and the namespace name. Loaded by the workers. |
 | `volley.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
-| `volley.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
+| `volley.runtime` | Which worker runtime and how many workers by default; whether a run goes in process (`worker-plan`, `record-run`); which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
 Shell:
 
 | Namespace | Responsibility |
 |---|---|
-| `volley.shell.worker` | Worker process `-main`: read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
+| `volley.shell.worker` | Worker process `-main` and its command loop (`serve!`): read assignments, require, run, emit events. Must be portable Clojure (no babashka-only libs) so it runs on the JVM too. |
+| `volley.shell.in-process` | A worker on a thread of a JVM parent, serving the same protocol over in-memory streams. Loaded only for an in-process run. |
 | `volley.shell.hooks` | Resolves and calls hooks inside a worker (and `post-summary` in the parent). Portable, like the worker. |
 | `volley.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
-| `volley.shell.fs` | Glob test paths, read files, snapshot modification times. |
+| `volley.shell.fs` | Glob test paths, read files, snapshot modification times; the files under `.volley/` (timings, run history, cached namespace infos). |
 | `volley.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
 | `volley.shell.jvm` | The one JVM-only call (`RuntimeMXBean` input arguments), loaded through `requiring-resolve` because babashka lacks `java.lang.management`. |
 | `volley.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
@@ -127,6 +135,7 @@ then in code.
  :reporters        [my.ns/report]                   ; the project's own reporters, called in the workers
  :watch?           false
  :workers          8                                ; volley-only; default depends on :runtime
+ :workers-set?     false                            ; volley-only: --workers or :workers chose it
  :isolate?         false                            ; volley-only: fresh process per ns
  :preload?         false                            ; volley-only: each worker requires every planned ns first
  :bindings         {my.ns/*var* value}              ; Kaocha's :kaocha/bindings, bound in the workers
@@ -496,7 +505,7 @@ event if the queue never goes quiet). In live mode a tick at most every
 replaces the width the live view renders to. Effects:
 
 ```clojure
-{:effect :spawn :worker id}
+{:effect :spawn :worker id}         ; :in-process? true: on a thread of the parent
 {:effect :send :worker id :msg {:op :configure ...}}  ; right after its spawn, when configured
 {:effect :send :worker id :msg {:op :run ...}}
 {:effect :stop :worker id}          ; clean shutdown request
@@ -507,6 +516,7 @@ replaces the width the live view renders to. Effects:
                                                 ;   in Kaocha's shapes (see the divergences)
 {:effect :redraw :frame {:emit [str] :frame [str]}}   ; live mode, on ticks only
 {:effect :save-timings :timings {ns ms}}
+{:effect :save-history :run {:in-process? bool :wall-ms ms}}   ; complete runs, when asked
 {:effect :write-file :path str :text str}   ; the junit-xml report, after the summary
 {:effect :post-summary :hooks [entry] :result kaocha-result}   ; after the summary, with post-summary hooks
 {:effect :exit :code n}             ; always last; the state is then :done
@@ -860,16 +870,49 @@ were skipped` warning (`rs/all-skipped`).
     and the aliases' `:jvm-opts` are passed to the workers.
   * Default worker count: CPU count capped at 8 (bb) or 4 (JVM). The JVM
     cap comes from the benchmark below.
-  * A JVM run costs about half a second more than Kaocha's in-process
-    run (parent JVM plus worker JVM), and each worker loads the project's
-    source again, so the engine already starts every worker at once, workers
-    are kept across namespaces, and a worker loads `clojure.test` and
-    `volley.filters` before it sends `:worker/ready`. A worker loads
-    nothing that reads source files (`volley.select` and `volley.discover`
-    pull in edamame) or folds run state, and it loads hook support
+  * A worker JVM costs about half a second to start, and each one loads
+    the project's source again, so the engine starts every worker at
+    once, workers are kept across namespaces, and a worker loads
+    `clojure.test` and `volley.filters` before it sends `:worker/ready`.
+    A worker loads nothing that reads source files (`volley.discover`
+    pulls in edamame) or folds run state, and it loads hook support
     (`volley.shell.hooks`) only when a `:configure` message arrives. That
-    keeps a JVM worker's start to ready near 0.4s on a 16-core Mac. `--isolate` is allowed
-    with a warning.
+    keeps a JVM worker's start to ready near 0.4s on a 16-core Mac.
+    `--isolate` is allowed with a warning.
+  * **In process.** For a suite of a few seconds even one worker JVM
+    costs more than it saves, so a JVM parent can run the tests on a
+    thread of its own (`volley.shell.in-process`). That worker runs the
+    worker's command loop (`volley.shell.worker/serve!`) over in-memory
+    streams, so the engine sees the same events, `:worker/exit` last.
+    While it runs, `System/out` and `System/err` point at its stray
+    output and `System/in` at an empty stream; the parent prints through
+    the root `*out*` and `*err*`, which keep the original streams. Its
+    thread gets the bindings of the thread that starts it (clojure.main's
+    `*ns*` and the rest), as a worker process's `-main` has them.
+    `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
+    last three wall times (engine start to end) of runs in process and of
+    runs with worker processes. A run goes in process when the median of
+    the recent in-process runs is at most `in-process-limit-ms` (10s), or,
+    with none on record, when the median of the worker runs is. With no
+    history (a first run, CI without a cached `.volley/`) it starts
+    worker processes. Never in process: `--workers` or `:workers` set
+    (`:workers-set?`), a babashka parent or babashka workers, watch and
+    isolate mode, or a plan with a namespace the parent's classpath cannot
+    load (planned, preloaded, or named by a hook or reporter; a JVM
+    worker's classpath adds the test paths). Only a run of the whole plan
+    (no suite or filter on the command line) that ran every namespace
+    goes into the history. An in-process run still going after 10s with
+    at least 10s of work waiting, by the timings, starts worker processes
+    up to `:workers` for the rest, once.
+  * **Cached namespace infos.** `volley.discover/ns-info` is a function of
+    a file's path and text, and loading its parser (edamame and
+    tools.reader) is a third of the JVM parent's own load time. On the
+    JVM the parent keeps the infos in `.volley/ns-infos.edn`, each under
+    the SHA-256 of its file's text, and the whole cache under a key of the
+    parser's source and edamame's version. It loads `volley.discover` only
+    for files whose text changed, and saves the cache when anything did.
+    An info that does not survive an EDN round trip is not cached. On
+    babashka, where edamame is built in, it parses every file.
 - **Ordering.** The scheduler starts known-slow namespaces first when it has
   timings from a previous run (stored by the shell in `.volley/timings.edn`).
   When the shell creates `.volley/` it writes a `.gitignore` of `*` into it
@@ -948,7 +991,8 @@ hosted-clay and no faster on secrets, because each JVM loads the same
 source and the cores were shared. Gains come from overlapping namespaces
 (secrets: the one 62-second test sets the floor; reader: embedded Postgres
 setup overlaps). For a suite of a few seconds Kaocha's single JVM wins by
-the cost of starting a second one.
+the cost of starting a second one, which is why such a suite now runs in
+the parent's JVM (see "In process" above, and doc/benchmarks.md).
 
 ### Deliberate divergences from Kaocha
 
@@ -976,7 +1020,8 @@ difference:
 - **A test that calls `System/exit`.** Kaocha runs every test in one
   process, so the call ends the run with whatever code the test chose.
   In volley it ends one worker; the namespace is reported as a CRASH,
-  whatever the code, and the run goes on.
+  whatever the code, and the run goes on. A run in the parent's JVM
+  ("In process" under JVM mode) ends as Kaocha's does.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
   escape and exits with a stack trace. volley reports a namespace error.
 - **An assertion in a `:once` fixture.** Kaocha prints a failing one
