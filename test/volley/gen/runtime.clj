@@ -54,3 +54,13 @@
                                             (seq opts) (assoc :jvm-opts opts)))
                                (gen/vector safe-arg 0 3))
                      {:max-elements 4})))
+
+(def deps-files
+  "The other deps.edn files a classpath depends on, `{path text-or-nil}`."
+  (gen/map gen/string-alphanumeric (gen/one-of [(gen/return nil) gen/string]) {:max-elements 4}))
+
+(def dep-graph
+  "Directories `a` to `d`, each listing the directories its deps.edn points
+  at with `:local/root` (`missing` has no deps.edn)."
+  (gen/map (gen/elements ["a" "b" "c" "d"])
+           (gen/vector (gen/elements ["a" "b" "c" "d" "missing"]) 0 3)))

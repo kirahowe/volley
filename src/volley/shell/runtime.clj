@@ -111,17 +111,34 @@
     (catch Exception e
       {:error (str "could not run clojure -Spath: " (ex-message e))})))
 
+(defn- read-text [path]
+  (try (when (fs/regular-file? path) (slurp (str path)))
+       (catch Exception _ nil)))
+
+(defn- other-deps-files
+  "The deps.edn files besides the project's that `clojure -Spath` reads:
+  those of `:local/root` dependencies, transitively, and the user's."
+  [deps-text]
+  (let [user (runtime/user-deps-file {:clj-config (System/getenv "CLJ_CONFIG")
+                                      :xdg-config-home (System/getenv "XDG_CONFIG_HOME")
+                                      :home (System/getProperty "user.home")})]
+    (cond-> (runtime/local-deps-files deps-text (str (fs/cwd))
+                                      {:read read-text
+                                       :join #(str (fs/normalize (fs/path %1 %2)))})
+      user (assoc user (read-text user)))))
+
 (defn project-classpath
   "The classpath of the project in the current directory for `aliases`,
   from `clojure -Spath`, cached in `.volley/classpath-<key>.txt` where the
-  key hashes deps.edn and the aliases. Returns `{:classpath s :aliases [..]
-  :jvm-opts [..] :cached? bool}` (`:jvm-opts` are the aliases' own) or
-  `{:error msg}`."
+  key hashes deps.edn, the aliases, the deps.edn files of `:local/root`
+  dependencies and the user-level deps.edn. Returns `{:classpath s
+  :aliases [..] :jvm-opts [..] :cached? bool}` (`:jvm-opts` are the
+  aliases' own) or `{:error msg}`."
   [requested-aliases]
-  (let [deps-text (when (fs/exists? "deps.edn") (slurp "deps.edn"))
+  (let [deps-text (read-text "deps.edn")
         aliases (runtime/choose-aliases requested-aliases deps-text)
         jvm-opts (runtime/alias-jvm-opts deps-text aliases)
-        file (runtime/cache-file (runtime/classpath-key deps-text aliases))]
+        file (runtime/cache-file (runtime/classpath-key deps-text aliases (other-deps-files deps-text)))]
     (if-let [cp (read-cached file)]
       {:classpath cp :aliases aliases :jvm-opts jvm-opts :cached? true}
       (let [{:keys [classpath error]} (compute-classpath aliases)]

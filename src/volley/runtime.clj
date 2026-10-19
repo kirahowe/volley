@@ -123,14 +123,68 @@
 (defn- hex [^bytes bs]
   (apply str (map #(format "%02x" (bit-and % 0xff)) bs)))
 
+(def ^:private dep-map-keys
+  "The keys of an alias that hold a dependency map."
+  [:extra-deps :override-deps :replace-deps :deps])
+
+(defn local-roots
+  "The `:local/root` paths in deps.edn (text, or nil), sorted: from `:deps`
+  and from every alias, since an alias not chosen today costs only a
+  cache miss if it is chosen later."
+  [deps-text]
+  (let [{:keys [deps aliases]} (read-deps (or deps-text ""))
+        dep-maps (cons deps (when (map? aliases)
+                              (for [a (vals aliases) :when (map? a) k dep-map-keys] (get a k))))]
+    (->> dep-maps
+         (filter map?)
+         (mapcat vals)
+         (keep #(when (map? %) (:local/root %)))
+         (filter string?)
+         distinct
+         sort
+         vec)))
+
+(defn local-deps-files
+  "Every deps.edn reachable from `deps-text` (the project's, in directory
+  `dir`) through `:local/root`, transitively, as `{path text-or-nil}`.
+  `read` takes a path and returns its text or nil; `join` resolves a root
+  against the directory of the deps.edn that names it. A cycle of local
+  roots ends where it repeats."
+  [deps-text dir {:keys [read join]}]
+  (loop [found {} todo (mapv #(join dir %) (local-roots deps-text))]
+    (if-let [root (first todo)]
+      (let [file (join root "deps.edn")]
+        (if (contains? found file)
+          (recur found (subvec todo 1))
+          (let [text (read file)]
+            (recur (assoc found file text)
+                   (into (subvec todo 1) (map #(join root %)) (local-roots text))))))
+      found)))
+
+(defn user-deps-file
+  "The user-level deps.edn the Clojure CLI reads: `$CLJ_CONFIG/deps.edn`,
+  else `$XDG_CONFIG_HOME/clojure/deps.edn`, else `~/.clojure/deps.edn`, as
+  in the `clojure` script. Blank values count as unset; nil without a
+  home."
+  [{:keys [clj-config xdg-config-home home]}]
+  (let [given #(when-not (str/blank? %) %)]
+    (cond
+      (given clj-config) (str clj-config "/deps.edn")
+      (given xdg-config-home) (str xdg-config-home "/clojure/deps.edn")
+      (given home) (str home "/.clojure/deps.edn"))))
+
 (defn classpath-key
   "Cache key for a computed classpath: a SHA-256 of the deps.edn text
-  (nil when missing) and the aliases, shortened to 16 hex characters. Equal
-  inputs give equal keys; changing the text or the aliases changes it."
-  [deps-text aliases]
-  (let [md (MessageDigest/getInstance "SHA-256")
-        input (pr-str [(or deps-text "") (mapv name aliases)])]
-    (subs (hex (.digest md (.getBytes ^String input "UTF-8"))) 0 16)))
+  (nil when missing), the aliases and the other deps.edn files the
+  classpath depends on (`{path text-or-nil}`: local roots, the user's),
+  shortened to 16 hex characters. Equal inputs give equal keys; changing
+  any text, any path or the aliases changes it."
+  ([deps-text aliases] (classpath-key deps-text aliases {}))
+  ([deps-text aliases others]
+   (let [md (MessageDigest/getInstance "SHA-256")
+         input (pr-str (cond-> [(or deps-text "") (mapv name aliases)]
+                         (seq others) (conj (sort-by key others))))]
+     (subs (hex (.digest md (.getBytes ^String input "UTF-8"))) 0 16))))
 
 (defn cache-file
   "Where the classpath for `key` is cached."

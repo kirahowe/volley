@@ -102,6 +102,64 @@
   (is (not= (runtime/classpath-key "{}" [:a :b]) (runtime/classpath-key "{}" [:b :a]))
       "alias order is classpath order"))
 
+(defspec classpath-key-depends-on-every-other-deps-file 200
+  (prop/for-all [text gen/string as g/aliases files g/deps-files
+                 path gen/string-alphanumeric changed gen/string]
+    (let [k (runtime/classpath-key text as files)]
+      (and (= k (runtime/classpath-key text as (into {} (reverse (seq files)))))
+           (or (= changed (get files path))
+               (not= k (runtime/classpath-key text as (assoc files path changed))))))))
+
+(deftest classpath-key-without-other-files
+  (is (= (runtime/classpath-key "{}" [:test]) (runtime/classpath-key "{}" [:test] {})))
+  (is (not= (runtime/classpath-key "{}" [:test] {"a/deps.edn" nil})
+            (runtime/classpath-key "{}" [:test] {}))
+      "a missing file is an input too: creating it changes the key"))
+
+(defspec local-roots-finds-every-local-dep 200
+  (prop/for-all [roots (gen/vector (gen/such-that seq gen/string-alphanumeric) 0 5)
+                 in-alias? gen/boolean]
+    (let [deps (into {} (map-indexed (fn [i r] [(symbol "lib" (str "l" i)) {:local/root r}])) roots)
+          text (pr-str (if in-alias?
+                         {:aliases {:test {:extra-deps deps}}}
+                         {:deps (assoc deps 'org/m {:mvn/version "1"})}))]
+      (= (vec (sort (distinct roots))) (runtime/local-roots text)))))
+
+(deftest local-roots-ignores-bad-input
+  (is (= [] (runtime/local-roots nil)))
+  (is (= [] (runtime/local-roots "{:deps")))
+  (is (= [] (runtime/local-roots "{:deps {a/b {:local/root 1}} :aliases []}"))))
+
+(defn- join-abs [dir rel]
+  (if (str/starts-with? rel "/") rel (str dir "/" rel)))
+
+(defn- reachable [edges from]
+  (loop [seen #{} todo (vec (get edges from))]
+    (if-let [d (first todo)]
+      (recur (conj seen d) (into (subvec todo 1) (when-not (seen d) (get edges d))))
+      seen)))
+
+(defspec local-deps-files-follow-local-roots-through-cycles 200
+  (prop/for-all [edges g/dep-graph]
+    (let [text-of (fn [dir] (pr-str {:deps (into {} (map (fn [d] [(symbol "x" d) {:local/root (str "/" d)}]))
+                                                 (get edges dir))}))
+          files (into {} (map (fn [d] [(str "/" d "/deps.edn") (text-of d)])) (keys edges))
+          found (runtime/local-deps-files (text-of "root") "/root" {:read files :join join-abs})]
+      (and (= (set (map #(str "/" % "/deps.edn") (reachable edges "root"))) (set (keys found)))
+           (every? (fn [[f t]] (= t (get files f))) found)))))
+
+(deftest local-deps-files-resolve-relative-roots-from-their-own-directory
+  (let [files {"/p/../a/deps.edn" "{:deps {b/b {:local/root \"../b\"}}}"
+               "/p/../a/../b/deps.edn" "{}"}]
+    (is (= files (runtime/local-deps-files "{:deps {a/a {:local/root \"../a\"}}}" "/p"
+                                           {:read files :join join-abs})))))
+
+(deftest user-deps-file-follows-the-clojure-cli
+  (is (= "/cfg/deps.edn" (runtime/user-deps-file {:clj-config "/cfg" :xdg-config-home "/x" :home "/h"})))
+  (is (= "/x/clojure/deps.edn" (runtime/user-deps-file {:xdg-config-home "/x" :home "/h"})))
+  (is (= "/h/.clojure/deps.edn" (runtime/user-deps-file {:clj-config "" :home "/h"})))
+  (is (nil? (runtime/user-deps-file {}))))
+
 (deftest cache-file-is-under-dot-volley
   (is (= ".volley/classpath-abc.txt" (runtime/cache-file "abc"))))
 

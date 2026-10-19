@@ -761,7 +761,10 @@ were skipped` warning (`rs/all-skipped`).
   * `--runtime jvm` from a bb parent computes the classpath with `clojure
     -Spath -A<aliases>`: `--aliases`, else `:test` if deps.edn defines it,
     else none. It caches the result in `.volley/classpath-<key>.txt`, where
-    the key is a SHA-256 of deps.edn and the aliases; a cache whose jars
+    the key is a SHA-256 of deps.edn, the aliases, and the other deps.edn
+    files `clojure -Spath` reads: those of `:local/root` dependencies,
+    followed transitively (`volley.runtime/local-deps-files`), and the
+    user-level one (`volley.runtime/user-deps-file`); a cache whose jars
     are gone is recomputed. volley's own source root (found from
     `volley/shell/worker.clj` on the parent's classpath) is put in front,
     and the aliases' `:jvm-opts` are passed to the workers.
@@ -818,9 +821,9 @@ exactly. Each is the conservative option.
   counted.
 - **Watch mode with no tests at startup** exits 0 with Kaocha's "No tests
   were found" warning instead of waiting for tests to appear.
-- **Classpath cache.** The `--runtime jvm` cache key covers deps.edn and
-  the aliases only. Edits to a local dependency's deps.edn or to the
-  user-level deps.edn go unnoticed until the cache file is deleted.
+- **Classpath cache.** The `--runtime jvm` cache key covers the deps.edn
+  files `clojure -Spath` reads and the aliases, not the artifacts they
+  resolve to: a re-published SNAPSHOT goes unnoticed until `.volley/classpath-*.txt` is deleted.
   Hashing the output of `clojure -Spath` would need running it each time,
   which is the cost the cache avoids.
 - **Forwarded JVM options.** The parent's options are copied rather than

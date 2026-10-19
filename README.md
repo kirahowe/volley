@@ -188,9 +188,9 @@ To keep the parent on babashka and run tests on the JVM, use
 `bb -m volley.main --runtime jvm`. volley runs `clojure -Spath` for the
 aliases in `--aliases` (default: `:test` if your `deps.edn` defines it) and
 starts workers with `java -cp`. The classpath is cached in
-`.volley/classpath-<hash>.txt`, keyed on `deps.edn` and the aliases. A change
-to a `:local/root` dependency's own `deps.edn`, or to `~/.clojure/deps.edn`,
-is not noticed; delete `.volley/classpath-*.txt` after one. `--runtime bb`
+`.volley/classpath-<hash>.txt`, keyed on `deps.edn`, the aliases, the
+`deps.edn` of every `:local/root` dependency and your user-level `deps.edn`
+(`$CLJ_CONFIG`, `$XDG_CONFIG_HOME/clojure` or `~/.clojure`). `--runtime bb`
 from a JVM parent starts babashka workers.
 
 ### Same as kaocha
