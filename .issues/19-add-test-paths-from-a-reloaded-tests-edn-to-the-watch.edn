@@ -1,0 +1,11 @@
+{:id 19
+ :title "Add test paths from a reloaded tests.edn to the watch parent classpath"
+ :status :inbox
+ :type :bug
+ :priority :p3
+ :created "2026-10-19"
+ :updated "2026-10-19"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md"}

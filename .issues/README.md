@@ -8,6 +8,7 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [12](12-load-hook-support-in-workers-only-when-hooks-are-configured.md) | Load hook support in workers only when hooks are configured | chore | P3 |
+| [19](19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md) | Add test paths from a reloaded tests.edn to the watch parent classpath | bug | P3 |
 
 ### Ready
 
