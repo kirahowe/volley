@@ -160,6 +160,19 @@
   (is (= "/h/.clojure/deps.edn" (runtime/user-deps-file {:clj-config "" :home "/h"})))
   (is (nil? (runtime/user-deps-file {}))))
 
+(deftest parent-classpath-command-asks-the-parents-own-tool
+  (is (= "bb" (first (runtime/parent-classpath-command {:bb? true}))))
+  (is (= ["clojure" "-Spath" "-A:test:dev"]
+         (runtime/parent-classpath-command {:bb? false :aliases [:test :dev]})))
+  (is (= ["clojure" "-Spath"] (runtime/parent-classpath-command {:bb? false}))))
+
+(defspec refreshed-classpath-puts-fresh-entries-first 200
+  (prop/for-all [fresh (gen/vector (gen/elements ["a" "b" "c" "d"]) 0 4)
+                 old (gen/vector (gen/elements ["c" "d" "e" "f"]) 0 4)]
+    (let [entries (runtime/split-classpath (runtime/refreshed-classpath (str/join ":" fresh) (str/join ":" old) ":") ":")]
+      (and (= (vec (distinct (concat fresh old))) entries)
+           (= (distinct fresh) (take (count (distinct fresh)) entries))))))
+
 (deftest cache-file-is-under-dot-volley
   (is (= ".volley/classpath-abc.txt" (runtime/cache-file "abc"))))
 

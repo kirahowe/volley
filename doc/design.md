@@ -623,7 +623,8 @@ handles and live frame height as a value). Its one mutable object is the
 queue, as in a one-shot run.
 
 **Watched files.** Every file under every suite's `:test-paths` and
-`:source-paths`, plus tests.edn. Dot directories and editor droppings
+`:source-paths`, plus tests.edn, deps.edn and bb.edn
+(`volley.watch/deps-files`). Dot directories and editor droppings
 (`.#x`, `x~`, `#x#`, `.swp`, `.tmp`) are skipped (`volley.watch/watched-file?`).
 
 **From files to a rerun.**
@@ -648,12 +649,22 @@ queue, as in a one-shot run.
    rebuilds the graph, the snapshot and the worker command (whose
    classpath holds the suites' test paths, on either runtime); an invalid
    file, or a JVM classpath that cannot be computed, keeps the old config
-   and prints the error. deps.edn is not watched: after changing it,
-   restart watch mode.
+   and prints the error.
+5. A change to deps.edn or bb.edn does the same with `:reload-deps?` in
+   the selection: the worker command is rebuilt with a recomputed
+   classpath. A computed `--runtime jvm` classpath needs nothing extra,
+   since its cache key covers deps.edn. A parent-runtime classpath is
+   asked for again (`volley.runtime/parent-classpath-command`: `bb -e`
+   printing babashka's classpath for bb.edn, or `clojure -Spath` with the
+   JVM parent's basis aliases) and put in front of the parent's own
+   (`volley.runtime/refreshed-classpath`), which keeps a bb task's extra
+   paths and deps and volley itself. Later tests.edn reloads keep
+   recomputing it. A command that fails keeps the old config and prints
+   the error.
 
 **Selections.** The state machine emits `{:effect :start-run :selection s}`
-where `s` is `{:all? :failed? :namespaces :reload-config? :ns-pattern
-:test-pattern}`. `watch/select-plan` builds the plan: it takes the normal
+where `s` is `{:all? :failed? :namespaces :reload-config? :reload-deps?
+:ns-pattern :test-pattern}`. `watch/select-plan` builds the plan: it takes the normal
 `volley.select/plan` (so the config's suites, ns-patterns, `:focus`,
 `:skip` and meta filters always apply), then keeps only the namespaces that
 

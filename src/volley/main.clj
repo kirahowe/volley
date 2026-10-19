@@ -262,7 +262,8 @@
 (defn- watch-tests!
   "Watch mode: run `volley.shell.watch` with this namespace's effect carrier.
   `reload` re-reads tests.edn for the loop; `worker-command` rebuilds the
-  worker command for a reloaded config."
+  worker command for a reloaded config, recomputing the classpath when
+  asked to."
   [command cfg loaded opts reload worker-command]
   (let [ctx {:queue (pool/new-queue)
              :command command}]
@@ -327,7 +328,7 @@
                                :stream :err})
                 254)
             (:watch? config) (watch-tests! command config loaded opts #(reload-config args env)
-                                           #(runtime/worker-command % (:aliases (:options cli))))
+                                           #(runtime/worker-command %1 (:aliases (:options cli)) {:refresh? %2}))
             :else (run-tests! plan command opts))))))
 
 (defn -main

@@ -269,12 +269,14 @@ namespace is loaded in the worker that runs it unless you pass `--preload`.
 
 `--watch` (or `:watch? true` in `tests.edn`) runs everything once and then
 keeps running. volley polls the modification times of every file under the
-suites' `:test-paths` and `:source-paths`, and of `tests.edn`, every 200ms.
+suites' `:test-paths` and `:source-paths`, and of `tests.edn`, `deps.edn` and
+`bb.edn`, every 200ms.
 When files change it works out which test namespaces depend on them (from
 the `ns` forms) and reruns just those in fresh worker processes, so no
 state survives between runs. New and deleted test files are picked up. A
-change to `tests.edn` reloads the config and reruns everything. volley does
-not watch `deps.edn`; restart it after changing dependencies. If a run is
+change to `tests.edn` reloads the config and reruns everything. A change to
+`deps.edn` or `bb.edn` does the same and also computes the workers'
+classpath again, so new dependencies and paths reach the next run. If a run is
 still going when files change, volley cancels it and starts a new one.
 
 Each run ends with the counts line of the summary, without the slowest

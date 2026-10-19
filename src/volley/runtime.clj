@@ -204,6 +204,28 @@
   (str/join sep (distinct (remove str/blank? entries))))
 
 ;; ---------------------------------------------------------------------------
+;; Recomputing the parent's classpath (watch mode, after deps.edn or bb.edn
+;; changed)
+
+(defn parent-classpath-command
+  "The command that prints the classpath the parent would start with now:
+  babashka's for the bb.edn in the current directory, or `clojure -Spath`
+  with the `aliases` of the JVM parent's basis."
+  [{:keys [bb? aliases]}]
+  (if bb?
+    ["bb" "-e" "(print (babashka.classpath/get-classpath))"]
+    (spath-command aliases)))
+
+(defn refreshed-classpath
+  "The `fresh` classpath followed by the entries of the `startup` one it
+  lacks. Fresh entries come first so a changed dependency version wins;
+  the startup entries stay because they hold what the parent was started
+  with on top of the project file (a bb task's `:extra-paths` and
+  `:extra-deps`, volley itself)."
+  [fresh startup sep]
+  (join-classpath (concat (split-classpath fresh sep) (split-classpath startup sep)) sep))
+
+;; ---------------------------------------------------------------------------
 ;; Commands
 
 (def default-jvm-args

@@ -61,12 +61,17 @@
 ;; ---------------------------------------------------------------------------
 ;; JVM parent: forward its JVM options and classpath
 
+(defn- basis
+  "The JVM parent's basis (from the Clojure CLI), or nil."
+  []
+  (when-not (bb?)
+    (try (some-> (System/getProperty "clojure.basis") slurp edn/read-string)
+         (catch Exception _ nil))))
+
 (defn invocation
   "The command the user ran volley with (`volley.runtime/invocation`)."
   []
-  (let [basis (when-not (bb?)
-                (try (some-> (System/getProperty "clojure.basis") slurp edn/read-string)
-                     (catch Exception _ nil)))]
+  (let [basis (basis)]
     (runtime/invocation {:command (System/getenv "VOLLEY_COMMAND")
                          :bb? (bb?)
                          :task (System/getProperty "babashka.task")
@@ -149,29 +154,49 @@
                    (catch Exception _ nil))
               {:classpath classpath :aliases aliases :jvm-opts jvm-opts :cached? false}))))))
 
+(defn- base-classpath
+  "The parent's classpath, or with `refresh?` the classpath it would start
+  with now (`volley.runtime/refreshed-classpath`), for watch mode after
+  deps.edn or bb.edn changed. Returns `{:classpath s}` or `{:error msg}`."
+  [refresh?]
+  (if-not refresh?
+    {:classpath (parent-classpath)}
+    (try
+      (let [cmd (runtime/parent-classpath-command
+                 {:bb? (bb?) :aliases (get-in (basis) [:basis-config :aliases])})
+            {:keys [exit out err]} (-> (p/process cmd {:out :string :err :string}) deref)]
+        (if (zero? exit)
+          {:classpath (runtime/refreshed-classpath (str/trim out) (parent-classpath) sep)}
+          {:error (str (str/join " " cmd) " failed: " (str/trim err))}))
+      (catch Exception e
+        {:error (str "could not recompute the classpath: " (ex-message e))}))))
+
 ;; ---------------------------------------------------------------------------
 ;; The worker command
 
 (defn worker-command
   "The worker command for `cfg` (a normalized config) and the
-  `--aliases` the user gave (keywords, or nil). Returns `{:command argv}`, or
-  `{:error msg}` when a JVM classpath cannot be computed."
-  [cfg aliases]
-  (if (= :jvm (:runtime cfg))
-    (let [on-jvm? (not (bb?))
-          {:keys [classpath error jvm-opts]} (if on-jvm?
-                                      {:classpath (parent-classpath)}
-                                      (project-classpath aliases))
-          root (volley-root)
-          classpath (if (and root (not on-jvm?))
-                      (str root sep classpath)
-                      classpath)]
-      (if error
-        {:error error}
-        {:command (runtime/jvm-worker-command
-                   {:java (java-executable)
-                    :jvm-args (if on-jvm?
-                                (runtime/forward-jvm-args (input-arguments))
-                                jvm-opts)
-                    :classpath (with-test-paths classpath cfg)})}))
-    {:command ["bb" "-cp" (with-test-paths (parent-classpath) cfg) "-m" "volley.shell.worker"]}))
+  `--aliases` the user gave (keywords, or nil). With `:refresh?` the
+  parent's classpath is computed again rather than reused (a computed JVM
+  classpath is keyed on deps.edn and needs no flag). Returns `{:command
+  argv}`, or `{:error msg}` when a classpath cannot be computed."
+  ([cfg aliases] (worker-command cfg aliases {}))
+  ([cfg aliases {:keys [refresh?]}]
+   (let [on-jvm? (not (bb?))
+         jvm? (= :jvm (:runtime cfg))
+         {:keys [classpath error jvm-opts]} (if (and jvm? (not on-jvm?))
+                                              (project-classpath aliases)
+                                              (base-classpath refresh?))
+         root (volley-root)]
+     (cond
+       error {:error error}
+       jvm? {:command (runtime/jvm-worker-command
+                       {:java (java-executable)
+                        :jvm-args (if on-jvm?
+                                    (runtime/forward-jvm-args (input-arguments))
+                                    jvm-opts)
+                        :classpath (with-test-paths (if (and root (not on-jvm?))
+                                                      (str root sep classpath)
+                                                      classpath)
+                                     cfg)})}
+       :else {:command ["bb" "-cp" (with-test-paths classpath cfg) "-m" "volley.shell.worker"]}))))

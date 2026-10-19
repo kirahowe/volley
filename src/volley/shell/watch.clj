@@ -22,8 +22,9 @@
                       input and carries out its effects, `[world state code]`
   * `:print!`         `(fn [{:lines :stream}])`
   * `:reload-config`  `(fn [])` returning `{:config c}` or `{:error msg}`
-  * `:worker-command` `(fn [config])` returning `{:command argv}` or
-                      `{:error msg}`, for a reloaded config
+  * `:worker-command` `(fn [config refresh?])` returning `{:command argv}`
+                      or `{:error msg}`, for a reloaded config; with
+                      `refresh?` the classpath is computed again
   * `:ctx`'s `:command` is only the first run's worker command; the session
     keeps the current one
   * `:config`, `:config-file`, `:cli-suites`
@@ -58,7 +59,7 @@
   (vec (distinct (mapcat (fn [s] (concat (:test-paths s) (:source-paths s))) (:tests config)))))
 
 (defn- take-snapshot [env config]
-  (bfs/mtime-snapshot (watch-dirs config) [(:config-file env)] watch/watched-file?))
+  (bfs/mtime-snapshot (watch-dirs config) (into [(:config-file env)] watch/deps-files) watch/watched-file?))
 
 (defn- read-infos
   "`{path ns-info}` for every Clojure file under the watched directories."
@@ -121,20 +122,25 @@
 
 (defn- reload
   "Re-read tests.edn. The worker command is rebuilt from the new config,
-  since its classpath includes the suites' test paths."
-  [env sess]
-  (let [{:keys [config error]} ((:reload-config env))
-        cmd (when config ((:worker-command env) config))
+  since its classpath includes the suites' test paths. Once deps.edn or
+  bb.edn has changed, every rebuild computes the classpath again instead
+  of reusing the one the parent started with (`:refresh-classpath?`
+  stays set)."
+  [env sess reload-deps?]
+  (let [refresh? (boolean (or reload-deps? (:refresh-classpath? sess)))
+        {:keys [config error]} ((:reload-config env))
+        cmd (when config ((:worker-command env) config refresh?))
         error (or error (:error cmd))
         complain! #((:print! env) {:lines [(str "ERROR: " % " (keeping the previous configuration)")]
                                    :stream :err})]
     (if (and config (not error))
-      (assoc sess :config config :command (:command cmd)
+      (assoc sess :config config :command (:command cmd) :refresh-classpath? refresh?
              :infos (read-infos config) :snapshot (take-snapshot env config))
       (do (complain! error) sess))))
 
 (defn- start-run [{:keys [ctx run-effects! engine-opts] :as env} sess selection]
-  (let [sess (cond-> sess (:reload-config? selection) (->> (reload env)))
+  (let [sess (cond-> sess
+               (:reload-config? selection) (as-> s (reload env s (:reload-deps? selection))))
         plan (watch/select-plan (:config sess) (:infos sess) (:cli-suites env) selection
                                 (get-in sess [:ws :last :failed]))]
     (if (watch/plan-empty? plan)

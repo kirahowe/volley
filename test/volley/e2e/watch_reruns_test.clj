@@ -59,3 +59,22 @@
         (is (= #{"wx.alpha-test" "wx.beta-test" "wx.plain-test"} (ws/ran (ws/await-run! w 8)))))
       (finally
         (is (not= ::e2e/timeout (ws/stop! w)) "the process ends when killed")))))
+
+(deftest watch-recomputes-the-classpath-when-bb-edn-changes
+  (let [dir (e2e/copy-project "watch" {"extra/xtra/lib.clj" "(ns xtra.lib)\n\n(def answer 42)\n"
+                                       "test/wx/extra_test.clj"
+                                       (str "(ns wx.extra-test\n  (:require [clojure.test :refer [deftest is]]\n"
+                                            "            [xtra.lib :as lib]))\n\n"
+                                            "(deftest answers (is (= 42 lib/answer)))\n")})
+        w (ws/start! dir (ws/volley-command "--watch"))]
+    (try
+      (testing "a namespace outside the classpath fails to load"
+        (is (str/includes? (ws/await-run! w 1) "FAIL")))
+      (testing "adding its directory to bb.edn reruns everything with the new classpath"
+        (ws/write! dir "bb.edn" "{:paths [\"extra\"]}\n")
+        (let [text (ws/await-run! w 2)]
+          (is (str/includes? text "Change detected: bb.edn"))
+          (is (contains? (ws/ran text) "wx.extra-test"))
+          (is (str/includes? text "PASS  Waiting for file changes"))))
+      (finally
+        (is (not= ::e2e/timeout (ws/stop! w)) "the process ends when killed")))))

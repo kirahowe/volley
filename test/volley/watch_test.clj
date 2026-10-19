@@ -110,13 +110,32 @@
         due (watch/step s {:event :tick :at (+ 1000 watch/debounce-ms)})]
     (is (empty? (:effects too-soon)))
     (is (= [{:all? false :failed? false :namespaces '#{a-test} :reload-config? false
-             :ns-pattern nil :test-pattern nil}]
+             :reload-deps? false :ns-pattern nil :test-pattern nil}]
            (map :selection (starts (:effects due)))))))
 
 (deftest a-config-change-reruns-everything-with-a-reload
   (let [{s :state} (watch/step fresh {:event :files-changed :paths ["tests.edn"] :affected '#{} :at 0})
         {:keys [effects]} (watch/step s {:event :tick :at 1000})]
-    (is (= [true true] ((juxt :all? :reload-config?) (:selection (first (starts effects))))))))
+    (is (= [true true false] ((juxt :all? :reload-config? :reload-deps?) (:selection (first (starts effects))))))))
+
+(deftest a-deps-change-reruns-everything-with-a-fresh-classpath
+  (doseq [file ["deps.edn" "bb.edn"]]
+    (let [{s :state} (watch/step fresh {:event :files-changed :paths [file] :affected '#{} :at 0})
+          {:keys [effects]} (watch/step s {:event :tick :at 1000})]
+      (is (= [true true true] ((juxt :all? :reload-config? :reload-deps?) (:selection (first (starts effects)))))
+          file))))
+
+(deftest a-deps-change-during-a-run-survives-the-merge
+  (let [[s _] (run-inputs fresh [{:event :start}
+                                 {:event :files-changed :paths ["deps.edn"] :affected #{} :at 0}
+                                 {:event :tick :at 500}
+                                 {:event :files-changed :paths ["src/a.clj"] :affected '#{a-test} :at 600}])
+        {:keys [effects]} (watch/step s {:event :tick :at 1000})]
+    (is (:reload-deps? (:selection (last (starts effects)))))))
+
+(deftest deps-files-are-the-project-files
+  (is (every? watch/deps-file? ["deps.edn" "bb.edn"]))
+  (is (not-any? watch/deps-file? ["src/deps.edn" "tests.edn" "deps.edn~"])))
 
 (deftest a-change-while-running-cancels-and-keeps-the-running-selection
   (let [[s _] (run-inputs fresh [{:event :files-changed :paths ["src/a.clj"] :affected '#{a-test} :at 0}

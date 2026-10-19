@@ -18,7 +18,9 @@
       {:effect :quit}
 
   A selection is `{:all? bool :failed? bool :namespaces #{ns}
-  :reload-config? bool :ns-pattern str-or-nil :test-pattern str-or-nil}`.
+  :reload-config? bool :reload-deps? bool :ns-pattern str-or-nil
+  :test-pattern str-or-nil}`. `:reload-deps?` asks for the worker classpath
+  to be computed again, after deps.edn or bb.edn changed.
   Without `:all?`, it names the namespaces to run: `:namespaces` plus, with
   `:failed?`, the ones that failed last time (only their failed vars when
   they are not also in `:namespaces`)."
@@ -54,6 +56,17 @@
              (str/ends-with? file "~")
              (re-matches #"#.*#" file)
              (re-find #"\.(swp|swx|tmp)$" file)))))
+
+(def deps-files
+  "The project files that decide the classpath, relative to the project
+  directory. The shell watches them, and a change to one recomputes the
+  worker classpath."
+  ["deps.edn" "bb.edn"])
+
+(defn deps-file?
+  "True for a snapshot path that is one of `deps-files`."
+  [path]
+  (boolean (some #{(str path)} deps-files)))
 
 (defn changes
   "What happened between two snapshots (`{path mtime}`): paths present only
@@ -108,7 +121,8 @@
   {:all? (boolean (or (:all? a) (:all? b)))
    :failed? (boolean (or (:failed? a) (:failed? b)))
    :namespaces (set/union (set (:namespaces a)) (set (:namespaces b)))
-   :reload-config? (boolean (or (:reload-config? a) (:reload-config? b)))})
+   :reload-config? (boolean (or (:reload-config? a) (:reload-config? b)))
+   :reload-deps? (boolean (or (:reload-deps? a) (:reload-deps? b)))})
 
 (defn compile-pattern
   "A regex for the non-blank string `s`, or nil when `s` is blank or not a
@@ -221,18 +235,19 @@
    :last nil                  ; outcome of the last finished run
    :last-selection nil        ; selection of the last finished run
    :running nil               ; selection of the run in progress
-   :pending nil               ; {:paths #{} :affected #{} :config? bool :last-at ms}
+   :pending nil               ; {:paths #{} :affected #{} :config? bool :deps? bool :last-at ms}
    :keys? (boolean keys?)
    :color? (boolean color?)
    :config-file config-file})
 
 (defn- add-pending
   "Fold a burst member into the pending change. Never drops a path."
-  [pending {:keys [paths affected config? at]}]
-  (-> (or pending {:paths #{} :affected #{} :config? false})
+  [pending {:keys [paths affected config? deps? at]}]
+  (-> (or pending {:paths #{} :affected #{} :config? false :deps? false})
       (update :paths into paths)
       (update :affected into affected)
       (update :config? #(boolean (or % config?)))
+      (update :deps? #(boolean (or % deps?)))
       (assoc :last-at at)))
 
 (defn due?
@@ -372,12 +387,13 @@
     (str "Change detected: " (str/join ", " shown) (when (pos? more) (str " and " more " more")))))
 
 (defn- fire-pending [state]
-  (let [{:keys [paths affected config?]} (:pending state)
+  (let [{:keys [paths affected config? deps?]} (:pending state)
         state (assoc state :pending nil)]
     (if (and (= :running (:mode state)) (empty? affected) (not config?))
       {:state state :effects []}
       (begin state
-             {:all? (boolean config?) :failed? false :namespaces affected :reload-config? (boolean config?)}
+             {:all? (boolean config?) :failed? false :namespaces affected
+              :reload-config? (boolean config?) :reload-deps? (boolean deps?)}
              [(print* (change-banner paths))]))))
 
 (defn- forget-gone
@@ -409,20 +425,22 @@
       {:event :tick :at ms}
       {:event :run/finished :outcome o :empty? bool}
 
-  `:files-changed` may also carry `:config? true` for a change to tests.edn
-  (the shell sets it from the paths and `:config-file`). Once the state is
-  `:quit`, inputs are ignored. Returns `{:state :effects}`."
-  [state {:keys [event at] :as input}]
+  A change to `:config-file` (or `:config? true` on the input) reruns
+  everything with a fresh config; a change to deps.edn or bb.edn
+  (`deps-file?`) also recomputes the classpath. Once the state is `:quit`,
+  inputs are ignored. Returns `{:state :effects}`."
+  [state {:keys [event at paths] :as input}]
   (if (= :quit (:mode state))
     (no-op state)
     (case event
       :start (begin state {:all? true} [])
       :key (on-key state input)
-      :files-changed (if (empty? (:paths input))
+      :files-changed (if (empty? paths)
                        (no-op state)
-                       (no-op (update state :pending add-pending
-                                      (assoc input :config? (or (:config? input)
-                                                                (some #{(:config-file state)} (:paths input)))))))
+                       (let [deps? (boolean (some deps-file? paths))
+                             config? (or (:config? input) deps? (some #{(:config-file state)} paths))]
+                         (no-op (update state :pending add-pending
+                                        (assoc input :config? config? :deps? deps?)))))
       :tick (if (and (not= :prompting (:mode state)) (due? (:pending state) at))
               (fire-pending state)
               (no-op state))
