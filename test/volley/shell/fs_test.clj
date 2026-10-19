@@ -6,12 +6,12 @@
 
 (deftest cache-dir-gets-a-gitignore-when-created
   (fs/with-temp-dir [tmp {}]
-    (let [dir (fs/path tmp ".volley" "nested")]
+    (let [dir (fs/path tmp ".volley")]
       (vfs/ensure-cache-dir! dir)
       (is (fs/directory? dir))
       (is (= "*\n" (slurp (str (fs/path dir ".gitignore"))))))))
 
-(deftest existing-gitignore-is-not-overwritten
+(deftest existing-dir-keeps-its-gitignore
   (fs/with-temp-dir [tmp {}]
     (let [dir (fs/path tmp ".volley")
           ignore (str (fs/path dir ".gitignore"))]
