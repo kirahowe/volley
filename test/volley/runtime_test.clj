@@ -96,17 +96,30 @@
   (prop/for-all [in g/worker-plan-input]
     (not (:in-process? (runtime/worker-plan (assoc in :history {}))))))
 
-(defspec in-process-needs-short-runs-on-record 300
+(defspec in-process-needs-a-short-mode-on-record 300
+  ;; whatever else holds, some mode must typically have been short
   (prop/for-all [in g/worker-plan-input]
-    (let [{:keys [in-process-ms workers-ms workers-streak]} (:history in)]
-      (= (:in-process? (runtime/worker-plan in))
-         (and (:in-process-ok? in) (not (:workers-set? in))
-              (or (short? (runtime/typical in-process-ms))
-                  (and (short? (runtime/typical workers-ms))
-                       (or (empty? in-process-ms)
-                           (and (= 1 (count in-process-ms))
-                                (not (> (or (:serial-ms in) 0) runtime/in-process-limit-ms)))
-                           (>= (or workers-streak 0) runtime/retry-after)))))))))
+    (let [{:keys [in-process-ms workers-ms]} (:history in)]
+      (or (not (:in-process? (runtime/worker-plan in)))
+          (short? (runtime/typical in-process-ms))
+          (short? (runtime/typical workers-ms))))))
+
+(defspec short-in-process-runs-stay-in-process 300
+  (prop/for-all [in g/worker-plan-input
+                 times (gen/vector (gen/choose 0 runtime/in-process-limit-ms) 1 3)
+                 serial (gen/choose 0 runtime/in-process-limit-ms)]
+    (:in-process? (runtime/worker-plan (-> in
+                                           (assoc :in-process-ok? true :workers-set? false :serial-ms serial)
+                                           (assoc-in [:history :in-process-ms] times))))))
+
+(defspec slow-in-process-runs-wait-for-the-retry 300
+  ;; two or more slow in-process runs keep worker processes until
+  ;; retry-after short worker runs have passed
+  (prop/for-all [in g/worker-plan-input
+                 times (gen/vector (gen/choose (inc runtime/in-process-limit-ms) 120000) 2 3)
+                 streak (gen/choose 0 (dec runtime/retry-after))]
+    (not (:in-process? (runtime/worker-plan (update in :history assoc
+                                                    :in-process-ms times :workers-streak streak))))))
 
 (defspec long-serial-work-gets-one-try-until-the-retry 300
   ;; a suite of 10s on four JVM workers but 30s on one thread: after one
