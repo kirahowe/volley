@@ -31,9 +31,9 @@ All notable changes to volley are recorded here. The format follows
   exit 249, as in Kaocha, instead of a warning. volley looks for the
   definition through the namespace's requires and wrapper macros, and
   ignores commented-out ones. (volley#7)
-- A namespace that two test paths define runs once, from the file that
-  comes first on the classpath; Kaocha runs it twice. This is now
-  documented as a deliberate divergence. (volley#11)
+- The docs now record a deliberate divergence from Kaocha: a namespace
+  that two test paths define runs once, from the file that comes first on
+  the classpath, where Kaocha runs it twice. (volley#11)
 
 ### Fixed
 
