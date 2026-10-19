@@ -28,7 +28,7 @@
     (is (str/includes? out " ✓ shop.passing-test (2 tests)") "other namespaces still run")))
 
 (deftest a-crashing-worker-is-one-failure
-  (let [{:keys [exit out]} (e2e/run "crash" [])]
+  (let [{:keys [exit out]} (e2e/run "crash" ["--no-randomize"])]
     (is (= 1 exit))
     (is (str/includes? out "CRASH  boom.exit-test/exits-the-process  worker exited with code 3"))
     (is (str/includes? out "| about to exit"))
@@ -36,14 +36,14 @@
     (is (str/starts-with? (e2e/summary-line out) "3 tests | 2 passed | 0 failed | 1 error |"))))
 
 (deftest a-worker-that-exits-0-mid-namespace-is-a-crash
-  (let [{:keys [exit out]} (e2e/run "exit-zero" ["--workers" "1"])]
+  (let [{:keys [exit out]} (e2e/run "exit-zero" ["--workers" "1" "--no-randomize"])]
     (is (= 1 exit) "System/exit 0 in a test must not pass the run")
     (is (str/includes? out "CRASH  ez.exits-test/exits-cleanly  worker exited with code 0"))
     (is (str/includes? out " ✓ ez.survivor-test (1 test)"))))
 
 (deftest a-throwing-each-fixture-lists-the-tests-it-kept-from-running
-  (let [[exit res] (e2e/result "each-fixture-throws" [])
-        {:keys [out]} (e2e/run "each-fixture-throws" [])]
+  (let [[exit res] (e2e/result "each-fixture-throws" ["--no-randomize"])
+        {:keys [out]} (e2e/run "each-fixture-throws" ["--no-randomize"])]
     (is (= 1 exit))
     (is (= {'et.a-test/a :passed 'et.a-test/b :passed} (e2e/executed res)))
     (is (= {:status :skipped :reason :fixture-failed :pass 0 :fail 0 :error 0}

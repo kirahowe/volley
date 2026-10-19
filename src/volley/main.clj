@@ -286,7 +286,8 @@
 (defn run
   "Run volley with `args` and return the exit code instead of exiting."
   [args]
-  (let [env (bfs/environment)
+  (let [;; the seed of a randomized run without --seed, as kaocha.plugin.randomize draws it
+        env (assoc (bfs/environment) :seed (rand-int Integer/MAX_VALUE))
         {:keys [cli config] :as loaded} (load-config args env)
         plan (when-not (or (:read-error loaded) (seq (:errors config)))
                (select/plan config (discover-all config) (:suites cli)))
@@ -308,6 +309,7 @@
                                    (not= "tests.edn" (:config-file loaded))
                                    (str " --config-file " (:config-file loaded)))
                      :bindings (:bindings config)
+                     :seed (:seed config)
                      :config config
                      :capture-output? (:capture-output? config)
                      :reporter mode

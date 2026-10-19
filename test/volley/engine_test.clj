@@ -157,6 +157,18 @@
     (is (str/includes? out "volley: a message from worker 1 (running a-test) could not be read: EOF while reading"))
     (is (str/includes? out "its protocol output could not be read and it went silent"))))
 
+(defn- first-run-message [opts]
+  (let [plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
+        {state :state} (engine/init plan (merge {:workers 1 :reporter :ci :width 120 :started-at 0} opts))
+        {state :state} (engine/start state)
+        {effects :effects} (engine/step state {:event :worker/ready :worker 1 :at 1})]
+    (some #(when (= :run (get-in % [:msg :op])) (:msg %)) effects)))
+
+(deftest run-messages-carry-the-run-seed
+  ;; each worker orders a namespace's vars from it (volley.order)
+  (is (= 42 (:seed (first-run-message {:seed 42}))))
+  (is (not (contains? (first-run-message {}) :seed))))
+
 (deftest a-worker-exiting-0-mid-namespace-is-a-crash
   (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
            :fates {'a-test [:crash 0]}

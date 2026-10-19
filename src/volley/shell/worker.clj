@@ -11,6 +11,7 @@
   and can never interleave with a protocol line."
   (:require
    [volley.filters :as filters]
+   [volley.order :as order]
    [volley.protocol :as protocol]
    [volley.shell.hooks :as hooks]
    [clojure.java.io :as io]
@@ -33,12 +34,14 @@
 
 (defn test-vars-of
   "Interned vars of `ns-obj` that carry `:test`, ordered by name like
-  Kaocha's `kaocha.type.ns/load`."
-  [ns-obj]
-  (->> (ns-interns ns-obj)
-       (sort-by key)
-       (map val)
-       (filter (comp :test meta))))
+  Kaocha's `kaocha.type.ns/load`, or with a run `seed` in the random order
+  `volley.order` picks for the namespace."
+  ([ns-obj] (test-vars-of ns-obj nil))
+  ([ns-obj seed]
+   (let [tests (into (sorted-map) (filter (comp :test meta val)) (ns-interns ns-obj))]
+     (if seed
+       (map tests (order/shuffle-names seed (ns-name ns-obj) (keys tests)))
+       (vals tests)))))
 
 (defn partition-vars
   "Ask `decide` (the 5-arity of `volley.filters/decide`) about each var, with
@@ -504,7 +507,7 @@
             select (filters/prepare select)
             ns-meta (ns-metadata select ns-obj)
             {:keys [run skipped] :as parts}
-            (partition-vars decide select ns ns-meta (test-vars-of ns-obj))]
+            (partition-vars decide select ns ns-meta (test-vars-of ns-obj (:seed cmd)))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
         (if (filters/runs-namespace? ns-meta parts)

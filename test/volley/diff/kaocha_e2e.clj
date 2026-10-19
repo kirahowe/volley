@@ -109,7 +109,7 @@
 (deftest fail-fast-stops-after-the-failing-var-like-kaocha
   (testing "kaocha.testable/run-testables stops at the first failed var; so does volley's worker"
     (let [[kexit kres] (kaocha "fail-fast" ["--no-randomize"])
-          [bexit bres] (volley "fail-fast" ["--workers" "1"])
+          [bexit bres] (volley "fail-fast" ["--workers" "1" "--no-randomize"])
           ran-before {'ff.a-fails-test/after-the-failure {:status :passed :pass 1 :fail 0 :error 0}
                       'ff.a-fails-test/first-failure {:status :failed :pass 0 :fail 1 :error 0}}]
       (is (= 1 kexit bexit))

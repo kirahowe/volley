@@ -923,6 +923,8 @@
                       " (" (plural (:total assertions) "assertion") ", " (fmt-ms wall-ms) ")")
         lines (join-fitting parts " | " (:width opts default-width))]
     (->> (concat [""]
+                 ;; kaocha.plugin.randomize prints the seed of a failed run
+                 (when (and (:seed opts) (not ok?)) [(str "Randomized with --seed " (:seed opts)) ""])
                  (map #(paint opts style %) lines)
                  (when-let [s (seq (not-run-lines opts state))] (cons "" s))
                  (when-let [s (and (not (:compact? opts)) (seq (slowest-lines opts state)))] (cons "" s))

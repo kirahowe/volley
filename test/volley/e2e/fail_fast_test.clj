@@ -8,7 +8,7 @@
    [clojure.test :refer [deftest is testing]]))
 
 (deftest fail-fast-stops-and-lists-what-did-not-run
-  (let [{:keys [exit out]} (e2e/run "fail-fast" ["--workers" "1"])]
+  (let [{:keys [exit out]} (e2e/run "fail-fast" ["--workers" "1" "--no-randomize"])]
     (is (= 1 exit))
     (is (str/includes? out "Not run (stopped by fail-fast):\n  ff.n1-test, ff.n2-test, ff.n3-test, ff.n4-test"))
     (is (not (str/includes? out "ff.n1-test (")) "nothing after the failure ran")))
@@ -16,8 +16,8 @@
 (deftest fail-fast-kills-the-other-workers-at-once
   (let [t0 (System/currentTimeMillis)
         ;; the CI output and the result come from two runs, side by side
-        result (future (e2e/result "fail-fast-parallel" ["--workers" "3"]))
-        {:keys [exit out]} (e2e/run "fail-fast-parallel" ["--workers" "3"])
+        result (future (e2e/result "fail-fast-parallel" ["--workers" "3" "--no-randomize"]))
+        {:keys [exit out]} (e2e/run "fail-fast-parallel" ["--workers" "3" "--no-randomize"])
         [_ res] @result
         elapsed (- (System/currentTimeMillis) t0)]
     (is (= 1 exit) "the failure's exit code")

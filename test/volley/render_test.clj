@@ -442,6 +442,15 @@
       (is (str/includes? text "1 test | 0 passed | 1 failed | 0 errors"))
       (is (str/includes? text "  volley --focus r-test/t0") "volley when the shell did not say"))))
 
+(deftest a-failed-randomized-run-prints-its-seed
+  ;; kaocha.plugin.randomize post-run: "Randomized with --seed N" when the run failed
+  (let [lines (str/split-lines (render/summary (failing-vars 1) {:width 200 :color? false :seed 42}))]
+    (is (= ["" "Randomized with --seed 42" ""] (take 3 lines)))
+    (is (str/starts-with? (nth lines 3) "1 test |")))
+  (testing "not when the run passed, nor without a seed"
+    (is (not (str/includes? (render/summary (rs/init {:namespaces []}) {:seed 42}) "--seed")))
+    (is (not (str/includes? (render/summary (failing-vars 1) {:width 200}) "Randomized")))))
+
 (deftest a-qualified-equals-is-taken-apart-too
   (let [actual (list 'not (list 'clojure.core/= 1 2))
         report (render/failure-report

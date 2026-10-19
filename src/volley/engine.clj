@@ -177,7 +177,8 @@
   parent after the summary. `:junit-xml` is the config's `:junit-xml` plus
   `:timestamp` and `:cwd`: the report is written after the summary.
   `:bindings` (`{var-sym value}`, Kaocha's `:kaocha/bindings`) goes to the
-  workers with every run message. `:config` is the normalized config, for
+  workers with every run message, and so does `:seed`, the run seed of a
+  randomized run, which the summary of a failed run prints. `:config` is the normalized config, for
   the Kaocha-shaped result `--print-result` prints. `:compact-summary?`
   (watch mode) ends the run with the counts line alone: no slowest tests,
   and no rerun command, which `f` does there.
@@ -234,6 +235,7 @@
       suite (assoc :suite suite)
       (seq preload) (assoc :preload preload)
       (seq (:bindings opts)) (assoc :bindings (:bindings opts))
+      (:seed opts) (assoc :seed (:seed opts))
       (:fail-fast? opts) (assoc :fail-fast? true))))
 
 (defn- decide
@@ -261,6 +263,7 @@
 (defn- render-opts [{:keys [opts now]} final?]
   (cond-> {:width (:width opts 80) :color? (boolean (:color? opts)) :now now :final? final?}
     (:invocation opts) (assoc :invocation (:invocation opts))
+    (:seed opts) (assoc :seed (:seed opts))
     (:compact-summary? opts) (assoc :compact? true)))
 
 (defn- mode [state] (get-in state [:opts :reporter] :ci))

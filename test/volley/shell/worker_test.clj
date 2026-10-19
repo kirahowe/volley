@@ -3,6 +3,7 @@
   dev-resources/exec, compared with plain clojure.test."
   (:require
    [volley.filters :as filters]
+   [volley.order :as order]
    [volley.run-state :as rs]
    [volley.shell.hooks :as hooks]
    [volley.shell.worker :as worker]
@@ -45,6 +46,19 @@
                    exec.contexts-test exec.skip-test exec.sync-test]]
     (testing (str ns-sym)
       (is (= (run-tests-counts ns-sym) (counts (run-events ns-sym)))))))
+
+(deftest a-seed-shuffles-the-vars-of-a-namespace
+  ;; kaocha.plugin.randomize: name order without a seed, a seeded order with one
+  (let [ns-obj (create-ns 'volley.worker-test.shuffled)
+        names (mapv #(symbol (str "t" %)) (range 12))]
+    (try
+      (doseq [n names] (intern ns-obj (with-meta n {:test (fn [])}) nil))
+      (intern ns-obj 'helper nil)
+      (let [order-of (fn [& seed] (map (comp :name meta) (apply worker/test-vars-of ns-obj seed)))]
+        (is (= (sort names) (order-of)))
+        (is (= (order/shuffle-names 7 'volley.worker-test.shuffled names) (order-of 7)))
+        (is (not= (order-of) (order-of 7))))
+      (finally (remove-ns 'volley.worker-test.shuffled)))))
 
 (deftest event-framing
   (let [events (run-events 'exec.pass-test)]
