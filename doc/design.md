@@ -80,6 +80,7 @@ Pure core:
 | `volley.watch` | Watch mode: mtime snapshot diffing, graph updates, the rerun plan (`select-plan`), and the UI state machine `(step state input) → {:state :effects}` for keys, file changes and finished runs. |
 | `volley.junit` | Run state → the Ant JUnit XML report `kaocha.plugin/junit-xml` writes. |
 | `volley.hooks` | Kaocha's hooks plugin and `:volley/worker-setup` as data: reading them from tests.edn, the `:configure` message, and the Kaocha-shaped result `post-summary` receives. |
+| `volley.order` | The seeded random order of a namespace's vars, from the run seed and the namespace name. Loaded by the workers. |
 | `volley.testable` | The Kaocha-shaped testables and test plan hooks receive in a worker. |
 | `volley.runtime` | Which worker runtime and how many workers by default; which JVM options to forward; which aliases and cache key for a computed classpath; the JVM worker command line. |
 
