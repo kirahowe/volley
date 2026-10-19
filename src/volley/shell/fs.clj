@@ -62,6 +62,15 @@
    :cpus (.availableProcessors (Runtime/getRuntime))
    :bb? (some? (System/getProperty "babashka.version"))})
 
+(defn run-info
+  "Where and when a run starts, for its JUnit report: `:cwd`, and
+  `:timestamp`, now as an ISO local date-time to the second, as
+  kaocha-junit-xml writes its timestamps."
+  []
+  {:cwd (System/getProperty "user.dir")
+   :timestamp (.format java.time.format.DateTimeFormatter/ISO_LOCAL_DATE_TIME
+                       (.truncatedTo (java.time.LocalDateTime/now) java.time.temporal.ChronoUnit/SECONDS))})
+
 (defn read-timings
   "Durations saved by the last run, `{ns-sym millis}`; empty when absent or
   unreadable."

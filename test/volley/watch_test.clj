@@ -4,7 +4,6 @@
    [volley.discover :as discover]
    [volley.filters :as filters]
    [volley.gen.watch :as gw]
-   [volley.hooks :as hooks]
    [volley.run-state :as rs]
    [volley.select :as select]
    [volley.watch :as watch]
@@ -401,24 +400,46 @@
 ;; ---------------------------------------------------------------------------
 ;; Run options of a reloaded config
 
-(defspec run-opts-takes-seed-and-hooks-from-the-config 200
+(def ^:private run-info {:timestamp "2026-10-18T12:00:00" :cwd "/work"})
+
+(defspec run-opts-takes-every-config-option-from-the-config 200
   (prop/for-all [opts gw/engine-opts c gw/reloaded-config]
-    (let [o (watch/run-opts opts c)
-          derived [:seed :configure :post-summary]]
-      (and (= (:seed c) (:seed o))
-           (= (hooks/engine-opts c) (select-keys o [:configure :post-summary]))
-           (= (apply dissoc opts derived) (apply dissoc o derived))))))
+    (let [o (watch/run-opts opts c run-info)
+          derived (config/engine-opts c run-info)]
+      (and (= derived (select-keys o (keys derived)))
+           (= (apply dissoc opts (keys derived)) (apply dissoc o (keys derived)))))))
 
 (deftest a-reloaded-config-decides-the-run-seed
   (let [started (config/normalize {:kaocha.plugin.randomize/seed 1234} {} {:seed 7})
-        opts {:workers 2 :seed (:seed started)}]
-    (is (= 1234 (:seed (watch/run-opts opts started))))
+        opts {:reporter :ci :seed (:seed started)}
+        run-opts #(watch/run-opts opts % run-info)]
+    (is (= 1234 (:seed (run-opts started))))
     (testing "turning randomize off in tests.edn drops the seed"
-      (is (nil? (:seed (watch/run-opts opts (config/normalize {:kaocha.plugin.randomize/randomize? false}
-                                                              {} {:seed 7}))))))
+      (is (nil? (:seed (run-opts (config/normalize {:kaocha.plugin.randomize/randomize? false}
+                                                   {} {:seed 7}))))))
     (testing "a new seed in tests.edn is used"
-      (is (= 99 (:seed (watch/run-opts opts (config/normalize {:kaocha.plugin.randomize/seed 99}
-                                                              {} {:seed 7}))))))
+      (is (= 99 (:seed (run-opts (config/normalize {:kaocha.plugin.randomize/seed 99}
+                                                   {} {:seed 7}))))))
     (testing "removing it falls back to the session's random seed"
-      (is (= 7 (:seed (watch/run-opts opts (config/normalize {} {} {:seed 7}))))))
-    (is (= 2 (:workers (watch/run-opts opts started))) "other startup options are kept")))
+      (is (= 7 (:seed (run-opts (config/normalize {} {} {:seed 7}))))))
+    (is (= :ci (:reporter (run-opts started))) "options tests.edn does not decide are kept")))
+
+(deftest a-reloaded-config-decides-every-config-option
+  (let [started (config/normalize {} {} {:seed 7})
+        opts (merge {:reporter :ci} (config/engine-opts started run-info))
+        edited (config/normalize {:kaocha/fail-fast? true
+                                  :kaocha.plugin.capture-output/capture-output? false
+                                  :isolate? true
+                                  :preload? true
+                                  :kaocha/bindings {'my.ns/*x* 1}
+                                  :kaocha/plugins [:kaocha.plugin/junit-xml]
+                                  :kaocha.plugin.junit-xml/target-file "out.xml"}
+                                 {} {:seed 7})
+        o (watch/run-opts opts edited run-info)]
+    (is (= [true false true true]
+           [(:fail-fast? o) (:capture-output? o) (:isolate? o) (:preload? o)]))
+    (is (= {'my.ns/*x* 1} (:bindings o)))
+    (is (= "out.xml" (:target-file (:junit-xml o))))
+    (is (= edited (:config o)) "--print-result reads the reloaded config")
+    (testing "reverting the edit restores the startup options"
+      (is (= opts (watch/run-opts o started run-info))))))

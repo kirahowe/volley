@@ -140,7 +140,7 @@
                                 (get-in sess [:ws :last :failed]))]
     (if (watch/plan-empty? plan)
       (update sess :inbox conj {:event :run/finished :empty? true :known (known-namespaces sess)})
-      (let [opts (cond-> (merge (watch/run-opts engine-opts (:config sess))
+      (let [opts (cond-> (merge (watch/run-opts engine-opts (:config sess) (bfs/run-info))
                                 {:started-at (now-ms) :durations (bfs/read-timings)
                                  :first-worker-id (:next-worker-id sess)
                                  :compact-summary? true})

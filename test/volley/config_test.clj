@@ -2,6 +2,7 @@
   (:require
    [volley.config :as config]
    [volley.gen.compat :as g]
+   [volley.hooks :as hooks]
    [clojure.java.io :as io]
    [clojure.string :as str]
    [clojure.test :refer [are deftest is testing]]
@@ -549,3 +550,24 @@
     (is (= {:kaocha.plugin.randomize/randomize? true :kaocha.plugin.randomize/seed 3}
            (select-keys (config/kaocha-shaped (config/normalize nil {:seed 3}))
                         [:kaocha.plugin.randomize/randomize? :kaocha.plugin.randomize/seed])))))
+
+;; ---------------------------------------------------------------------------
+;; Engine options
+
+(defspec engine-opts-come-from-the-config 200
+  (prop/for-all [raw g/raw-config cli g/cli-options seed gen/nat]
+    (let [c (config/normalize raw cli {:seed seed})
+          run {:timestamp "2026-10-18T12:00:00" :cwd "/work"}
+          o (config/engine-opts c run)
+          ks [:workers :fail-fast? :isolate? :preload? :capture-output? :bindings :seed]]
+      (and (= (map c ks) (map o ks))
+           (= c (:config o))
+           (= (some-> (:junit-xml c) (merge run)) (:junit-xml o))
+           (= (hooks/engine-opts c) (select-keys o [:configure :post-summary]))))))
+
+(deftest engine-opts-of-a-junit-config
+  (let [c (load-config "{:plugins [:kaocha.plugin/junit-xml] :kaocha.plugin.junit-xml/target-file \"out.xml\"}")
+        jx (:junit-xml (config/engine-opts c {:timestamp "t" :cwd "/w"}))]
+    (is (= "out.xml" (:target-file jx)))
+    (is (= ["t" "/w"] [(:timestamp jx) (:cwd jx)]))
+    (is (nil? (:junit-xml (config/engine-opts (load-config "{}") {:timestamp "t" :cwd "/w"}))))))

@@ -129,11 +129,13 @@
                       {} {:seed env-seed})))
 
 (def engine-opts
-  "Session `volley.engine/init` options, with stale seed and hook entries."
-  (gen/let [base (gen/map (gen/elements [:workers :fail-fast? :isolate? :bindings :junit-xml])
+  "Session `volley.engine/init` options, with stale config-derived entries."
+  (gen/let [base (gen/map (gen/elements [:reporter :width :color? :invocation])
                           gen/small-integer {:max-elements 4})
-            stale (gen/map (gen/elements [:seed :configure :post-summary])
-                           gen/small-integer {:max-elements 3})]
+            stale (gen/map (gen/elements [:seed :configure :post-summary :workers :fail-fast?
+                                          :isolate? :preload? :bindings :capture-output?
+                                          :junit-xml :config])
+                           gen/small-integer {:max-elements 6})]
     (merge base stale)))
 
 (def cancel-progress

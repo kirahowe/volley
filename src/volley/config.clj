@@ -784,3 +784,16 @@
        (map? (:kaocha/bindings cfg)) (assoc :bindings (:kaocha/bindings cfg))
        true (merge (randomize cfg raw cli-options plugins (:seed env))))
       top-hooks))))
+
+(defn engine-opts
+  "The `volley.engine/init` options normalized `config` decides: worker
+  count, fail-fast, isolation, preloading, output capture, bindings, run
+  seed, hook options, the config itself (for `--print-result`) and the
+  JUnit report, which carries `run`'s `:timestamp` and `:cwd`."
+  [config run]
+  (merge (select-keys config [:workers :fail-fast? :isolate? :preload? :capture-output?])
+         {:bindings (:bindings config)
+          :seed (:seed config)
+          :config config
+          :junit-xml (some-> (:junit-xml config) (merge (select-keys run [:timestamp :cwd])))}
+         (hooks/engine-opts config)))

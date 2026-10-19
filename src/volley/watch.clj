@@ -25,9 +25,9 @@
   `:failed?`, the ones that failed last time (only their failed vars when
   they are not also in `:namespaces`)."
   (:require
+   [volley.config :as config]
    [volley.deps-graph :as deps]
    [volley.discover :as discover]
-   [volley.hooks :as hooks]
    [volley.run-state :as rs]
    [volley.select :as select]
    [clojure.set :as set]
@@ -36,10 +36,11 @@
 (defn run-opts
   "The `volley.engine/init` options of a watch run under `config`, the
   current one (reloaded when tests.edn changes): the session's
-  `engine-opts` with the config's hook options and run seed. Without a
-  `:seed` the run is not randomized."
-  [engine-opts config]
-  (merge engine-opts (hooks/engine-opts config) {:seed (:seed config)}))
+  `engine-opts` with every option the config decides
+  (`volley.config/engine-opts`, given `run`'s JUnit `:timestamp` and
+  `:cwd`). Without a `:seed` the run is not randomized."
+  [engine-opts config run]
+  (merge engine-opts (config/engine-opts config run)))
 
 (def poll-ms
   "How often the shell compares modification times."

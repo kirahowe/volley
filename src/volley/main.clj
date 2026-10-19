@@ -11,7 +11,6 @@
    [volley.config :as config]
    [volley.discover :as discover]
    [volley.engine :as engine]
-   [volley.hooks :as hooks]
    [volley.select :as select]
    [volley.shell.fs :as bfs]
    [volley.shell.hooks :as shell-hooks]
@@ -82,13 +81,6 @@
        (mapcat :test-paths)
        bfs/clojure-files
        (mapv #(discover/ns-info % (bfs/read-file %)))))
-
-(defn- local-timestamp
-  "Now as an ISO local date-time to the second, as kaocha-junit-xml writes
-  its timestamps."
-  []
-  (.format java.time.format.DateTimeFormatter/ISO_LOCAL_DATE_TIME
-           (.truncatedTo (java.time.LocalDateTime/now) java.time.temporal.ChronoUnit/SECONDS)))
 
 (defn- reporter
   "`:live` needs a terminal; anything else gets the append-only CI output.
@@ -300,26 +292,16 @@
               mode (reporter config (:options cli) tty?)
               {:keys [command error]} (runtime/worker-command config (:aliases (:options cli)))
               opts (merge
-                    {:workers (:workers config)
-                     :fail-fast? (:fail-fast? config)
-                     :isolate? (:isolate? config)
-                     :preload? (:preload? config)
-                     ;; the rerun hint reads the same config file
+                    {;; the rerun hint reads the same config file
                      :invocation (cond-> (runtime/invocation)
                                    (not= "tests.edn" (:config-file loaded))
                                    (str " --config-file " (:config-file loaded)))
-                     :bindings (:bindings config)
-                     :seed (:seed config)
-                     :config config
-                     :capture-output? (:capture-output? config)
                      :reporter mode
                      :width (if (= :live mode) (term/width) 1000)
                      :color? (color? config (:options cli) env tty?)
                      :durations (bfs/read-timings)
                      :started-at (System/currentTimeMillis)}
-                    (when-let [jx (:junit-xml config)]
-                      {:junit-xml (assoc jx :timestamp (local-timestamp) :cwd (System/getProperty "user.dir"))})
-                    (hooks/engine-opts config))
+                    (config/engine-opts config (bfs/run-info)))
               _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))
               bad-reporter (when-not error (unresolved-reporter config))]
           (cond
