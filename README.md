@@ -13,7 +13,7 @@ volley is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
 
 ## What it looks like
 
-![volley running its own test suite](doc/volley.gif)
+<img src="doc/volley.gif" width="860" alt="volley running its own test suite">
 
 That is `bb test` on volley's own suite, in a terminal.
 

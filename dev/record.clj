@@ -12,6 +12,9 @@
 
 (def ^:private command "bb test")
 
+;; Rendered at twice the size the README displays it (see the img width
+;; there), so it stays sharp on high-DPI screens.
+
 (defn- prompt-events
   "asciicast v3 events that type `$ <command>` before the recorded output."
   []
@@ -49,6 +52,6 @@
     (fs/write-lines cast (concat [header] (map json/generate-string (prompt-events)) events))
     (p/shell {:out :string :err :string}
              "agg" "--idle-time-limit" "1" "--last-frame-duration" "5" "--speed" "1.5"
-             "--font-size" "14" "--theme" "monokai" cast out)
+             "--font-size" "28" "--fps-cap" "15" "--theme" "monokai" cast out)
     (fs/delete-tree dir)
     (println "Wrote" out)))
