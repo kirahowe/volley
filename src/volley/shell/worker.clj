@@ -412,7 +412,7 @@
               (emit! {:event :worker/warning
                       :message (str "the wrap-run hook did not call run for " ns-sym
                                     ", so its " (count vars) " test" (when (next vars) "s")
-                                    " did not run (Kaocha does not run them either)")}))
+                                    " did not run (Kaocha does not run " (if (next vars) "them" "it") " either)")}))
             [hs nil (outside)])
           (catch ^:sci/error Throwable e
             (safely #(end-var! acc emit! ns-sym))

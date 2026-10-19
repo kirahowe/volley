@@ -402,3 +402,18 @@
                                   {:op :shutdown}])]
     (is (= :setup (:phase (first (filter #(= :ns/error (:event %)) events)))))
     (is (= ["after suite"] (map (comp ex-message ex-cause) (hooks/shutdown hs))))))
+
+(deftest a-suite-wrap-run-that-never-runs-runs-none-of-its-namespaces
+  (let [hook '(fn [run] (fn [t p] (if (= :unit (:kaocha.testable/id t)) t (run t p))))
+        [events hs] (serve-lines [{:op :configure :hooks {:wrap-run [hook]} :config {}}
+                                  {:op :run :ns 'exec.pass-test :run-id 1 :suite :unit}
+                                  {:op :run :ns 'exec.sync-test :run-id 2 :suite :unit}
+                                  {:op :shutdown}])]
+    (is (not-any? #(= :var/start (:event %)) events))
+    (is (= [1 2] (keep #(when (= :ns/end (:event %)) (:run-id %)) events)))
+    (is (= [(str "the wrap-run hook did not call run for exec.pass-test,"
+                 " so its 2 tests did not run (Kaocha does not run them either)")
+            (str "the wrap-run hook did not call run for exec.sync-test,"
+                 " so its 1 test did not run (Kaocha does not run it either)")]
+           (keep #(when (= :worker/warning (:event %)) (:message %)) events)))
+    (is (= [] (hooks/shutdown hs)))))
