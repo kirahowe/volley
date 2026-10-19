@@ -378,6 +378,19 @@
     (is (= {:kind :wrap-run :entry bad} (:hook (ns-error events))))
     (is (= '[strings] (not-run events)))))
 
+(deftest an-outer-wrap-run-passes-on-the-inner-hook-error
+  (let [bad (throw-at :exec.pass-test/strings :before)
+        events (hooked-events {:wrap-run [bad logging-wrap-run]} 'exec.pass-test)]
+    (is (= {:kind :wrap-run :entry bad} (:hook (ns-error events))))
+    (is (= '[strings] (not-run events)))))
+
+(deftest a-namespace-wrap-run-that-throws-after-running-counts-the-vars
+  (let [hook (throw-at :exec.pass-test :after)
+        events (hooked-events {:wrap-run [hook]} 'exec.pass-test)]
+    (is (= {:kind :wrap-run :entry hook} (:hook (ns-error events))))
+    (is (= {:pass 4 :fail 0 :error 0} (counts events)))
+    (is (empty? (not-run events)))))
+
 (deftest a-fixture-error-inside-a-wrap-run-still-blames-the-fixture
   (let [events (hooked-events {:wrap-run [logging-wrap-run]} 'exec.once-error-test)
         error (ns-error events)]
