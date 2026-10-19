@@ -6,7 +6,7 @@
 
 (defn graph
   "Build the dependency graph from `ns-infos` (see `volley.discover/ns-info`,
-  with `:test?` set by `volley.discover/mark-tests`). Infos without a
+  with `:test?` set by `volley.paths/mark-tests`). Infos without a
   namespace are ignored.
 
   Returns

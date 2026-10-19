@@ -10,7 +10,11 @@
   While it runs, `System/out` and `System/err` point at its stray output and
   `System/in` at an empty stream, as a worker process sets them up. The
   parent prints through the root `*out*` and `*err*`, which hold the
-  original streams, so its output is unaffected.
+  original streams, so its output is unaffected. The worker's thread
+  binds `*out*`, `*err*` and `t/*test-out*` to its stray output instead,
+  so `println` on a thread without those bindings goes to the terminal,
+  as does whatever the thread writes to `System/out` after `kill!` (see
+  In process in doc/design.md).
 
   JVM only: `volley.main` loads it with `requiring-resolve` when a run is
   in process."

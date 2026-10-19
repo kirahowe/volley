@@ -230,7 +230,7 @@ prints it.
  :as-alias-only #{}                  ; `:as-alias` libs, which don't load
  :meta     {:synchronized true}      ; ns name metadata + attr-map
  :vars     {'foo {:slow true}}       ; literal metadata on deftest names
- :test?    true}            ; set by discover/mark-tests: under a test path and matches ns-patterns
+ :test?    true}            ; set by paths/mark-tests: under a test path and matches ns-patterns
 ```
 A file whose ns form can't be read gives `{:file path :error msg}`.
 
@@ -889,7 +889,16 @@ were skipped` warning (`rs/all-skipped`).
     output and `System/in` at an empty stream; the parent prints through
     the root `*out*` and `*err*`, which keep the original streams. Its
     thread gets the bindings of the thread that starts it (clojure.main's
-    `*ns*` and the rest), as a worker process's `-main` has them.
+    `*ns*` and the rest), as a worker process's `-main` has them. Two
+    things differ from a worker process, which points the root `*out*`,
+    `*err*` and `t/*test-out*` at its stray output: the in-process worker
+    binds them on its own thread only, because the parent prints through
+    the roots. So `println` on a thread that does not carry bindings over
+    (a raw `Thread`, an executor pool, core.async's dispatch) reaches the
+    terminal and breaks up the live view instead of becoming an output
+    event. And a kill (fail-fast, the watchdog) puts `System/out` and
+    `System/err` back while the interrupted thread may still run, so
+    what it writes there afterwards reaches the terminal too.
     `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
     last three wall times (engine start to end) of runs in process and of
     runs with worker processes, and how many short worker runs came
