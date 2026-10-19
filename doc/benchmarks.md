@@ -141,9 +141,8 @@ Both reported 70 tests and 320 assertions with no failures.
 
 The timings of the first run, with four worker JVMs, add up to 27.8s,
 because each worker pays the app's lazy setup in its first test. In
-process the run takes about 6s. That is why the serial time from
-`.volley/timings.edn` decides only whether a second in-process try
-follows a slow one, and never blocks the first.
+process the run takes about 6s, so only a run in process can show how
+long one takes.
 
 ### Large suites
 

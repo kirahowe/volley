@@ -922,18 +922,11 @@ were skipped` warning (`rs/all-skipped`).
     since the last in-process one. A run goes in process when the median
     of the recent in-process runs is at most `in-process-limit-ms` (10s).
     Otherwise the median of the worker runs must be that short, and then
-    the run goes in process when fewer than two in-process runs are on
-    record, or once `retry-after` (5) short worker runs have passed, so a
-    slow in-process run on a busy machine cannot keep a checkout on worker
-    processes for good. With no history (a first run, CI without a cached `.volley/`) it starts
-    worker processes. The serial time of the planned namespaces, the sum
-    of their times in `.volley/timings.edn` (`serial-ms`), decides whether
-    a second try follows one slow in-process run: only when it is at most
-    10s. A suite that takes 10s on four workers but 30s one namespace
-    after another then runs slower in process once, and again only at the
-    retry. The sum cannot stop the first try: after runs with worker
-    processes it counts each worker's setup again (hosted-clay sums to
-    28s and takes 6s in process), so only a run in process can tell. Never in process: `--workers` or `:workers` set
+    the run goes in process only when no in-process run is on record, or
+    once `retry-after` (5) short worker runs have passed, so a slow
+    in-process run on a busy machine cannot keep a checkout on worker
+    processes for good. With no history (a first run, CI without a cached
+    `.volley/`) it starts worker processes. Never in process: `--workers` or `:workers` set
     (`:workers-set?`), a babashka parent or babashka workers, watch and
     isolate mode, or a plan with a namespace the parent's classpath cannot
     load (planned, preloaded, or named by a hook or reporter; a JVM
