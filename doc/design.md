@@ -362,7 +362,10 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
 - The worker reads commands from the original stdin and points
   `System/in` (with `System/setIn`) and `*in*` at empty streams, so a test
   that reads stdin gets end of file instead of blocking on the command
-  channel.
+  channel. A thread of its own reads the commands, so a `:shutdown` that
+  arrives while a namespace runs is seen at once: that namespace runs no
+  var after the current one, ends, and the worker runs its shutdown hooks
+  and exits.
 - The worker keeps the original stdout for protocol lines and points
   `System/out` and the root `*out*`/`*err*` at stderr, so nothing a test
   prints can corrupt a protocol line. With `:capture-output?` the worker
@@ -497,7 +500,8 @@ replaces the width the live view renders to. Effects:
 {:effect :send :worker id :msg {:op :configure ...}}  ; right after its spawn, when configured
 {:effect :send :worker id :msg {:op :run ...}}
 {:effect :stop :worker id}          ; clean shutdown request
-{:effect :kill :worker id}          ; 5s after the run, for workers still alive
+{:effect :kill :worker id}          ; 5s after the run, for workers still alive,
+                                    ;   or 1s after fail-fast asked one to stop
 {:effect :print :lines [str] :stream :out|:err}
 {:effect :print-data :value v :pretty? bool}   ; EDN on stdout: --print-config, --print-test-plan, --print-result
                                                 ;   in Kaocha's shapes (see the divergences)
@@ -613,8 +617,10 @@ workers. A `wrap-run` hook that never calls `run` leaves the namespace's
 tests unrun: Kaocha then reports nothing and exits 0, and so does volley,
 with a warning naming the namespace.
 In `--isolate` mode every namespace has its own worker, so every
-once-per-worker hook runs once per namespace. A worker killed by
-fail-fast or a watch cancel runs no shutdown hooks.
+once-per-worker hook runs once per namespace. A worker stopped early, by
+fail-fast or a watch cancel, is asked to shut down and killed only if it
+has not exited 1s later, so it runs its shutdown hooks when its current
+var ends within that second. One that is killed runs none.
 
 ## Reporters
 
@@ -734,9 +740,10 @@ so its earlier failure carries over too. Failures of namespaces that no
 longer exist are dropped.
 
 **Cancel.** When a debounced change (or `a`, `f`, `Enter`, `c`) arrives
-during a run, the shell kills the workers by handle, waits for their exit
-events so none of their output reaches the next run, and starts the new
-run. Worker ids count up for the life of the parent process (each run's
+during a run, the shell asks the workers to stop, kills the ones still
+alive after `volley.watch/cancel-grace-ms` (1s; `volley.watch/cancel-action`
+decides), waits for their exit events so none of their output reaches the
+next run, and starts the new run. Worker ids count up for the life of the parent process (each run's
 `volley.engine/init` gets `:first-worker-id`, the next id after the last
 run's), and the engine drops every event from a worker its run did not
 spawn, so a cancelled run's worker that takes longer than the 5s wait to
@@ -839,11 +846,13 @@ were skipped` warning (`rs/all-skipped`).
   Inside a namespace, vars run in name order, or in the seeded random
   order of "Random order" when randomizing.
 - **Fail fast.** On the first failure (a failed or erroring assertion, a
-  namespace error or a crash) the engine stops handing out work, kills every
-  other busy worker by handle at once (`volley.schedule/interrupt` takes
-  their namespaces back, so their exit is not a crash), drops anything
-  else those workers still send, and records their namespaces with
-  `:run/interrupted`. The failing worker gets `:fail-fast?` in its run
+  namespace error or a crash) the engine stops handing out work, asks every
+  other busy worker to stop at once and kills the ones still alive 1s
+  later (`:stop-grace-ms`), so a test that never returns cannot hold up
+  the exit (`volley.schedule/interrupt` takes their namespaces back, so
+  their exit is not a crash). It drops anything else those workers still
+  send except their shutdown hooks' errors, and records their namespaces
+  with `:run/interrupted`. The failing worker gets `:fail-fast?` in its run
   message and runs no var after the failing one, so its namespace ends
   right away. The summary lists "Interrupted (stopped by fail-fast)" and
   "Not run (stopped by fail-fast)"; neither counts as a failure, and the
