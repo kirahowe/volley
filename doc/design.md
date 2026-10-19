@@ -1002,6 +1002,9 @@ difference:
   namespace, but not the same order as Kaocha with that seed. A
   `--seed` given on the command line wins over
   `:kaocha.plugin.randomize/seed` in tests.edn; in Kaocha the file wins.
+  In watch mode a session without a seed keeps the one volley drew at
+  startup, while Kaocha draws a new one for every run (the randomize
+  plugin's `config` hook, which `kaocha.api/run` calls each time).
   volley's own tests that depend on var order pass `--no-randomize`.
 - **`^:kaocha/pending` on an ns form.** Kaocha counts the namespace as
   one pending test; volley counts each of its vars as skipped (reason
