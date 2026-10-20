@@ -183,7 +183,7 @@
                         (map #(assoc % :worker 0 :at 0) events))]
       (is (= '{not-written-yet :pending marked-slow :skip-meta}
              (into {} (keep (fn [e] (when (= :var/skipped (:event e)) [(:var e) (:reason e)]))) events)))
-      (is (= {:total 2 :expected 2 :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
+      (is (= {:total 2 :expected 2 :estimated? false :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
              (:vars (rs/summary state))))
       (is (= {:event :ns/tests :ns 'exec.pending-test :count 2}
              (first (filter #(= :ns/tests (:event %)) events)))

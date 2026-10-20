@@ -29,11 +29,11 @@
   "Returns an empty run state. `plan-summary` is
   `{:namespaces [ns-sym ...] :tests {ns-sym n} :started-at millis}`; every
   key is optional. Planned namespaces that have not started count as
-  pending. `:tests` is how many tests the plan expects each namespace to
-  run, until its worker says (`:ns/tests`)."
+  pending. `:tests` is the plan's estimate of how many tests each
+  namespace will run, used until its worker counts them (`:ns/tests`)."
   [plan-summary]
   {:planned    (set (:namespaces plan-summary))
-   :expected   (or (:tests plan-summary) {})
+   :estimates  (or (:tests plan-summary) {})
    :started-at (:started-at plan-summary)
    :now        nil
    :workers    {}
@@ -119,7 +119,7 @@
         (set-worker worker idle))))
 
 (defn- on-ns-tests [state {:keys [ns] n :count}]
-  (assoc-in state [:expected ns] n))
+  (update-in state [:namespaces ns] #(assoc ((ns-record ns) %) :tests n)))
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
   (-> state
@@ -334,25 +334,31 @@
   (mapcat run-vars (remove unselected? (vals (:namespaces state)))))
 
 (defn- expected-tests
-  "How many tests the run will have: a finished namespace counts the
-  tests it ran, any other the larger of those it has shown and those it is
-  expected to run."
+  "`[n estimated?]`: how many tests the run will have. A finished
+  namespace counts the tests it ran, any other the larger of those it has
+  shown and those its worker counted, or failing that the plan's
+  estimate. `estimated?` while some namespace has only an estimate."
   [state]
-  (let [recs (:namespaces state)]
-    (reduce + (for [ns (into (:planned state) (keys recs))
-                    :let [rec (get recs ns)
-                          seen (if (and rec (not (unselected? rec))) (count (run-vars rec)) 0)]]
-                (if (and rec (not= :running (ns-result rec)))
-                  seen
-                  (max seen (get-in state [:expected ns] 0)))))))
+  (let [recs (:namespaces state)
+        counts (for [ns (into (:planned state) (keys recs))
+                     :let [rec (get recs ns)
+                           seen (if (and rec (not (unselected? rec))) (count (run-vars rec)) 0)]]
+                 (cond
+                   (and rec (not= :running (ns-result rec))) [seen false]
+                   (:tests rec) [(max seen (:tests rec)) false]
+                   :else [(max seen (get-in state [:estimates ns] 0)) true]))]
+    [(reduce + (map first counts)) (boolean (some second counts))]))
 
 (defn summary
   "Counts for the run so far. `now` defaults to the latest event time.
   `[:vars :total]` counts the tests seen so far, `[:vars :expected]` the
-  tests the run is expected to have once every namespace has run."
+  tests the run is expected to have once every namespace has run, and
+  `[:vars :estimated?]` is true while that number rests on the plan's
+  estimates."
   ([state] (summary state (:now state)))
   ([state now]
    (let [nses     (remove unselected? (vals (:namespaces state)))
+         [expected estimated?] (expected-tests state)
          ns-freq  (frequencies (map ns-result nses))
          vars     (counted-vars state)
          var-freq (frequencies (map var-status vars))
@@ -370,7 +376,8 @@
                    :interrupted (n :interrupted)
                    :pending pending}
       :vars       {:total   (reduce + (vals var-freq))
-                   :expected (expected-tests state)
+                   :expected expected
+                   :estimated? estimated?
                    :passed  (v :passed)
                    :failed  (v :failed)
                    :errored (+ (v :errored) (v :crashed))

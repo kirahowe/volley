@@ -199,7 +199,7 @@
     (is (= [" ⠇ other-test › slow-test                                                 2.00s "
             ""
             " Namespaces  1 failed | 1 running | 1 pending (3)"
-            "      Tests  1 passed | 1 failed | 1 running (3)"
+            "      Tests  1 passed | 1 failed | 1 running (~3)"
             "   Duration  2.10s"]
            frame))))
 
@@ -208,9 +208,16 @@
                         (rs/init {:namespaces '[my.app-test other-test later-test]
                                   :tests '{my.app-test 1 other-test 3 later-test 2}})
                         events)]
-    (is (some #{"      Tests  1 passed | 1 failed | 1 running (7)"}
+    (is (some #{"      Tests  1 passed | 1 failed | 1 running (~7)"}
               (:frame (render/live-frame planned planned opts)))
-        "my.app-test ran 2 where the plan saw 1; other-test and later-test count as planned")))
+        "my.app-test ran 2 where the plan saw 1; other-test and later-test count as planned, so ~")
+    (is (some #{"      Tests  1 passed | 1 failed | 1 running (5)"}
+              (:frame (render/live-frame planned
+                                         (reduce rs/apply-event planned
+                                                 [(ev {:event :ns/tests :ns 'other-test :count 2 :worker 1})
+                                                  (ev {:event :ns/tests :ns 'later-test :count 1 :worker 1})])
+                                         opts)))
+        "no ~ once every namespace still to finish has its worker's count")))
 
 (deftest ci-lines-print-failures-with-their-namespace
   (let [lines (render/ci-lines nil state opts)]

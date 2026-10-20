@@ -516,9 +516,11 @@ estimate (`volley.select/expected-tests`: the `deftest`s the parser saw
 that `volley.filters/decide` keeps in the run), and the worker's
 `:ns/tests` replaces it with the real count. A finished namespace counts
 the tests it ran. Any other counts the larger of the tests it has shown
-and its estimate. The total can drift a little while namespaces start,
-by tests only a macro defines or by focus-meta keys the plan could not
-settle, and equals `[:vars :total]` once every namespace has finished.
+and its worker's count, or its estimate before that count arrives. An
+estimate can be off by tests only a macro defines or by focus-meta keys
+the plan could not settle, so while any namespace rests on one,
+`[:vars :estimated?]` is true and the footer prints the total as `~n`.
+Once every namespace has finished, the total equals `[:vars :total]`.
 
 ### Engine inputs and effects (`volley.engine`)
 

@@ -104,21 +104,25 @@
           finished? #(when-let [rec (get-in state [:namespaces %])]
                        (not= :running (rs/ns-result rec)))]
       (or (not-every? finished? (:planned state))
-          (= total expected)))))
+          (and (= total expected) (not (get-in (rs/summary state) [:vars :estimated?])))))))
 
 (deftest expected-tests-come-from-the-plan-until-the-worker-counts
   (let [state (reduce rs/apply-event
                       (rs/init {:namespaces '[a-test b-test] :tests '{a-test 2 b-test 3}})
                       [{:event :ns/start :ns 'a-test :worker 0 :at 0}])
-        expected #(get-in (rs/summary %) [:vars :expected])]
-    (is (= 5 (expected state)) "before the worker counts, the plan's estimates")
+        expected #(-> (rs/summary %) :vars (select-keys [:expected :estimated?]))]
+    (is (= {:expected 5 :estimated? true} (expected state)) "before the worker counts, the plan's estimates")
     (let [state (rs/apply-event state {:event :ns/tests :ns 'a-test :count 4 :worker 0 :at 1})]
-      (is (= 7 (expected state)) "a test only a macro defines is counted once the worker loads it")
+      (is (= {:expected 7 :estimated? true} (expected state))
+          "a test only a macro defines is counted once the worker loads it; b-test is still a guess")
+      (is (= {:expected 7 :estimated? false}
+             (expected (rs/apply-event state {:event :ns/tests :ns 'b-test :count 3 :worker 1 :at 1})))
+          "exact once every namespace not yet finished has its worker's count")
       (let [state (reduce rs/apply-event state
                           [{:event :var/start :ns 'a-test :var 't1 :worker 0 :at 2}
                            {:event :var/end :ns 'a-test :var 't1 :pass 1 :worker 0 :at 3}
                            {:event :ns/end :ns 'a-test :worker 0 :at 4}])]
-        (is (= 4 (expected state)) "a finished namespace counts the tests it ran")
+        (is (= {:expected 4 :estimated? true} (expected state)) "a finished namespace counts the tests it ran")
         (is (= 1 (get-in (rs/summary state) [:vars :total])))))))
 
 (def ^:private plan {:namespaces '[a-test]})
