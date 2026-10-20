@@ -34,6 +34,7 @@
   [plan-summary]
   {:planned    (set (:namespaces plan-summary))
    :estimates  (or (:tests plan-summary) {})
+   :counts     {}
    :started-at (:started-at plan-summary)
    :now        nil
    :workers    {}
@@ -119,7 +120,7 @@
         (set-worker worker idle))))
 
 (defn- on-ns-tests [state {:keys [ns] n :count}]
-  (update-in state [:namespaces ns] #(assoc ((ns-record ns) %) :tests n)))
+  (assoc-in state [:counts ns] n))
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
   (-> state
@@ -336,16 +337,17 @@
 (defn- expected-tests
   "`[n estimated?]`: how many tests the run will have. A finished
   namespace counts the tests it ran, any other the larger of those it has
-  shown and those its worker counted, or failing that the plan's
+  shown and those a worker counted, or failing that the plan's
   estimate. `estimated?` while some namespace has only an estimate."
   [state]
   (let [recs (:namespaces state)
         counts (for [ns (into (:planned state) (keys recs))
                      :let [rec (get recs ns)
-                           seen (if (and rec (not (unselected? rec))) (count (run-vars rec)) 0)]]
+                           seen (if (and rec (not (unselected? rec))) (count (run-vars rec)) 0)
+                           counted (get-in state [:counts ns])]]
                  (cond
                    (and rec (not= :running (ns-result rec))) [seen false]
-                   (:tests rec) [(max seen (:tests rec)) false]
+                   counted [(max seen counted) false]
                    :else [(max seen (get-in state [:estimates ns] 0)) true]))]
     [(reduce + (map first counts)) (boolean (some second counts))]))
 

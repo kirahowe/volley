@@ -244,6 +244,7 @@ A file whose ns form can't be read gives `{:file path :error msg}`.
           :resolve-focus-meta [k ...]        ; only when some focus-meta key is not
           :pass-inputs {:suite {:id kw} :own filters :global filters}}  ; visible statically (see below)
  :preload [{:ns ns :suite id}]  ; only then (or with --preload): require these first
+ :suite-selects {id select}      ; with :preload: each suite's select spec, minus :ns-meta
  :bindings {var-sym value}  ; :kaocha/bindings: bound around loading and running the ns
  :capture-output? true
  :seed 1234                 ; only when randomizing: the run seed, see "Random order"
@@ -348,7 +349,12 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
 - `:ns/tests` comes after the namespace loads and its filtered vars are
   sent as skipped, before any var starts. Its `:count` is the vars that
   will run plus the pending ones, macro-defined tests included. A
-  namespace that fails to load sends none.
+  namespace that fails to load sends none. A worker that preloads also
+  sends one for every namespace it preloaded, before its first test,
+  deciding with its suite's spec from `:suite-selects` and the loaded
+  namespace's metadata. Within a suite the specs differ only in
+  `:ns-meta`, so one spec per suite keeps every run message small. Each
+  preloading worker sends the same counts; the parent keeps the last.
 - The pool turns every line into a flat event: worker events plus `:worker`
   and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
   A line that starts with the worker's prefix but whose payload does not
@@ -513,10 +519,14 @@ The live footer's test total is `[:vars :expected]` from `summary`, the
 number of tests the run should have when it ends. `[:vars :total]` only
 counts the tests seen so far. The plan gives every namespace an
 estimate (`volley.select/expected-tests`: the `deftest`s the parser saw
-that `volley.filters/decide` keeps in the run), and the worker's
-`:ns/tests` replaces it with the real count. A finished namespace counts
+that `volley.filters/decide` keeps in the run), and a worker's
+`:ns/tests` replaces it with the real count. Worker counts are kept
+apart from namespace records (`:counts`), since a preloading worker
+counts namespaces that have not started. A finished namespace counts
 the tests it ran. Any other counts the larger of the tests it has shown
-and its worker's count, or its estimate before that count arrives. An
+and a worker's count, or its estimate before a count arrives. With
+`--preload` the counts arrive before the first test, so the total is
+exact from the start. An
 estimate can be off by tests only a macro defines or by focus-meta keys
 the plan could not settle, so while any namespace rests on one,
 `[:vars :estimated?]` is true and the footer prints the total as `~n`.

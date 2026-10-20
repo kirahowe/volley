@@ -194,6 +194,23 @@
              (filter #(= :var/skipped (:event %)) events)))
       (is (not-any? #(= :ns/error (:event %)) events) "and its :once fixture does not run"))))
 
+(deftest a-preloading-worker-counts-every-namespace-it-loaded
+  (let [events (volatile! [])
+        _ (worker/run-assignment! #(vswap! events conj %) filters/decide
+                                  {:ns 'exec.pass-test :run-id 1 :select (skip-spec {:skip-meta [:slow]})
+                                   :suite :unit
+                                   :preload [{:ns 'exec.pending-test :suite :unit}
+                                             {:ns 'exec.skip-test :suite :unit}
+                                             {:ns 'exec.pass-test :suite :other}]
+                                   :suite-selects {:unit (dissoc (skip-spec {:skip-meta [:slow]}) :ns-meta)}})
+        counts (filter #(= :ns/tests (:event %)) @events)]
+    (is (= '[[exec.pending-test 2] [exec.skip-test 1]] (map (juxt :ns :count) (butlast counts)))
+        "pending counts and filtered vars do not; a suite with no spec is not counted")
+    (is (= 'exec.pass-test (:ns (last counts))) "the namespace it runs is counted as always")
+    (is (< (.indexOf ^java.util.List (mapv :event @events) :ns/tests)
+           (.indexOf ^java.util.List (mapv :event @events) :var/start))
+        "before the first test starts")))
+
 (deftest all-pending-namespace-runs-its-once-fixtures
   (testing "kaocha.testable/run-testable runs a namespace unless every test in it is skipped, and pending is not skipped"
     (let [runs @(requiring-resolve 'exec.all-pending-test/once-runs)

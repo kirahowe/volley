@@ -169,6 +169,13 @@
                [#{} []])
        second))
 
+(defn- suite-selects
+  "Each suite's select spec without the namespace part (`:ns-meta`), which
+  a worker reads from the loaded namespace. A worker that preloads counts
+  the tests of every namespace it loaded with these (`:ns/tests`)."
+  [entries]
+  (into {} (map (juxt :suite #(dissoc (:select %) :ns-meta))) entries))
+
 (defn init
   "Initial loop state.
 
@@ -230,6 +237,7 @@
                :load-output {}
                :nses nses
                :preload (preload-list plan entries (:preload? opts))
+               :suite-selects (suite-selects entries)
                :junit-suites (mapv (fn [s] {:id (:id s)
                                             :namespaces (mapv :ns (:namespaces s))
                                             :files (mapv :file (:load-errors s))})
@@ -255,12 +263,12 @@
 ;; ---------------------------------------------------------------------------
 ;; Scheduling decisions
 
-(defn- run-message [{:keys [nses opts preload]} ns-sym]
+(defn- run-message [{:keys [nses opts preload suite-selects]} ns-sym]
   (let [{:keys [select run-id suite]} (get nses ns-sym)]
     (cond-> {:op :run :ns ns-sym :run-id run-id :select select
              :capture-output? (boolean (:capture-output? opts true))}
       suite (assoc :suite suite)
-      (seq preload) (assoc :preload preload)
+      (seq preload) (assoc :preload preload :suite-selects suite-selects)
       (seq (:bindings opts)) (assoc :bindings (:bindings opts))
       (:seed opts) (assoc :seed (:seed opts))
       (:fail-fast? opts) (assoc :fail-fast? true))))

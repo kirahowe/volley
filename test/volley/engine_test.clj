@@ -231,7 +231,7 @@
     (is (str/includes? out "its protocol output could not be read and it went silent"))))
 
 (defn- first-run-message [opts]
-  (let [plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}
+  (let [plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {:ns-meta {}}}] :load-errors []}]}
         {state :state} (engine/init plan (merge {:workers 1 :reporter :ci :width 120 :started-at 0} opts))
         {state :state} (engine/start state)
         {effects :effects} (engine/step state {:event :worker/ready :worker 1 :at 1})]
@@ -241,6 +241,13 @@
   ;; each worker orders a namespace's vars from it (volley.order)
   (is (= 42 (:seed (first-run-message {:seed 42}))))
   (is (not (contains? (first-run-message {}) :seed))))
+
+(deftest preloading-run-messages-carry-each-suites-select
+  ;; the worker counts every preloaded namespace with them (:ns/tests)
+  (let [msg (first-run-message {:preload? true})]
+    (is (= [{:ns 'a-test :suite :unit}] (:preload msg)))
+    (is (= {:unit {}} (:suite-selects msg)) "without the namespace's own :ns-meta"))
+  (is (not (contains? (first-run-message {}) :suite-selects))))
 
 (deftest a-worker-exiting-0-mid-namespace-is-a-crash
   (let [w {:plan {:suites [{:id :unit :namespaces [{:ns 'a-test :select {}}] :load-errors []}]}

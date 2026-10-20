@@ -115,9 +115,11 @@
     (let [state (rs/apply-event state {:event :ns/tests :ns 'a-test :count 4 :worker 0 :at 1})]
       (is (= {:expected 7 :estimated? true} (expected state))
           "a test only a macro defines is counted once the worker loads it; b-test is still a guess")
-      (is (= {:expected 7 :estimated? false}
-             (expected (rs/apply-event state {:event :ns/tests :ns 'b-test :count 3 :worker 1 :at 1})))
-          "exact once every namespace not yet finished has its worker's count")
+      (let [counted (rs/apply-event state {:event :ns/tests :ns 'b-test :count 3 :worker 1 :at 1})]
+        (is (= {:expected 7 :estimated? false} (expected counted))
+            "exact once every namespace not yet finished has a worker's count")
+        (is (= 1 (get-in (rs/summary counted) [:namespaces :pending]))
+            "a preloading worker's count does not start b-test"))
       (let [state (reduce rs/apply-event state
                           [{:event :var/start :ns 'a-test :var 't1 :worker 0 :at 2}
                            {:event :var/end :ns 'a-test :var 't1 :pass 1 :worker 0 :at 3}

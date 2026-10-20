@@ -516,23 +516,6 @@
                                      (when-let [m (ex-message e)] (str ": " m)))})))))
     hs))
 
-(defn- preload!
-  "Require every namespace in `preload` (`[{:ns sym :suite id}]`, in plan
-  order) once per worker, before the first test runs (`--preload`, or
-  focus-meta keys only the loaded tests can settle). Each suite is set up
-  before its namespaces load, as Kaocha loads suite by suite. Returns the
-  next state."
-  [hs emit! preload]
-  (if (or (empty? preload) (::preloaded? hs))
-    hs
-    (-> (reduce (fn [hs entries]
-                  (if (call-hooks :setup-error hs)
-                    (reduced hs)
-                    (preload-suite! hs emit! (:suite (first entries)) (map :ns entries))))
-                hs
-                (partition-by :suite preload))
-        (assoc ::preloaded? true))))
-
 (defn- loaded-metas
   "Metadata of the namespaces in `nses` that are loaded and of their test
   vars, for `volley.filters/used-meta`."
@@ -557,6 +540,49 @@
       [(update hs ::warned (fnil into #{}) new) select])
     [hs select]))
 
+(defn- in-run-count
+  "How many vars of `parts` (`partition-vars`) are part of the run: those
+  that run and the pending ones."
+  [{:keys [run skipped]}]
+  (+ (count run) (count (filter #(= :pending (second %)) skipped))))
+
+(defn- count-preloaded!
+  "Send `:ns/tests` for each preloaded namespace whose suite has a spec in
+  `suite-selects`, so the parent has the run's exact size before its first
+  test. Returns the next state."
+  [hs emit! decide preload suite-selects]
+  (let [[hs selects] (reduce (fn [[hs m] [suite select]]
+                               (let [[hs select] (settle-select hs emit! select preload)]
+                                 [hs (assoc m suite (filters/prepare select))]))
+                             [hs {}]
+                             suite-selects)]
+    (doseq [{:keys [ns suite]} preload
+            :let [select (selects suite)
+                  ns-obj (find-ns ns)]
+            :when (and select ns-obj)]
+      (emit! {:event :ns/tests :ns ns
+              :count (in-run-count (partition-vars decide select ns (ns-metadata select ns-obj)
+                                                   (test-vars-of ns-obj)))}))
+    hs))
+
+(defn- preload!
+  "Require every namespace in `preload` (`[{:ns sym :suite id}]`, in plan
+  order) once per worker, before the first test runs (`--preload`, or
+  focus-meta keys only the loaded tests can settle). Each suite is set up
+  before its namespaces load, as Kaocha loads suite by suite. Then counts
+  their tests (`count-preloaded!`). Returns the next state."
+  [hs emit! decide {:keys [preload suite-selects]}]
+  (if (or (empty? preload) (::preloaded? hs))
+    hs
+    (let [hs (reduce (fn [hs entries]
+                       (if (call-hooks :setup-error hs)
+                         (reduced hs)
+                         (preload-suite! hs emit! (:suite (first entries)) (map :ns entries))))
+                     hs
+                     (partition-by :suite preload))]
+      (cond-> (assoc hs ::preloaded? true)
+        (not (call-hooks :setup-error hs)) (count-preloaded! emit! decide preload suite-selects)))))
+
 (defn- run-loaded
   "Run the vars of loaded namespace `ns`. Returns `[hs error phase pass]`,
   `pass` counting the passing assertions outside any var."
@@ -572,8 +598,7 @@
             (partition-vars decide select ns ns-meta (test-vars-of ns-obj (:seed cmd)))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
-        (emit! {:event :ns/tests :ns ns
-                :count (+ (count run) (count (filter #(= :pending (second %)) skipped)))})
+        (emit! {:event :ns/tests :ns ns :count (in-run-count parts)})
         (if (filters/runs-namespace? ns-meta parts)
           (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
                                                                 :fail-fast? (boolean fail-fast?)
@@ -611,7 +636,7 @@
         [hs error phase pass] (cond
                                 bind-error [hs bind-error :setup]
                                 (call-hooks :setup-error hs) [hs (call-hooks :setup-error hs) :setup]
-                                :else (let [hs (preload! hs emit! (:preload cmd))
+                                :else (let [hs (preload! hs emit! decide cmd)
                                             [hs e] (load-ns hs suite ns (:seed cmd))]
                                         (if e [hs e :load] (run-loaded hs emit! decide cmd))))]
     (when error
