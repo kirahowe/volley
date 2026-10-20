@@ -55,6 +55,10 @@ All notable changes to volley are recorded here. The format follows
 
 ### Fixed
 
+- The live view's test total counted only the tests that had started, so
+  it climbed through the run. It now starts from the tests volley finds
+  in the source, shown as `~n`, and becomes exact as each namespace
+  loads. With `--preload` it is exact from the first test.
 - Watch mode's `t` filter now runs matching tests that a macro defines;
   the worker applies the pattern after loading the namespace. Failures of
   a namespace the filter skips stay counted. (volley#5)

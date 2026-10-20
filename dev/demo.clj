@@ -26,7 +26,8 @@
 (defn- ns-events
   "Events for a namespace on worker `w` from time `t`; returns [events end-time]."
   [w ns t vars]
-  (let [start [[t {:event :ns/start :worker w :ns ns}]]
+  (let [start [[t {:event :ns/start :worker w :ns ns}]
+               [(+ t 10) {:event :ns/tests :worker w :ns ns :count (count vars)}]]
         [events end] (reduce (fn [[acc t] v]
                                (let [[es t'] (var-events w ns t v)]
                                  [(into acc es) t']))
@@ -95,6 +96,7 @@
                                   [{:name 'token-test :ms 640 :line 11 :pass 7}])]
              (concat a b))
         w3 (let [start [[300 {:event :ns/start :worker 3 :ns 'demo.crash-test}]
+                        [310 {:event :ns/tests :worker 3 :ns 'demo.crash-test :count 1}]
                         [320 {:event :var/start :worker 3 :ns 'demo.crash-test :var 'native-test
                               :file "test/demo/crash_test.clj" :line 4}]
                         [1500 {:event :output :worker 3 :stream :stderr
@@ -113,6 +115,9 @@
   {:namespaces '[demo.core-test demo.util-test demo.cache-test demo.config-test
                  demo.router-test demo.http-test demo.auth-test demo.crash-test
                  demo.late-test]
+   ;; the parser's estimates: one test per test the script starts
+   :tests (merge '{demo.late-test 3}
+                 (frequencies (keep (fn [[_ e]] (when (= :var/start (:event e)) (:ns e))) timeline)))
    :started-at 0})
 
 ;;; Shell loop
