@@ -312,6 +312,7 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 ```clojure
 {:event :worker/ready}
 {:event :ns/start      :ns ns :run-id n}
+{:event :ns/tests      :ns ns :count n}            ; after loading: tests it will run or mark pending
 {:event :ns/error      :ns ns :run-id n :error err   ; setup, load or fixture failure
                        :phase (:setup | :load | :run)}
 {:event :var/start     :ns ns :var sym :file str :line int}
@@ -344,6 +345,10 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
   `pre-test` hook, a failed fixture) is left out of every count and of
   the report, as Kaocha's `kaocha.testable/run-testable` gives a skipped
   testable no count. `--print-result` still lists it with its reason.
+- `:ns/tests` comes after the namespace loads and its filtered vars are
+  sent as skipped, before any var starts. Its `:count` is the vars that
+  will run plus the pending ones, macro-defined tests included. A
+  namespace that fails to load sends none.
 - The pool turns every line into a flat event: worker events plus `:worker`
   and `:at`; stray lines as `{:event :output :text str :stream :stdout|:stderr}`.
   A line that starts with the worker's prefix but whose payload does not
@@ -503,6 +508,17 @@ namespace that ends with vars skipped as `:stopped` is interrupted too,
 with reason `:stopped`, and adds one to the exit code: the engine ignores
 what a worker it stopped itself sends, so such a namespace means a worker
 stopped without being asked, and its unrun vars must not pass silently.
+
+The live footer's test total is `[:vars :expected]` from `summary`, the
+number of tests the run should have when it ends. `[:vars :total]` only
+counts the tests seen so far. The plan gives every namespace an
+estimate (`volley.select/expected-tests`: the `deftest`s the parser saw
+that `volley.filters/decide` keeps in the run), and the worker's
+`:ns/tests` replaces it with the real count. A finished namespace counts
+the tests it ran. Any other counts the larger of the tests it has shown
+and its estimate. The total can drift a little while namespaces start,
+by tests only a macro defines or by focus-meta keys the plan could not
+settle, and equals `[:vars :total]` once every namespace has finished.
 
 ### Engine inputs and effects (`volley.engine`)
 

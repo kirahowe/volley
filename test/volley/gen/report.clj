@@ -133,6 +133,12 @@
                   :error (count (filter #(= :error %) types))
                   :duration-ms duration :output output}]))])))
 
+(defn- in-run?
+  "Whether a var's first event makes it part of the run: it starts, or is
+  skipped as pending."
+  [{:keys [event reason]}]
+  (or (= :var/start event) (= :pending reason)))
+
 (defn- ns-script [i]
   (let [ns (ns-sym i)]
     (gen/let [n (gen/choose 0 4)
@@ -148,7 +154,8 @@
         [{:event :ns/start :ns ns :run-id i}
          {:event :ns/error :ns ns :run-id i :error err}
          {:event :ns/end :ns ns :run-id i :duration-ms duration}]
-        (concat [{:event :ns/start :ns ns :run-id i}]
+        (concat [{:event :ns/start :ns ns :run-id i}
+                 {:event :ns/tests :ns ns :count (count (filter (comp in-run? first) vars))}]
                 once
                 (apply concat vars)
                 [(cond-> {:event :ns/end :ns ns :run-id i :duration-ms duration}
@@ -224,9 +231,11 @@
                            (map (fn [w] (worker-stream w (filter #(= w (mod % n-workers)) (range n-ns))))
                                 (range n-workers)))
             extra-planned (gen/choose 0 3)
+            estimates (gen/vector (gen/choose 0 5) (+ n-ns extra-planned))
             c1 choices
             c2 choices]
-    {:plan {:namespaces (map ns-sym (range (+ n-ns extra-planned)))}
+    {:plan {:namespaces (map ns-sym (range (+ n-ns extra-planned)))
+            :tests (zipmap (map ns-sym (range)) estimates)}
      :streams streams
      :orders [c1 c2]}))
 

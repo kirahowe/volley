@@ -214,6 +214,16 @@
            infos)
      :load-errors []}))
 
+(defn expected-tests
+  "How many tests plan entry `entry` should run: the vars the parser saw
+  that `volley.filters/decide` keeps in the run, selected or pending.
+  Tests other macros define are missed until the worker counts them
+  (`:ns/tests`)."
+  [{:keys [ns vars select] ns-meta :meta}]
+  (count (filter (fn [[var-sym var-meta]]
+                   (#{:selected :pending} (:reason (filters/decide select ns ns-meta var-sym var-meta))))
+                 vars)))
+
 (defn- load-errors [suite infos]
   (into []
         (comp (filter :error)

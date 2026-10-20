@@ -728,7 +728,7 @@
                                   [(:errored vars) (if (= 1 (:errored vars)) "error" "errors") :red]
                                   [(:skipped vars) "skipped" :yellow]
                                   [(:running vars) "running" :cyan]])
-               (paint opts :gray (str " (" (:total vars) ")"))))
+               (paint opts :gray (str " (" (:expected vars) ")"))))
      (row "Duration" (fmt-ms wall-ms))]))
 
 (defn- running-block [opts state]

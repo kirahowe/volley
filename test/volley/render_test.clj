@@ -203,6 +203,15 @@
             "   Duration  2.10s"]
            frame))))
 
+(deftest the-footer-counts-tests-that-have-not-started
+  (let [planned (reduce rs/apply-event
+                        (rs/init {:namespaces '[my.app-test other-test later-test]
+                                  :tests '{my.app-test 1 other-test 3 later-test 2}})
+                        events)]
+    (is (some #{"      Tests  1 passed | 1 failed | 1 running (7)"}
+              (:frame (render/live-frame planned planned opts)))
+        "my.app-test ran 2 where the plan saw 1; other-test and later-test count as planned")))
+
 (deftest ci-lines-print-failures-with-their-namespace
   (let [lines (render/ci-lines nil state opts)]
     (is (= " ✗ my.app-test (1/2 failed) 352ms" (first lines)))

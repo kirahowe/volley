@@ -34,6 +34,7 @@
    [volley.render :as render]
    [volley.run-state :as rs]
    [volley.schedule :as sched]
+   [volley.select :as select]
    [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -213,7 +214,9 @@
         file-errors (for [s (:suites plan) e (:load-errors s)]
                       {:event :file/error :file (:file e) :error (:error e) :at started-at})
         run (reduce rs/apply-event
-                    (rs/init {:namespaces (keys nses) :started-at started-at})
+                    (rs/init {:namespaces (keys nses)
+                              :tests (update-vals nses select/expected-tests)
+                              :started-at started-at})
                     file-errors)
         state {:sched (sched/init {:parallel (mapv :ns parallel) :serial (mapv :ns serial)}
                                   (cond-> (-> (select-keys opts [:workers :fail-fast? :isolate? :durations])

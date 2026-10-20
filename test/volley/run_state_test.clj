@@ -92,6 +92,35 @@
           exited (set (keep (fn [[id w]] (when (:exited? w) id)) (:workers state)))]
       (every? #(not (exited (:worker %))) (rs/running state)))))
 
+(defspec expected-tests-are-never-fewer-than-those-seen runs
+  (prop/for-all [{:keys [state]} gr/partial-state]
+    (let [{:keys [total expected]} (:vars (rs/summary state))]
+      (<= total expected))))
+
+(defspec expected-tests-are-the-total-once-every-namespace-finished runs
+  (prop/for-all [r gr/run]
+    (let [state (gr/fold (:plan r) (all-events r))
+          {:keys [total expected]} (:vars (rs/summary state))
+          finished? #(when-let [rec (get-in state [:namespaces %])]
+                       (not= :running (rs/ns-result rec)))]
+      (or (not-every? finished? (:planned state))
+          (= total expected)))))
+
+(deftest expected-tests-come-from-the-plan-until-the-worker-counts
+  (let [state (reduce rs/apply-event
+                      (rs/init {:namespaces '[a-test b-test] :tests '{a-test 2 b-test 3}})
+                      [{:event :ns/start :ns 'a-test :worker 0 :at 0}])
+        expected #(get-in (rs/summary %) [:vars :expected])]
+    (is (= 5 (expected state)) "before the worker counts, the plan's estimates")
+    (let [state (rs/apply-event state {:event :ns/tests :ns 'a-test :count 4 :worker 0 :at 1})]
+      (is (= 7 (expected state)) "a test only a macro defines is counted once the worker loads it")
+      (let [state (reduce rs/apply-event state
+                          [{:event :var/start :ns 'a-test :var 't1 :worker 0 :at 2}
+                           {:event :var/end :ns 'a-test :var 't1 :pass 1 :worker 0 :at 3}
+                           {:event :ns/end :ns 'a-test :worker 0 :at 4}])]
+        (is (= 4 (expected state)) "a finished namespace counts the tests it ran")
+        (is (= 1 (get-in (rs/summary state) [:vars :total])))))))
+
 (def ^:private plan {:namespaces '[a-test]})
 
 (defn- ev [m] (merge {:worker 0 :at 1000} m))

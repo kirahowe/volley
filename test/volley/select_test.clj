@@ -94,6 +94,18 @@
          (seq run) true
          :else (boolean (some #(= :pending (second %)) skipped))))))
 
+(defspec expected-tests-are-the-visible-tests-workers-run 300
+  (prop/for-all [{:keys [corpus suite-filters global]} corpus-and-filters]
+    (let [plan (select/plan (cfg suite-filters global) corpus nil)
+          ran (selected plan corpus)
+          visible (fn [{:keys [ns vars]}] (set (map #(keyword (str ns) (str %)) (keys vars))))
+          by-ns (into {} (map (juxt :ns identity)) corpus)]
+      (or (seq (:preload plan))
+          (every? (fn [entry]
+                    (= (select/expected-tests entry)
+                       (count (set/intersection ran (visible (by-ns (:ns entry)))))))
+                  (mapcat :namespaces (:suites plan)))))))
+
 (defspec without-filters-everything-runs 200
   (prop/for-all [corpus g/corpus]
     (= (all-ids corpus) (run-ids (cfg {:skip-meta []} {}) corpus))))

@@ -572,6 +572,8 @@
             (partition-vars decide select ns ns-meta (test-vars-of ns-obj (:seed cmd)))]
         (doseq [[v reason] skipped]
           (emit! {:event :var/skipped :ns ns :var (:name (meta v)) :reason reason}))
+        (emit! {:event :ns/tests :ns ns
+                :count (+ (count run) (count (filter #(= :pending (second %)) skipped)))})
         (if (filters/runs-namespace? ns-meta parts)
           (let [[hs e pass] (run-vars! hs emit! suite ns ns-obj {:capture? (boolean capture-output?)
                                                                 :fail-fast? (boolean fail-fast?)

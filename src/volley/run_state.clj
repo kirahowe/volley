@@ -27,10 +27,13 @@
 
 (defn init
   "Returns an empty run state. `plan-summary` is
-  `{:namespaces [ns-sym ...] :started-at millis}`; both keys are optional.
-  Planned namespaces that have not started count as pending."
+  `{:namespaces [ns-sym ...] :tests {ns-sym n} :started-at millis}`; every
+  key is optional. Planned namespaces that have not started count as
+  pending. `:tests` is how many tests the plan expects each namespace to
+  run, until its worker says (`:ns/tests`)."
   [plan-summary]
   {:planned    (set (:namespaces plan-summary))
+   :expected   (or (:tests plan-summary) {})
    :started-at (:started-at plan-summary)
    :now        nil
    :workers    {}
@@ -114,6 +117,9 @@
               (assoc-in [:interrupted ns] :stopped))
           state)
         (set-worker worker idle))))
+
+(defn- on-ns-tests [state {:keys [ns] n :count}]
+  (assoc-in state [:expected ns] n))
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
   (-> state
@@ -204,6 +210,7 @@
     (case (:event event)
       :worker/ready  (on-ready state event)
       :ns/start      (on-ns-start state event)
+      :ns/tests      (on-ns-tests state event)
       :ns/error      (on-ns-error state event)
       :ns/end        (on-ns-end state event)
       :var/start     (on-var-start state event)
@@ -326,8 +333,23 @@
 (defn- counted-vars [state]
   (mapcat run-vars (remove unselected? (vals (:namespaces state)))))
 
+(defn- expected-tests
+  "How many tests the run will have: a finished namespace counts the
+  tests it ran, any other the larger of those it has shown and those it is
+  expected to run."
+  [state]
+  (let [recs (:namespaces state)]
+    (reduce + (for [ns (into (:planned state) (keys recs))
+                    :let [rec (get recs ns)
+                          seen (if (and rec (not (unselected? rec))) (count (run-vars rec)) 0)]]
+                (if (and rec (not= :running (ns-result rec)))
+                  seen
+                  (max seen (get-in state [:expected ns] 0)))))))
+
 (defn summary
-  "Counts for the run so far. `now` defaults to the latest event time."
+  "Counts for the run so far. `now` defaults to the latest event time.
+  `[:vars :total]` counts the tests seen so far, `[:vars :expected]` the
+  tests the run is expected to have once every namespace has run."
   ([state] (summary state (:now state)))
   ([state now]
    (let [nses     (remove unselected? (vals (:namespaces state)))
@@ -348,6 +370,7 @@
                    :interrupted (n :interrupted)
                    :pending pending}
       :vars       {:total   (reduce + (vals var-freq))
+                   :expected (expected-tests state)
                    :passed  (v :passed)
                    :failed  (v :failed)
                    :errored (+ (v :errored) (v :crashed))

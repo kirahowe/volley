@@ -113,10 +113,10 @@
 
 (deftest fixture-failure-is-an-ns-error
   (let [events (run-events 'exec.once-error-test)]
-    (is (= [:ns/start :var/skipped :ns/error :ns/end] (map :event events)))
+    (is (= [:ns/start :ns/tests :var/skipped :ns/error :ns/end] (map :event events)))
     (is (= :fixture-failed (:reason (first (filter #(= :var/skipped (:event %)) events))))
         "the var the fixture kept from running is listed")
-    (is (= "once fixture failed" (get-in events [2 :error :message])))))
+    (is (= "once fixture failed" (get-in events [3 :error :message])))))
 
 (deftest once-and-each-fixtures-run-like-clojure-test
   (let [events (run-events 'exec.fixtures-test)]
@@ -147,7 +147,7 @@
 (deftest nothing-selected-runs-no-fixtures
   (let [events (run-events 'exec.fixtures-test
                            {:decide (fn [& _] {:run? false :reason :skip})})]
-    (is (= [:ns/start :var/skipped :var/skipped :ns/end] (map :event events)))))
+    (is (= [:ns/start :var/skipped :var/skipped :ns/tests :ns/end] (map :event events)))))
 
 (deftest output-is-captured-per-var
   (let [events (run-events 'exec.output-test {:decide (fn [_ _ _ v _] {:run? (= v 'prints-via-println)})})
@@ -183,8 +183,11 @@
                         (map #(assoc % :worker 0 :at 0) events))]
       (is (= '{not-written-yet :pending marked-slow :skip-meta}
              (into {} (keep (fn [e] (when (= :var/skipped (:event e)) [(:var e) (:reason e)]))) events)))
-      (is (= {:total 2 :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
-             (:vars (rs/summary state))))))
+      (is (= {:total 2 :expected 2 :passed 1 :failed 0 :errored 0 :skipped 1 :running 0}
+             (:vars (rs/summary state))))
+      (is (= {:event :ns/tests :ns 'exec.pending-test :count 2}
+             (first (filter #(= :ns/tests (:event %)) events)))
+          "the worker counts the tests it will run and the pending ones, but not the filtered")))
   (testing "^:kaocha/pending on the ns form is read from the loaded namespace"
     (let [events (run-events 'exec.ns-pending-test {:decide filters/decide :select (skip-spec {})})]
       (is (= [{:event :var/skipped :ns 'exec.ns-pending-test :var 'whole-ns-is-pending :reason :pending}]
@@ -197,13 +200,13 @@
           _ (reset! runs 0)
           events (run-events 'exec.all-pending-test {:decide filters/decide :select (skip-spec {})})]
       (is (= 1 @runs))
-      (is (= [:ns/start :var/skipped :var/skipped :ns/end] (map :event events))
+      (is (= [:ns/start :var/skipped :var/skipped :ns/tests :ns/end] (map :event events))
           "no :each fixture runs, so nothing fails, and no hook warning")))
   (testing "a throwing :once fixture is an :ns/error, as for any namespace (Kaocha's kaocha.type.ns/-run lets it crash the run)"
     (let [events (run-events 'exec.all-pending-once-error-test {:decide filters/decide :select (skip-spec {})})]
-      (is (= [:ns/start :var/skipped :ns/error :ns/end] (map :event events)))
+      (is (= [:ns/start :var/skipped :ns/tests :ns/error :ns/end] (map :event events)))
       (is (= :run (:phase (first (filter #(= :ns/error (:event %)) events)))))
-      (is (= "once fixture failed" (get-in events [2 :error :message]))))))
+      (is (= "once fixture failed" (get-in events [3 :error :message]))))))
 
 (deftest a-failing-defspec-reports-its-check-at-the-var
   (let [events (run-events 'exec.property-test)
