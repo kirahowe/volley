@@ -6,9 +6,9 @@ Watch mode's `t` key filters by test-name regex. The planning step drops namespa
 
 ## Acceptance criteria
 
-- [ ] A macro-defined test whose name matches the `t` pattern runs.
-- [ ] Namespaces with no visible match are only skipped when they cannot contain hidden tests, or the filter is decided in the worker after loading.
-- [ ] Regression test in the watch e2e or select tests using the `generated` fixture.
+- [x] A macro-defined test whose name matches the `t` pattern runs.
+- [x] Namespaces with no visible match are only skipped when they cannot contain hidden tests, or the filter is decided in the worker after loading.
+- [x] Regression test in the watch e2e or select tests using the `generated` fixture.
 
 ## Log
 
