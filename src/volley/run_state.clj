@@ -129,7 +129,7 @@
       (set-worker worker {:ns ns :var var :var-at at})))
 
 (def ^:private assertion-keys
-  [:type :message :contexts :expected :actual :file :line :error :check :at])
+  [:type :message :contexts :expected :actual :file :line :error :check :at :output-at])
 
 (defn- on-assertion
   "A failed assertion counts for its var, or, made outside any var (in a
@@ -267,6 +267,13 @@
   (->> (concat stray [output])
        (remove #(or (nil? %) (str/blank? %)))
        (str/join "\n")))
+
+(defn- var-output-at
+  "Where character `at` of var `v`'s captured output falls in `var-output`,
+  which puts the stray lines first."
+  [v at]
+  (let [stray (var-output (dissoc v :output))]
+    (if (= "" stray) at (+ at (count stray) 1))))
 
 (defn ns-counts
   "Assertions a namespace made outside its vars (in `:once` fixtures):
@@ -415,9 +422,10 @@
      (assoc a :kind (:type a) :ns ns :var nil :idx idx :output (str/join "\n" stray)))
    (for [v (vals vars)
          [idx a] (map-indexed vector (:assertions v))]
-     (assoc a :kind (:type a) :ns ns :var (:var v) :idx idx
-            :file (or (:file a) (:file v))
-            :output (var-output v)))
+     (cond-> (assoc a :kind (:type a) :ns ns :var (:var v) :idx idx
+                    :file (or (:file a) (:file v))
+                    :output (var-output v))
+       (:output-at a) (update :output-at #(var-output-at v %))))
    (mapcat #(lost-failures ns %) (vals vars))))
 
 (defn- ns-failures [{:keys [ns status error exit-code stray vars worker phase hook]}]
@@ -514,7 +522,9 @@
   read (`:protocol-error`) and namespace that could not
   be run (`:not-run`, except after fail-fast), ordered by namespace, var,
   line. Each carries :kind, :ns, and for assertions :var, :line, :message,
-  :contexts, :expected, :actual, :error and the var's captured :output."
+  :contexts, :expected, :actual, :error and the var's captured :output,
+  with :output-at, how much of it was printed before the failure, when
+  the worker captured it."
   [state]
   (->> (concat (mapcat assertion-failures (vals (:namespaces state)))
                (mapcat ns-failures (vals (:namespaces state)))

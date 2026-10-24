@@ -4,6 +4,7 @@
   `interleave-streams` merges them in a way chosen by a vector of ints."
   (:require
    [volley.run-state :as rs]
+   [clojure.string :as str]
    [clojure.test.check.generators :as gen]))
 
 ;;; Values
@@ -260,3 +261,25 @@
     (let [evs (events r 0)]
       {:plan (:plan r)
        :state (fold (:plan r) (take (mod k (inc (count evs))) evs))})))
+
+;;; Captured output
+
+(def var-output
+  "A var's stray lines, the output it captured (never blank) and a point
+  `:at` in that output where a failure happened."
+  (gen/let [stray (gen/vector (gen/one-of [gen/string-alphanumeric (gen/return "  ")]) 0 3)
+            output (gen/such-that (complement str/blank?) gen/string-ascii)
+            at (gen/choose 0 (count output))]
+    {:stray stray :output output :at at}))
+
+(def output-excerpt-input
+  "Output lines, failure marks `{:line n :label s}` (some past the last
+  line) and the limits of `volley.render/output-excerpt`."
+  (gen/let [n (gen/choose 0 120)
+            lines (gen/return (mapv #(str "line " %) (range n)))
+            marks (gen/vector (gen/fmap (fn [[l i]] {:line l :label (str "mark " i)})
+                                        (gen/tuple (gen/choose 0 (+ n 2)) gen/nat))
+                              0 4)
+            limits (gen/hash-map :before (gen/choose 0 30) :after (gen/choose 0 10)
+                                 :tail (gen/choose 0 40))]
+    {:lines lines :marks marks :limits limits}))

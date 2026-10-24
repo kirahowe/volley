@@ -320,7 +320,8 @@ adds `:worker` (an integer id) and `:at` (millis) to each event it receives.
 {:event :assertion     :ns ns :var sym :type (:fail | :error)
                        :message str-or-nil :contexts [str]
                        :expected value :actual value
-                       :file str :line int :error err-or-nil}
+                       :file str :line int :error err-or-nil
+                       :output-at int}       ; with capture: chars printed before it
 {:event :var/end       :ns ns :var sym :pass int :fail int :error int
                        :duration-ms num :output str-or-nil}
 {:event :var/skipped   :ns ns :var sym :reason (:pending | :skip-meta | ...)}
@@ -396,7 +397,10 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
   prints can corrupt a protocol line. With `:capture-output?` the worker
   points `*out*`, `*err*`, `System/out` and `System/err` at one per-test
   buffer (as `kaocha.plugin.capture-output` does), so what a test prints
-  arrives in its `:var/end`. If a test exits the process, a shutdown hook
+  arrives in its `:var/end`. Each `:assertion` of a capturing var carries
+  `:output-at`, how many characters the buffer held when it failed, so
+  the failure report can show the output around each failure, marked,
+  rather than the end of the var's output. If a test exits the process, a shutdown hook
   sends what it had printed as an `{:event :output}` protocol line, so it
   stays ordered after that test's `:var/start`; that event carries
   `:captured? true`. Output that escapes capture (load-time prints,

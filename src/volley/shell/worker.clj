@@ -289,15 +289,18 @@
 (defn- count-and-emit!
   "Count a `:pass`/`:fail`/`:error` against the open var, or, outside any
   var (in a `:once` fixture), count a pass in `(:outside @progress)`, and
-  emit the assertion event for failures."
+  emit the assertion event for failures. A failure inside a capturing var
+  says how much the var had printed by then, so the report can show the
+  output around it."
   [acc progress emit! ns-sym m]
   (let [kind (:type m)
-        open (:var @acc)]
+        {open :var capture :capture} @acc]
     (cond
       open (swap! acc update kind inc)
       (= :pass kind) (vswap! progress update :outside inc))
     (when (#{:fail :error} kind)
-      (emit! (assertion-event ns-sym open (reverse t/*testing-contexts*) m)))))
+      (emit! (cond-> (assertion-event ns-sym open (reverse t/*testing-contexts*) m)
+               (and open capture) (assoc :output-at (count (capture-text capture))))))))
 
 (defn- make-report
   "A `clojure.test/report` replacement. clojure.test reports through a

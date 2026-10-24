@@ -161,6 +161,16 @@
                                                       {:capture-output? false
                                                        :decide (fn [_ _ _ v _] {:run? (= v 'prints-via-println)})}))))))))))
 
+(deftest a-failure-says-how-much-its-var-had-printed
+  (let [events (run-events 'exec.output-marks-test)
+        output (:output (first (filter #(= :var/end (:event %)) events)))]
+    (is (= "before\nafter 1\nafter 2\nafter 3\n" output))
+    (is (= ["before\n" "before\nafter 1\nafter 2\n"]
+           (->> events (filter #(= :assertion (:event %))) (map #(subs output 0 (:output-at %))))))
+    (testing "without capture there is no :output-at"
+      (is (not-any? :output-at (binding [*out* (java.io.StringWriter.)]
+                                 (run-events 'exec.output-marks-test {:capture-output? false})))))))
+
 (deftest pure-helpers
   (is (= 1.5 (worker/duration-ms 1000000 2500000)))
   (is (= {:run [#'inc] :skipped [[#'dec :no]]}

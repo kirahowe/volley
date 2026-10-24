@@ -371,6 +371,11 @@ command starts the way you ran volley: `bb test` inside a babashka task,
 used one. `--reporter documentation` prints one line per test var,
 grouped by namespace.
 
+A failing test's report includes what the test printed, cut down to the
+25 lines before each failure and the 5 after it. The rest is counted as
+earlier or later lines. When the output goes on past a failure, a
+`▲ FAIL file:line` line marks where in it the failure happened.
+
 Output that a test or a namespace prints outside capture (while loading,
 say) appears as it happens, in full. When several workers load the same
 namespace and print the same line while loading it, the line appears

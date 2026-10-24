@@ -142,6 +142,19 @@
                               :output "captured"})])]
       (is (= "hello\ncaptured" (:output (first (rs/failures state))))))))
 
+(defspec output-at-points-at-the-same-place-in-the-shown-output runs
+  (prop/for-all [{:keys [stray output at]} gr/var-output]
+    (let [f (->> (concat [(ev {:event :ns/start :ns 'a-test})
+                          (ev {:event :var/start :ns 'a-test :var 'x})]
+                         (map #(ev {:event :output :text % :stream :stderr}) stray)
+                         [(ev {:event :assertion :ns 'a-test :var 'x :type :fail :output-at at})
+                          (ev {:event :var/end :ns 'a-test :var 'x :pass 0 :duration-ms 5
+                               :output output})])
+                 (reduce rs/apply-event (rs/init plan))
+                 rs/failures
+                 first)]
+      (= (subs output at) (subs (:output f) (:output-at f))))))
+
 (defn- crash-events
   "What the engine folds when worker 0 dies while running `a-test`: stray
   output, the scheduler's synthetic `:ns/error` and `:ns/end`, then the

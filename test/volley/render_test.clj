@@ -437,6 +437,81 @@
     (is (str/includes? report "  | line 70"))
     (is (not (str/includes? report "  | line 69")))))
 
+(defn- excerpt-positions
+  "Each row of an excerpt with how many output lines come before it."
+  [rows]
+  (second (reduce (fn [[pos acc] [kind x :as row]]
+                    [(+ pos (case kind :line 1 :gap x :mark 0)) (conj acc [pos row])])
+                  [0 []] rows)))
+
+(defn- kept-lines [rows]
+  (set (for [[pos [kind]] (excerpt-positions rows) :when (= :line kind)] pos)))
+
+(defspec an-excerpt-accounts-for-every-line-in-order runs
+  (prop/for-all [{:keys [lines marks limits]} gr/output-excerpt-input]
+    (let [rows (render/output-excerpt lines marks limits)]
+      (and (= (count lines) (reduce + (map (fn [[k x]] (case k :line 1 :gap x :mark 0)) rows)))
+           (every? (fn [[pos [k x]]] (or (not= :line k) (= x (nth lines pos))))
+                   (excerpt-positions rows))
+           (every? (fn [[k x]] (or (not= :gap k) (pos? x))) rows)
+           (not-any? (fn [[a b]] (= :gap (first a) (first b))) (partition 2 1 rows))))))
+
+(defspec an-excerpt-marks-each-failure-inside-the-output-once-in-place runs
+  (prop/for-all [{:keys [lines marks limits]} gr/output-excerpt-input]
+    (let [n (count lines)
+          shown (for [[pos [k label]] (excerpt-positions (render/output-excerpt lines marks limits))
+                      :when (= :mark k)]
+                  [pos label])]
+      (= (sort (for [{:keys [line label]} marks :when (< line n)] [line label]))
+         (sort shown)))))
+
+(defspec an-excerpt-keeps-exactly-the-lines-around-its-marks runs
+  (prop/for-all [{:keys [lines marks limits]} gr/output-excerpt-input]
+    (let [{:keys [before after tail]} limits
+          n (count lines)
+          near (if (seq marks)
+                 (set (for [{:keys [line]} marks
+                            i (range (- (min line n) before) (+ (min line n) after))
+                            :when (< -1 i n)]
+                        i))
+                 (set (range (max 0 (- n tail)) n)))]
+      (= near (kept-lines (render/output-excerpt lines marks limits))))))
+
+(deftest output-is-cut-down-to-the-lines-around-each-failure
+  (let [output (str/join "\n" (map #(str "line " %) (range 100)))
+        state (reduce rs/apply-event (rs/init {:namespaces '[v-test]})
+                      [(ev {:event :ns/start :ns 'v-test})
+                       (ev {:event :var/start :ns 'v-test :var 'x})
+                       (ev {:event :assertion :ns 'v-test :var 'x :type :fail :line 7 :file "t.clj"
+                            :output-at (count (str/join (map #(str "line " % "\n") (range 40))))})
+                       (ev {:event :assertion :ns 'v-test :var 'x :type :error :line 9 :file "t.clj"
+                            :output-at (count output)})
+                       (ev {:event :var/end :ns 'v-test :var 'x :pass 0 :fail 1 :error 1
+                            :duration-ms 1 :output output})
+                       (ev {:event :ns/end :ns 'v-test})])
+        lines (->> (render/failure-report state {:width 80 :color? false})
+                   str/split-lines
+                   (drop-while #(not (str/includes? % "output:")))
+                   (map str/trim))]
+    (is (= ["output:" "| … 15 earlier lines" "| line 15"]
+           (take 3 lines)))
+    (is (= ["| line 39" "▲ FAIL  t.clj:7" "| line 40"]
+           (take 3 (drop-while #(not= "| line 39" %) lines))))
+    (is (= ["| line 44" "| … 30 lines" "| line 75"]
+           (take 3 (drop-while #(not= "| line 44" %) lines))))
+    (is (= "| line 99" (last lines)) "a failure after the last line gets no marker")
+    (is (= 1 (count (filter #{"output:"} lines))) "shown once for the var")))
+
+(deftest a-failure-before-the-last-line-hides-what-came-later
+  (let [output (str/join "\n" (map #(str "line " %) (range 50)))
+        report (render/failure-report
+                (one-failure {:message "boom" :file "t.clj" :line 3 :output-at (count "line 0\nline 1\n")}
+                             output)
+                {:width 80 :color? false})]
+    (is (str/includes? report "| line 1\n     ▲ FAIL  t.clj:3\n     | line 2"))
+    (is (str/includes? report "| line 6\n     | … 43 later lines"))
+    (is (not (str/includes? report "earlier")))))
+
 (defn- failing-vars [n]
   (reduce rs/apply-event (rs/init {:namespaces '[r-test]})
           (concat [(ev {:event :ns/start :ns 'r-test})]

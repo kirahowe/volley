@@ -511,21 +511,69 @@
      (paint opts :gray (str "line: " (if (> (count t) 300) (str (subs t 0 300) "…") t)))
      (paint opts :gray "the results of this worker may be incomplete")]))
 
-(def ^:private output-tail-lines
-  "How many of the last lines of a test's output a report shows."
-  30)
+(def ^:private output-limits
+  "How much of a test's output a report shows: the lines just `:before`
+  and `:after` each failure, or, when no failure says where it happened
+  in the output, the last `:tail` lines."
+  {:before 25 :after 5 :tail 30})
+
+(defn- windows
+  "The `[from to)` line ranges an excerpt of `n` lines keeps."
+  [n marks {:keys [before after tail]}]
+  (if (seq marks)
+    (map (fn [{:keys [line]}] [(max 0 (- line before)) (min n (+ line after))]) marks)
+    [[(max 0 (- n tail)) n]]))
+
+(defn output-excerpt
+  "The part of a test's output `lines` (a vector) that a report shows, as
+  rows: `[:line s]`, `[:gap n]` for `n` lines left out, and `[:mark label]`.
+  Each of `marks`, `{:line n :label s}`, is a failure that happened after
+  the first `n` lines were printed. The excerpt keeps the lines around each
+  mark, or the last ones when there are none (see `output-limits`). A mark
+  after the last line gets no row: output that ends at a failure needs no
+  pointer to it."
+  ([lines marks] (output-excerpt lines marks output-limits))
+  ([lines marks limits]
+   (let [n (count lines)
+         marks (map #(update % :line (fn [l] (-> l (max 0) (min n)))) marks)
+         ws (windows n marks limits)
+         kept? (fn [i] (some (fn [[from to]] (and (<= from i) (< i to))) ws))
+         marks-at (group-by :line marks)]
+     (->> (range n)
+          (mapcat (fn [i]
+                    (concat (map (fn [m] [:mark (:label m)]) (marks-at i))
+                            [(if (kept? i) [:line (nth lines i)] [:gap 1])])))
+          (partition-by #(= :gap (first %)))
+          (mapcat (fn [rows] (if (= :gap (ffirst rows)) [[:gap (count rows)]] rows)))))))
+
+(defn- output-line
+  "How many lines of `text` were printed before character `at`."
+  [text at]
+  (let [before (subs text 0 (min at (count text)))]
+    (+ (count (filter #{\newline} before))
+       (if (or (= "" before) (str/ends-with? before "\n")) 0 1))))
 
 (defn- output-section
-  "The end of what a test printed: its last lines, after a count of the
-  earlier ones, since the end is where a failure usually shows."
-  [opts output]
+  "What a test printed, cut down to the lines around its failures. Each of
+  `marks`, `{:at n :label s}`, is a failure that happened when the first
+  `n` characters of `output` had been printed."
+  [opts output marks]
   (when-not (str/blank? output)
-    (let [lines (str/split-lines (str output))
-          earlier (max 0 (- (count lines) output-tail-lines))]
-      (concat [(paint opts :gray "output:")]
-              (when (pos? earlier)
-                [(paint opts :gray (str "  | … " earlier " earlier lines"))])
-              (map #(paint opts :gray (str "  | " (ext %))) (drop earlier lines))))))
+    (let [text (str output)
+          lines (str/split-lines text)
+          rows (vec (output-excerpt lines (map (fn [{:keys [at label]}] {:line (output-line text at) :label label})
+                                               marks)))
+          last-row (dec (count rows))]
+      (cons (paint opts :gray "output:")
+            (map-indexed
+             (fn [i [kind x]]
+               (case kind
+                 :line (paint opts :gray (str "  | " (ext x)))
+                 :mark (paint opts :red (str "  ▲ " (ext x)))
+                 :gap (paint opts :gray (str "  | … " (cond (zero? i) (plural x "earlier line")
+                                                             (= i last-row) (plural x "later line")
+                                                             :else (plural x "line"))))))
+             rows)))))
 
 (defn- check-lines
   "A failed test.check property: how it failed, the shrunk input, and how
@@ -541,8 +589,9 @@
        [(paint opts :gray (str "rerun: (" (qualified ns var) " " num-tests " :seed " seed ")"))]))))
 
 (defn- failure-lines
-  "Lines for one failure. Captured output is added when `output?` is true."
-  [opts {:keys [kind contexts message error check] :as f} output?]
+  "Lines for one failure. Captured output is added when `marks`, the
+  failure points to show in it, is not nil."
+  [opts {:keys [kind contexts message error check] :as f} marks]
   (let [{:keys [expected actual pair]} (when (and (#{:fail :error} kind) (not check)) (comparison f))
         loc (location f)]
     (concat
@@ -563,7 +612,7 @@
        (when (= :protocol-error kind) (protocol-error-lines opts f))
        (when-let [vs (seq (:not-run-vars f))]
          [(paint opts :yellow (str "not run: " (str/join ", " (map ext vs))))])
-       (when output? (output-section opts (:output f))))))))
+       (when marks (output-section opts (:output f) marks)))))))
 
 (defn still-running-line
   "`still running: ns/var (1m 05s)`, for a test that runs for a long time
@@ -595,14 +644,32 @@
   [state]
   (into [] (remove #(= :not-run (:kind %))) (rs/failures state)))
 
+(defn- output-mark
+  "Where failure `f` happened in its test's output, if the worker said."
+  [{:keys [kind output-at] :as f}]
+  (when output-at
+    {:at output-at
+     :label (str (if (= :error kind) "ERROR" "FAIL") (some->> (location f) (str "  ")))}))
+
+(defn- var-failure-lines
+  "Lines for the failures `fs` of one var, which share its output: it is
+  shown once, after the last of them, with every failure marked in it."
+  [opts fs]
+  (let [marks (vec (keep output-mark fs))]
+    (mapcat (fn [i f] (cons "" (failure-lines opts f (when (= i (dec (count fs))) marks))))
+            (range) fs)))
+
+(defn- failures-lines
+  "Lines for failures `fs`, each after a blank line, in order."
+  [opts fs]
+  (mapcat #(var-failure-lines opts %) (partition-by (juxt :ns :var) fs)))
+
 (defn- report-lines [fs opts]
-  (let [last-of-var? (fn [f g] (not= [(:ns f) (:var f)] [(:ns g) (:var g)]))
-        output?      (map-indexed (fn [i f] (last-of-var? f (get fs (inc i)))) fs)]
-    (->> (concat
-          [(paint opts :red "━━━ Failed Tests ━━━")]
-          (mapcat (fn [f o?] (cons "" (failure-lines opts f o?))) fs output?))
-         (#(finish % opts))
-         (str/join "\n"))))
+  (->> (concat
+        [(paint opts :red "━━━ Failed Tests ━━━")]
+        (failures-lines opts fs))
+       (#(finish % opts))
+       (str/join "\n")))
 
 (defn orphan-report
   "Detailed report for failures that belong to no namespace that ran (test
@@ -765,11 +832,7 @@
   (->> (newly-finished prev state opts)
        (mapcat (fn [rec]
                  (let [nfs (rs/ns-failures-of state (:ns rec))]
-                   (cons (ns-line opts rec)
-                         (mapcat (fn [[f g]]
-                                   (cons "" (failure-lines opts f (not= [(:ns f) (:var f)]
-                                                                        [(:ns g) (:var g)]))))
-                                 (map vector nfs (concat (rest nfs) [nil])))))))
+                   (cons (ns-line opts rec) (failures-lines opts nfs)))))
        (#(finish % opts))))
 
 ;;; Documentation reporter
