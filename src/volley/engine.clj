@@ -103,9 +103,12 @@
         out (fn [lines] {:effect :print :lines (vec lines) :stream :out})
         err (fn [lines] {:effect :print :lines (vec lines) :stream :err})
         exit (fn [code] {:effect :exit :code code})
-        missing-warning (when config-missing?
-                          [(str "Did not load a configuration file and using the defaults. "
-                                "To create one, put '#kaocha/v1 {}' in " config-file ".")])]
+        ;; no tests.edn just means the defaults; only a --config-file
+        ;; that names some other, missing file is worth a word (Kaocha
+        ;; warns for both)
+        missing-warning (when (and config-missing? (not= "tests.edn" config-file))
+                          [(str "Did not find the configuration file " config-file
+                                ", so using the defaults.")])]
     {:effects
      (cond
        read-error

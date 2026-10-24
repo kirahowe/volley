@@ -1015,6 +1015,10 @@ exactly. Each is the conservative option.
 - **Colour.** Kaocha colours output even when piped. volley colours only
   when stdout is a terminal or `--color` is given explicitly, and never
   when `NO_COLOR` is set, so CI logs stay plain unless asked.
+- **No tests.edn.** Kaocha warns that it loaded no configuration file
+  and says to create one holding `#kaocha/v1 {}`. volley runs the defaults
+  without a word, since the tag changes nothing in volley, and warns only
+  when `--config-file` names some other file that does not exist.
 - **Unreadable tests.edn.** Kaocha lets the reader exception escape. volley
   prints the error and exits 250, the code Kaocha uses for invalid config.
 - **Namespaces that never ran.** When no worker can be started, every

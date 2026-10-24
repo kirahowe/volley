@@ -91,9 +91,9 @@ Run `bb test`, or `bb -m volley.main` directly.
 
 If your project has no `tests.edn`, volley uses Kaocha's defaults: one
 suite with `test/` as its test path, running the namespaces whose names
-end in `-test`. It prints Kaocha's "Did not load a configuration file"
-warning on every run until you create the file. A `tests.edn` holding
-`#kaocha/v1 {}` gives the same defaults without the warning.
+end in `-test`. You need a `tests.edn` only to change them, and it can be
+a plain map: volley reads it the same with or without Kaocha's
+`#kaocha/v1` tag.
 
 If the `test` task above replaces one you wrote yourself, check which
 namespaces it ran. volley runs only namespaces whose names end in `-test`
@@ -244,8 +244,9 @@ The list of deliberate behaviour differences is in the
 In short: a namespace that fails to load is one error rather than failing
 the whole suite, a test that calls `System/exit` crashes one worker rather
 than the run (unless the run is in volley's own JVM), fail-fast finishes
-the failing test before stopping, and a namespace is loaded in the worker
-that runs it unless you pass `--preload`.
+the failing test before stopping, a namespace is loaded in the worker
+that runs it unless you pass `--preload`, and a project without
+`tests.edn` gets no warning about it.
 
 ## Before you switch
 

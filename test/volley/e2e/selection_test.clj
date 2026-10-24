@@ -13,11 +13,16 @@
   (let [{:keys [exit out err]} (e2e/run "default" [])]
     (is (= 1 exit))
     (is (= "4 tests | 3 passed | 1 failed | 0 errors | 0 skipped" (str/replace (e2e/summary-line out) #" \(.*\)$" "")))
-    (is (str/includes? err "Did not load a configuration file"))
+    (is (not (str/includes? err "WARNING")) "no tests.edn needs no warning")
     (is (str/includes? out " ✓ acme.math-test (2 tests)"))
     (is (str/includes? out " FAIL  acme.strings-test/wrong  test/acme/strings_test.clj:6"))
     (is (not (str/includes? out "acme.helper")) "only -test$ namespaces are tests")
     (is (not (str/includes? out "\u001b")) "no colour when stdout is not a terminal")))
+
+(deftest a-missing-config-file-named-on-the-command-line-is-a-warning
+  (let [{:keys [exit err]} (e2e/run "default" ["--config-file" "ci.edn"])]
+    (is (= 1 exit) "the defaults still run")
+    (is (str/includes? err "WARNING: Did not find the configuration file ci.edn, so using the defaults."))))
 
 (deftest suites-and-suite-selection
   (testing "every suite"
