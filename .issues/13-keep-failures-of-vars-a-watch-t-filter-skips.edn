@@ -1,10 +1,10 @@
 {:id 13
  :title "Keep failures of vars a watch t filter skips"
- :status :review
+ :status :done
  :type :bug
  :priority :p3
  :created "2026-10-18"
- :updated "2026-10-18"
+ :updated "2026-10-24"
  :tags #{}
  :blocked-by #{}
  :related #{}
