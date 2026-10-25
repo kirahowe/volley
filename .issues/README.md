@@ -14,10 +14,6 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
-| [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
-| [4](4-support-random-test-order-kaocha-randomize-plugin.md) | Support random test order (Kaocha randomize plugin) | feature | P3 |
-| [5](5-watch-mode-test-name-filter-misses-macro-defined-tests.md) | Watch mode test-name filter misses macro-defined tests | bug | P3 |
 | [6](6-run-once-fixtures-for-namespaces-whose-vars-are-all-pending.md) | Run :once fixtures for namespaces whose vars are all pending | bug | P3 |
 | [7](7-exit-249-when-a-plugin-namespace-defines-no-plugin.md) | Exit 249 when a plugin namespace defines no plugin | bug | P3 |
 | [8](8-run-shutdown-hooks-in-workers-stopped-by-fail-fast-or-a.md) | Run shutdown hooks in workers stopped by fail-fast or a watch cancel | feature | P3 |
@@ -36,6 +32,10 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [3](3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md) | Publish the GitHub repo and push the v0.1.0-alpha.1 tag | chore | P1 |
+| [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
+| [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+| [4](4-support-random-test-order-kaocha-randomize-plugin.md) | Support random test order (Kaocha randomize plugin) | feature | P3 |
+| [5](5-watch-mode-test-name-filter-misses-macro-defined-tests.md) | Watch mode test-name filter misses macro-defined tests | bug | P3 |
 | [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
 
 ## Dropped
