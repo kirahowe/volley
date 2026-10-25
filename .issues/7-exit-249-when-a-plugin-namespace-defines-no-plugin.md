@@ -6,5 +6,5 @@ If a plugin listed in tests.edn resolves to a namespace that exists but does not
 
 ## Acceptance criteria
 
-- [ ] volley exits 249 with Kaocha's message in that case.
-- [ ] config test plus a Kaocha diff case.
+- [x] volley exits 249 with Kaocha's message in that case.
+- [x] config test plus a Kaocha diff case.

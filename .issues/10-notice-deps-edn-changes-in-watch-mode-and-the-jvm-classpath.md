@@ -6,9 +6,9 @@ Two cache gaps: watch mode does not watch deps.edn (a dependency change needs a 
 
 ## Acceptance criteria
 
-- [ ] Watch mode notices deps.edn (and bb.edn) changes and restarts its workers with a recomputed classpath.
-- [ ] The classpath cache key includes the deps.edn files of `:local/root` dependencies and the user-level deps.edn.
-- [ ] README notes about deleting the cache removed or updated.
+- [x] Watch mode notices deps.edn (and bb.edn) changes and restarts its workers with a recomputed classpath.
+- [x] The classpath cache key includes the deps.edn files of `:local/root` dependencies and the user-level deps.edn.
+- [x] README notes about deleting the cache removed or updated.
 
 ## Log
 

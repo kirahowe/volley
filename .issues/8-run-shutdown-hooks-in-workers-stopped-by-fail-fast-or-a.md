@@ -6,10 +6,10 @@ Workers killed by fail-fast, or cancelled by a watch-mode rerun, are killed by h
 
 ## Acceptance criteria
 
-- [ ] Fail-fast and watch cancel ask workers to stop and wait a bounded time (e.g. 1s) before killing.
-- [ ] `post-run` hooks run in those workers when they stop in time.
-- [ ] Fail-fast still stops promptly: a test that never returns cannot delay the exit beyond the bound.
-- [ ] e2e test with a hook that writes a marker file.
+- [x] Fail-fast and watch cancel ask workers to stop and wait a bounded time (e.g. 1s) before killing.
+- [x] `post-run` hooks run in those workers when they stop in time.
+- [x] Fail-fast still stops promptly: a test that never returns cannot delay the exit beyond the bound.
+- [x] e2e test with a hook that writes a marker file.
 
 ## Log
 

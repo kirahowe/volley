@@ -6,8 +6,8 @@ Found by QA on volley#4 (not verified). The seed lives in engine-opts, computed 
 
 ## Acceptance criteria
 
-- [ ] Confirm the behaviour; if real, a config reload recomputes randomize/seed.
-- [ ] Watch test covering it.
+- [x] Confirm the behaviour; if real, a config reload recomputes randomize/seed.
+- [x] Watch test covering it.
 
 ## Log
 

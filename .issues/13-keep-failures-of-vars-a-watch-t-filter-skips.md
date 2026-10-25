@@ -6,8 +6,8 @@ Found by QA on volley#5. When a `t` filter skips only some vars of a namespace, 
 
 ## Acceptance criteria
 
-- [ ] Earlier failures of vars whose records are :not-focused skips survive the merge.
-- [ ] Watch test for the partial-filter case.
+- [x] Earlier failures of vars whose records are :not-focused skips survive the merge.
+- [x] Watch test for the partial-filter case.
 
 ## Log
 

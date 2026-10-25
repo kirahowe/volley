@@ -6,8 +6,8 @@ version_test's one-version-everywhere reads the version from the first `## [...]
 
 ## Acceptance criteria
 
-- [ ] version_test skips an Unreleased heading.
-- [ ] Unreleased entries added for the wave-1 changes.
+- [x] version_test skips an Unreleased heading.
+- [x] Unreleased entries added for the wave-1 changes.
 
 ## Log
 

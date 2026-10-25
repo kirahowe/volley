@@ -6,9 +6,9 @@ Kaocha's `wrap-run` hook wraps the run of every testable: suites, namespaces and
 
 ## Acceptance criteria
 
-- [ ] `wrap-run` also wraps each var's run in the worker, matching Kaocha's arity and order.
-- [ ] Decide and document suite-level wrapping in a multi-process run.
-- [ ] hooks e2e fixture extended to log var-level wrap calls.
+- [x] `wrap-run` also wraps each var's run in the worker, matching Kaocha's arity and order.
+- [x] Decide and document suite-level wrapping in a multi-process run.
+- [x] hooks e2e fixture extended to log var-level wrap calls.
 
 ## Log
 

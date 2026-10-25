@@ -6,5 +6,5 @@ The worker always loads the hooks support namespaces even when no hooks are conf
 
 ## Acceptance criteria
 
-- [ ] Workers load hook support only after a `:configure` message that carries hooks.
-- [ ] JVM worker start-to-ready measured before and after.
+- [x] Workers load hook support only after a `:configure` message that carries hooks.
+- [x] JVM worker start-to-ready measured before and after.

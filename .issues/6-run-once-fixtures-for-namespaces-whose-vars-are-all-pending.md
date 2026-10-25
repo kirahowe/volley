@@ -6,8 +6,8 @@ When every var in a namespace is `:kaocha/pending`, volley runs no fixtures for 
 
 ## Acceptance criteria
 
-- [ ] Matches Kaocha: `:once` fixtures run for an all-pending namespace (check `kaocha.type.ns` to confirm).
-- [ ] Added to the Kaocha diff tests (`bb test:diff`).
+- [x] Matches Kaocha: `:once` fixtures run for an all-pending namespace (check `kaocha.type.ns` to confirm).
+- [x] Added to the Kaocha diff tests (`bb test:diff`).
 
 ## Log
 

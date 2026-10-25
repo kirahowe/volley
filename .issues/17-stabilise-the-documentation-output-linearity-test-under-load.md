@@ -6,7 +6,7 @@ engine-perf-test/documentation-output-is-linear-in-namespaces failed intermitten
 
 ## Acceptance criteria
 
-- [ ] The test passes reliably with the machine under parallel load, while still catching a quadratic regression.
+- [x] The test passes reliably with the machine under parallel load, while still catching a quadratic regression.
 
 ## Log
 

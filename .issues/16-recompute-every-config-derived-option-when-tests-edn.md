@@ -6,8 +6,8 @@ Found while landing volley#14. After a tests.edn reload, watch mode still uses t
 
 ## Acceptance criteria
 
-- [ ] run-opts derives all of these from the reloaded config.
-- [ ] Property or watch test covering a reload that changes them.
+- [x] run-opts derives all of these from the reloaded config.
+- [x] Property or watch test covering a reload that changes them.
 
 ## Log
 

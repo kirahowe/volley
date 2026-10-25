@@ -6,8 +6,8 @@ When the same namespace is found under two test paths (for example `test` and `t
 
 ## Acceptance criteria
 
-- [ ] Decide: match Kaocha, or document the divergence in doc/design.md and the README.
-- [ ] If matching, a Kaocha diff case with a duplicated namespace.
+- [x] Decide: match Kaocha, or document the divergence in doc/design.md and the README.
+- [x] If matching, a Kaocha diff case with a duplicated namespace. (Not applicable: the divergence was kept and documented.)
 
 ## Log
 
