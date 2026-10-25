@@ -6,8 +6,8 @@ Found by QA on volley#9. A wrap-run hook that throws is reported as "<ns> failed
 
 ## Acceptance criteria
 
-- [ ] A throwing wrap-run hook is reported by name, like pre-test.
-- [ ] Vars that did not run are listed as not run.
+- [x] A throwing wrap-run hook is reported by name, like pre-test.
+- [x] Vars that did not run are listed as not run.
 
 ## Log
 

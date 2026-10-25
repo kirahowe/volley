@@ -30,13 +30,13 @@
 | [15](15-allow-an-unreleased-section-in-changelog-md.md) | Allow an Unreleased section in CHANGELOG.md | chore | P3 |
 | [16](16-recompute-every-config-derived-option-when-tests-edn.md) | Recompute every config-derived option when tests.edn reloads in watch mode | bug | P3 |
 | [17](17-stabilise-the-documentation-output-linearity-test-under-load.md) | Stabilise the documentation-output linearity test under load | bug | P3 |
-| [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
 
 ## Done
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [3](3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md) | Publish the GitHub repo and push the v0.1.0-alpha.1 tag | chore | P1 |
+| [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
 
 ## Dropped
 
