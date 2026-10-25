@@ -52,6 +52,13 @@ All notable changes to volley are recorded here. The format follows
   (volley#12)
 - A `wrap-run` hook that throws is reported by name, and the vars it kept
   from running are listed as not run. (volley#18)
+- A project without `tests.edn` runs on the defaults with no warning.
+  volley warns only when `--config-file` names a missing file other than
+  `tests.edn`. A `tests.edn` doesn't need Kaocha's `#kaocha/v1` tag.
+- A failure report shows the captured output around each failure (25
+  lines before, 5 after) rather than the last 30 lines of the test. When
+  the output continues past a failure, a `▲ FAIL file:line` line marks
+  where the failure happened.
 
 ### Fixed
 
