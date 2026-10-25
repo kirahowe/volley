@@ -25,6 +25,8 @@
   * `:worker-command` `(fn [config refresh?])` returning `{:command argv}`
                       or `{:error msg}`, for a reloaded config; with
                       `refresh?` the classpath is computed again
+  * `:add-hook-paths!` `(fn [config])` puts a reloaded config's test paths
+                      on the parent's classpath when its hooks run there
   * `:ctx`'s `:command` is only the first run's worker command; the session
     keeps the current one
   * `:config`, `:config-file`, `:cli-suites`
@@ -120,7 +122,8 @@
   since its classpath includes the suites' test paths. Once deps.edn or
   bb.edn has changed, every rebuild computes the classpath again instead
   of reusing the one the parent started with (`:refresh-classpath?`
-  stays set, even when that rebuild fails)."
+  stays set, even when that rebuild fails). The new config's test paths
+  go on the parent's classpath too, for its post-summary hooks."
   [env sess reload-deps?]
   (let [refresh? (boolean (or reload-deps? (:refresh-classpath? sess)))
         {:keys [config error]} ((:reload-config env))
@@ -129,8 +132,9 @@
         complain! #((:print! env) {:lines [(str "ERROR: " % " (keeping the previous configuration)")]
                                    :stream :err})]
     (if (and config (not error))
-      (assoc sess :config config :command (:command cmd) :refresh-classpath? refresh?
-             :infos (read-infos config) :snapshot (take-snapshot env config))
+      (do ((:add-hook-paths! env) config)
+          (assoc sess :config config :command (:command cmd) :refresh-classpath? refresh?
+                 :infos (read-infos config) :snapshot (take-snapshot env config)))
       (do (complain! error) (assoc sess :refresh-classpath? refresh?)))))
 
 (defn- start-run [{:keys [ctx run-effects! engine-opts] :as env} sess selection]

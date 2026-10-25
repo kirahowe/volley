@@ -768,8 +768,15 @@ queue, as in a one-shot run.
    (`volley.config/engine-opts`: workers, bindings, fail-fast,
    capture-output, isolate, preload, JUnit report, hook options, run
    seed) from the current config (`volley.watch/run-opts`), so editing
-   the randomize settings changes the next run's order. The reporter and
-   colour stay as they were at startup. The shell's random
+   the randomize settings changes the next run's order. On babashka the
+   reloaded suites' test paths also go on the parent's classpath when
+   the config has post-summary hooks, which run in the parent; paths
+   already there are not added twice. The reporter and colour stay as
+   they were at startup, unlike Kaocha's (`kaocha.watch/reload-config`):
+   the reporter decides how the session drives the terminal (live frame,
+   raw mode, hidden cursor), which is set up once. The project's own
+   reporters do follow the reload, since workers get them in their
+   configure message. The shell's random
    seed is drawn once, so a config without a seed keeps the session's.
 5. A change to deps.edn or bb.edn does the same with `:reload-deps?` in
    the selection: the worker command is rebuilt with a recomputed

@@ -78,3 +78,24 @@
           (is (str/includes? text "PASS  Waiting for file changes"))))
       (finally
         (is (not= ::e2e/timeout (ws/stop! w)) "the process ends when killed")))))
+
+(deftest watch-puts-a-reloaded-configs-test-paths-on-the-parent-classpath
+  ;; the post-summary hook runs in the parent, from a test path that
+  ;; only the reloaded tests.edn names
+  (let [dir (e2e/copy-project "watch" {"hooky/wx/summary_hook.clj"
+                                       (str "(ns wx.summary-hook)\n\n"
+                                            "(defn post-summary [result]\n"
+                                            "  (spit \"summary.log\" \"ran\\n\" :append true)\n"
+                                            "  result)\n")})
+        w (ws/start! dir (ws/volley-command "--watch"))]
+    (try
+      (ws/await-run! w 1)
+      (ws/write! dir "tests.edn"
+                 (str "#kaocha/v1 {:plugins [:kaocha.plugin/hooks]\n"
+                      " :kaocha.hooks/post-summary [wx.summary-hook/post-summary]\n"
+                      " :tests [{:id :unit :test-paths [\"test\" \"hooky\"]}]}\n"))
+      (let [text (ws/await-run! w 2)]
+        (is (not (str/includes? text "post-summary hook failed")) text)
+        (is (fs/exists? (fs/path dir "summary.log")) "the hook ran"))
+      (finally
+        (is (not= ::e2e/timeout (ws/stop! w)) "the process ends when killed")))))

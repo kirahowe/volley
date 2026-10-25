@@ -168,7 +168,18 @@
   [paths]
   (when-let [add (try (requiring-resolve 'babashka.classpath/add-classpath)
                       (catch Exception _ nil))]
-    (doseq [p (flatten paths)] (add p))))
+    ;; add-classpath appends duplicates, and watch mode adds again on each reload
+    (let [on-cp (set (str/split (or ((requiring-resolve 'babashka.classpath/get-classpath)) "")
+                                (re-pattern (java.util.regex.Pattern/quote java.io.File/pathSeparator))))]
+      (run! add (distinct (remove on-cp (flatten paths)))))))
+
+(defn- add-hook-paths!
+  "Put the suites' test paths on this process's classpath when `config`
+  has `post-summary` hooks, which run here. Watch mode calls it again for
+  each reloaded tests.edn."
+  [config]
+  (when (seq (get-in config [:hooks :post-summary]))
+    (add-test-paths! (mapcat :test-paths (:tests config)))))
 
 (defn- unresolved-reporter
   "The first of the project's reporter symbols that does not resolve in
@@ -323,6 +334,7 @@
       :print! print-lines!
       :reload-config reload
       :worker-command worker-command
+      :add-hook-paths! add-hook-paths!
       :config cfg
       :config-file (:config-file loaded)
       :cli-suites (:suites (:cli loaded))
@@ -369,7 +381,7 @@
                             :history (bfs/read-history)})
                           {:scale-out-ms core-runtime/in-process-limit-ms
                            :record-history? (core-runtime/record-history? setup (:suites cli) (:options cli))})
-              _ (when (:post-summary opts) (add-test-paths! (mapcat :test-paths (:tests config))))
+              _ (add-hook-paths! config)
               bad-reporter (when-not error (unresolved-reporter config))]
           (cond
             error (do (print-lines! {:lines [(str "volley: " error)] :stream :err}) 250)

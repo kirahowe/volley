@@ -79,6 +79,9 @@ All notable changes to volley are recorded here. The format follows
   output capture, isolation, bindings, the JUnit report and hooks) comes
   from the reloaded config. The reporter and colour keep their startup
   values. (volley#16)
+- In watch mode, a reloaded `tests.edn` with post-summary hooks puts its
+  test paths on the parent's classpath, so a hook in a newly added test
+  path resolves. (volley#19)
 
 ## [0.1.0-alpha.1] - 2026-10-18
 
