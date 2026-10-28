@@ -9,12 +9,6 @@
 | --- | --- | --- | --- |
 | [20](20-find-the-1-in-40-bb-test-failure-seen-after-the-volley-2.md) | Find the 1-in-40 bb test failure seen after the volley#2 fixes | bug | P3 |
 
-### Review
-
-| ID | Title | Type | Priority |
-| --- | --- | --- | --- |
-| [19](19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md) | Add test paths from a reloaded tests.edn to the watch parent classpath | bug | P3 |
-
 ## Done
 
 | ID | Title | Type | Priority |
@@ -37,6 +31,7 @@
 | [16](16-recompute-every-config-derived-option-when-tests-edn.md) | Recompute every config-derived option when tests.edn reloads in watch mode | bug | P3 |
 | [17](17-stabilise-the-documentation-output-linearity-test-under-load.md) | Stabilise the documentation-output linearity test under load | bug | P3 |
 | [18](18-name-the-wrap-run-hook-when-it-throws.md) | Name the wrap-run hook when it throws | feature | P3 |
+| [19](19-add-test-paths-from-a-reloaded-tests-edn-to-the-watch.md) | Add test paths from a reloaded tests.edn to the watch parent classpath | bug | P3 |
 
 ## Dropped
 
