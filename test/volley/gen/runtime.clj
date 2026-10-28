@@ -39,8 +39,10 @@
                         0 12)))
 
 (def alias-kw
-  "A deps.edn alias."
-  (gen/fmap keyword (gen/such-that seq gen/string-alphanumeric 20)))
+  "A deps.edn alias, sometimes qualified, as `:dev/test`."
+  (let [part (gen/such-that seq gen/string-alphanumeric 20)]
+    (gen/one-of [(gen/fmap keyword part)
+                 (gen/fmap (fn [[n a]] (keyword (str "n" n) (str "a" a))) (gen/tuple part part))])))
 
 (def aliases
   "Up to four aliases."

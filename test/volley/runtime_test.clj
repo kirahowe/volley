@@ -11,7 +11,7 @@
    [clojure.test.check.properties :as prop]))
 
 (defn- alias-arg [as]
-  (str "-A" (apply str (map #(str ":" (name %)) as))))
+  (str "-A" (apply str as)))
 
 ;; ---------------------------------------------------------------------------
 ;; Runtime and worker count
@@ -206,7 +206,7 @@
 
 (defspec alias-strings-round-trip 200
   (prop/for-all [as g/aliases]
-    (= as (runtime/parse-aliases (apply str (map #(str ":" (name %)) as))))))
+    (= as (runtime/parse-aliases (apply str as)))))
 
 (defspec explicit-aliases-win 100
   (prop/for-all [as (gen/such-that seq g/aliases) text g/deps-text]
@@ -238,7 +238,8 @@
 (deftest classpath-key-treats-missing-deps-as-empty
   (is (= (runtime/classpath-key nil [:test]) (runtime/classpath-key "" [:test])))
   (is (not= (runtime/classpath-key "{}" [:a :b]) (runtime/classpath-key "{}" [:b :a]))
-      "alias order is classpath order"))
+      "alias order is classpath order")
+  (is (not= (runtime/classpath-key "{}" [:a/test]) (runtime/classpath-key "{}" [:b/test]))))
 
 (defspec classpath-key-depends-on-every-other-deps-file 200
   (prop/for-all [text gen/string as g/aliases files g/deps-files

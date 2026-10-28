@@ -202,6 +202,11 @@
   (let [s (str/replace-first (str s) #"^:" "")]
     (when-not (str/blank? s) (keyword s))))
 
+(defn- alias-name
+  "`:dev/test` as `dev/test`, keeping the namespace that `name` drops."
+  [k]
+  (subs (str k) 1))
+
 (defn parse-aliases
   "A `--aliases` value such as `:test:dev` or `test,dev` as a vector of
   keywords."
@@ -237,7 +242,7 @@
   "The command that prints the classpath for `aliases`."
   [aliases]
   (cond-> ["clojure" "-Spath"]
-    (seq aliases) (conj (str "-A" (apply str (map #(str ":" (name %)) aliases))))))
+    (seq aliases) (conj (str "-A" (apply str (map #(str ":" (alias-name %)) aliases))))))
 
 (defn- hex [^bytes bs]
   (apply str (map #(format "%02x" (bit-and % 0xff)) bs)))
@@ -301,7 +306,7 @@
   ([deps-text aliases] (classpath-key deps-text aliases {}))
   ([deps-text aliases others]
    (let [md (MessageDigest/getInstance "SHA-256")
-         input (pr-str (cond-> [(or deps-text "") (mapv name aliases)]
+         input (pr-str (cond-> [(or deps-text "") (mapv alias-name aliases)]
                          (seq others) (conj (sort-by key others))))]
      (subs (hex (.digest md (.getBytes ^String input "UTF-8"))) 0 16))))
 
