@@ -61,7 +61,8 @@
   load, or nil."
   [cfg]
   (let [dirs (mapcat (juxt :test-paths :source-paths) (:tests cfg))]
-    (some #(config/plugin-load-error % (partial ns-source (flatten dirs))) (:unknown-plugins cfg))))
+    (some #((requiring-resolve 'volley.plugins/plugin-load-error) % (partial ns-source (flatten dirs)))
+          (:unknown-plugins cfg))))
 
 (defn- load-config
   "Parse args and read tests.edn. Returns the pieces `engine/preflight`

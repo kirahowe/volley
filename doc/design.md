@@ -74,6 +74,7 @@ Pure core:
 |---|---|
 | `volley.cli` | argv → options map, or a list of errors. Kaocha flags plus volley's own. |
 | `volley.config` | `tests.edn` text (+ CLI options) → normalized config. Kaocha's reader tags and defaults. |
+| `volley.plugins` | Whether a third-party plugin would load under Kaocha, from the source of the namespaces Kaocha tries. Parses with `volley.discover`, so `volley.main` loads it only when tests.edn names a plugin volley does not know. |
 | `volley.discover` | File path + file text → namespace info (name, requires), parsed with edamame. |
 | `volley.paths` | Which files and namespaces belong to a suite: test paths and `ns-patterns`. Apart from `volley.discover`, so planning from cached namespace infos does not load the parser. |
 | `volley.ns-cache` | Which namespace infos a JVM run takes from `.volley/ns-infos.edn` and parses, and the cache to save (`plan-reuse`, `next-cache`). |
@@ -182,9 +183,9 @@ ignore. Plugins fall in three groups (`volley.config`):
   exits 248 when a namespace it tries cannot be loaded and no loaded one
   defines the plugin, and 249 when every namespace it tried loaded but
   none defines it. It tries `a.b` only when `a.b.c` fails. The shell reads
-  the source of each candidate namespace (`volley.config/plugin-candidates`)
+  the source of each candidate namespace (`volley.plugins/plugin-candidates`)
   from the classpath or the suites' paths, and
-  `volley.config/plugin-load-error` decides from that text, without
+  `volley.plugins/plugin-load-error` decides from that text, without
   loading anything. It parses the source with edamame, so comments and
   `#_` forms do not count, and follows the namespace's requires
   (skipping `clojure.*` and `kaocha.*`). A `defplugin` of the plugin's
