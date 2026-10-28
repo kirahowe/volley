@@ -1,0 +1,11 @@
+{:id 24
+ :title "Stop a killed in-process worker from running more vars and hooks"
+ :status :ready
+ :type :bug
+ :priority :p2
+ :created "2026-10-28"
+ :updated "2026-10-28"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "24-stop-a-killed-in-process-worker-from-running-more-vars-and.md"}

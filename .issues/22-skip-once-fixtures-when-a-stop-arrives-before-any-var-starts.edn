@@ -1,0 +1,11 @@
+{:id 22
+ :title "Skip :once fixtures when a stop arrives before any var starts"
+ :status :ready
+ :type :bug
+ :priority :p2
+ :created "2026-10-28"
+ :updated "2026-10-28"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "22-skip-once-fixtures-when-a-stop-arrives-before-any-var-starts.md"}

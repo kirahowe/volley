@@ -1,0 +1,11 @@
+{:id 23
+ :title "Stop a suite wrap-run that calls run twice from hanging the worker"
+ :status :ready
+ :type :bug
+ :priority :p3
+ :created "2026-10-28"
+ :updated "2026-10-28"
+ :tags #{}
+ :blocked-by #{}
+ :related #{}
+ :details "23-stop-a-suite-wrap-run-that-calls-run-twice-from-hanging-the.md"}
