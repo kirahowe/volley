@@ -480,7 +480,7 @@
   "`{:kind kw :entry entry}` when `e` (or what it wraps) is the error of a
   hook (`volley.shell.hooks`), else nil."
   [e]
-  (let [{:keys [hook entry]} (ex-data (protocol/unwrap e))]
+  (let [{hook :volley/hook entry :entry} (ex-data (protocol/unwrap e))]
     (when (keyword? hook) {:kind hook :entry entry})))
 
 (defn- error-event

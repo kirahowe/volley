@@ -86,7 +86,7 @@
   (let [cause (protocol/unwrap e)]
     (ex-info (str "volley: " (name kind) " hook " (pr-str entry) " threw "
                   (.getName (class cause)) (when-let [m (protocol/message cause)] (str ": " m)))
-             {:hook kind :entry entry}
+             {:volley/hook kind :entry entry}
              e)))
 
 (defn- chain
@@ -221,7 +221,7 @@
                 (seq (get-in hs [:msg :hooks :wrap-run]))
                 (not (contains? (:suites-wrapped hs) suite)))))
 
-(defn- hook-error? [e] (keyword? (:hook (ex-data (protocol/unwrap e)))))
+(defn- hook-error? [e] (keyword? (:volley/hook (ex-data (protocol/unwrap e)))))
 
 (defn- wrapped-run
   "`base` wrapped by the `wrap-run` hooks, as Kaocha's `(reduce #(%2 %1)

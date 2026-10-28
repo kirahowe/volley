@@ -281,11 +281,11 @@
       (is (= "java.lang.NumberFormatException: For input string: \"y\"" (:message enc)))
       (is (not-any? #(str/includes? (str (:data %)) "callstack") chain))))
   (testing "an error a hook wraps, itself wrapped (probe hooks, prerun.edn)"
-    (let [e (sci-wrapper (ex-info "volley: pre-run hook x/y threw" {:hook :pre-run}
+    (let [e (sci-wrapper (ex-info "volley: pre-run hook x/y threw" {:volley/hook :pre-run}
                                   (sci-wrapper (ex-info "pre-run boom" {}))))
           chain (take-while some? (iterate :cause (worker/encode-throwable e)))]
       (is (= ["volley: pre-run hook x/y threw" "pre-run boom"] (map :message chain)))
-      (is (= ["{:hook :pre-run}" "{}"] (map :data chain))))))
+      (is (= ["#:volley{:hook :pre-run}" "{}"] (map :data chain))))))
 
 (deftest a-hook-error-names-the-unwrapped-exception
   (let [hook '(fn [_] (throw (ex-info "npe" {:sci.impl/callstack (volatile! nil)} (NullPointerException. "npe"))))
@@ -414,6 +414,12 @@
         events (hooked-events {:wrap-run [bad logging-wrap-run]} 'exec.pass-test)]
     (is (= {:kind :wrap-run :entry bad} (:hook (ns-error events))))
     (is (= '[strings] (not-run events)))))
+
+(deftest a-tests-own-hook-key-is-not-a-hook-error
+  (doseq [events [(run-events 'exec.hook-data-error-test)
+                  (hooked-events {:wrap-run [logging-wrap-run]} 'exec.hook-data-error-test)]]
+    (is (= "webhook failed" (get-in (ns-error events) [:error :message])))
+    (is (not (contains? (ns-error events) :hook)))))
 
 (deftest a-namespace-wrap-run-that-throws-after-running-counts-the-vars
   (let [hook (throw-at :exec.pass-test :after)
