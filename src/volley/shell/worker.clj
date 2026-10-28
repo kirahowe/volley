@@ -243,6 +243,12 @@
   (.flush ^java.io.PrintStream stream)
   (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
 
+(def system-streams-lock
+  "Held while a var puts `System/out` and `System/err` back, and by
+  `volley.shell.in-process` while a kill gives the parent its own streams
+  back, so the kill cannot land between the var's check and its restore."
+  (Object.))
+
 (def ^:private live-capture
   "The capture buffer of the test running right now, so that a test that
   exits the process does not take its output with it (see `-main`)."
@@ -278,8 +284,9 @@
       (set! *err* saved-err)
       ;; only while they are still the capture: a killed in-process
       ;; worker has given the parent its own streams back by now
-      (when (identical? System/out (:stream capture)) (System/setOut saved-system-out))
-      (when (identical? System/err (:stream capture)) (System/setErr saved-system-err)))
+      (locking system-streams-lock
+        (when (identical? System/out (:stream capture)) (System/setOut saved-system-out))
+        (when (identical? System/err (:stream capture)) (System/setErr saved-system-err))))
     (reset! acc {:ended {:pass pass :fail fail :error error}})
     (emit! {:event :var/end :ns ns-sym :var (:name (meta var))
             :pass pass :fail fail :error error

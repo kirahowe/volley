@@ -86,10 +86,11 @@
         saved [System/out System/err System/in]
         exit! (fn [code]
                 (when (compare-and-set! exited? false true)
-                  (let [[out err in] saved]
-                    (System/setOut out)
-                    (System/setErr err)
-                    (System/setIn in))
+                  (locking worker/system-streams-lock
+                    (let [[out err in] saved]
+                      (System/setOut out)
+                      (System/setErr err)
+                      (System/setIn in)))
                   (.put queue {:event :worker/exit :worker id :code code
                                :at (System/currentTimeMillis)})))
         proto (line-stream #(pool/put-line! queue id :stdout (partial protocol/decode-line prefix) %)
@@ -122,4 +123,4 @@
     (.start thread)
     {:id id
      :in in
-     :kill! (fn [] (.put commands eof) (.interrupt thread) (exit! 1))}))
+     :kill! (fn [] (exit! 1) (.put commands eof) (.interrupt thread))}))
