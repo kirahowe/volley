@@ -9,7 +9,7 @@ that waiting for a single process to finish is noticeable, and for babashka
 projects that already use Kaocha and want to keep their existing
 configuration.
 
-volley is alpha software (0.1.0-alpha.1). See [CHANGELOG.md](CHANGELOG.md).
+volley is alpha software (0.1.0-alpha.2). See [CHANGELOG.md](CHANGELOG.md).
 
 ## What it looks like
 
@@ -81,7 +81,7 @@ to `bb.edn`, and a task to run it:
 
 ```clojure
 {:paths ["src" "test"]
- :deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.1"}}
+ :deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.2"}}
  :tasks {test {:doc "Run the tests"
                :requires ([volley.main])
                :task (apply volley.main/-main *command-line-args*)}}}
@@ -120,7 +120,7 @@ Change the `:test` alias in `deps.edn` that runs Kaocha: swap
 ```clojure
 {:aliases
  {:test {:extra-paths ["test" "test-resources"]
-         :extra-deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.1"}
+         :extra-deps {com.kirahowe/volley {:mvn/version "0.1.0-alpha.2"}
                       org.clojure/test.check {:mvn/version "1.1.1"}}
          :jvm-opts ["-Xmx2g"]
          :main-opts ["-m" "volley.main"]}}}

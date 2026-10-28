@@ -6,6 +6,12 @@ All notable changes to volley are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-10-28
+
+Second alpha: random test order, in-process runs for short JVM suites,
+and watch mode that follows changes to `tests.edn`, `deps.edn` and
+`bb.edn`.
+
 ### Added
 
 - Random test order. With Kaocha's randomize plugin (on by default) or
@@ -22,11 +28,17 @@ All notable changes to volley are recorded here. The format follows
   and computes the workers' classpath again. Removed dependencies and
   paths stay on the classpath until a restart. (volley#10)
 - With a JVM parent, a suite whose recent runs took 10s or less runs on a
-  thread of the parent instead of starting worker JVMs, and starts workers
-  for the rest if it runs past 10s. `--workers` or `:workers` turns this
-  off. The run times are kept in `.volley/history.edn`, so a first run
-  still starts workers. On hosted-clay this brings volley level with
-  Kaocha (6.14s against 6.16s, median of five). (volley#2)
+  thread of the parent instead of starting worker JVMs. If a run is still
+  going after 10s, with at least 10s of work waiting by the recorded
+  timings, volley starts workers for the rest. `--workers` or `:workers`
+  turns this off. The run times are kept in `.volley/history.edn`, so a
+  first run still starts workers. On hosted-clay this brings volley level
+  with Kaocha (6.14s against 6.16s, median of five). A run inside the
+  parent differs from one in workers in three ways: a test that calls
+  `System/exit` ends the whole run; `println` from a thread that does not
+  carry bindings over (a raw `Thread`, an executor, core.async) reaches
+  the terminal instead of the test's output; and a `System/setOut` that a
+  test never undoes stays in place for the rest of the run. (volley#2)
 - A JVM parent caches parsed namespace forms in `.volley/ns-infos.edn`
   and parses only the files that changed. (volley#2)
 
@@ -54,11 +66,11 @@ All notable changes to volley are recorded here. The format follows
   from running are listed as not run. (volley#18)
 - A project without `tests.edn` runs on the defaults with no warning.
   volley warns only when `--config-file` names a missing file other than
-  `tests.edn`. A `tests.edn` doesn't need Kaocha's `#kaocha/v1` tag.
+  `tests.edn`.
 - A failure report shows the captured output around each failure (25
   lines before, 5 after) rather than the last 30 lines of the test. When
-  the output continues past a failure, a `▲ FAIL file:line` line marks
-  where the failure happened.
+  the output continues past a failure, a `▲ FAIL` (or `▲ ERROR`) line
+  with the failure's file and line marks where it happened.
 
 ### Fixed
 
@@ -82,6 +94,21 @@ All notable changes to volley are recorded here. The format follows
 - In watch mode, a reloaded `tests.edn` with post-summary hooks puts its
   test paths on the parent's classpath, so a hook in a newly added test
   path resolves. (volley#19)
+- A qualified alias such as `:dev/test` keeps its namespace when volley
+  computes the `--runtime jvm` classpath. It used to become `-A:test`,
+  and `:a/test` and `:b/test` shared one cached classpath.
+- An exception a test throws with a `:hook` keyword in its data is no
+  longer reported as a failed hook.
+
+### Known limitations
+
+- Only `clojure.test` suites. No ClojureScript, no coverage.
+- Kaocha's notifier, gc-profiling, cloverage and similar plugins are
+  accepted with their options and do nothing; one warning names them.
+- volley differs from Kaocha in a few deliberate ways (load errors,
+  `System/exit` in a test, fail-fast inside a test, load order, random
+  order, the `--print-*` maps). See "Deliberate divergences from Kaocha"
+  in [doc/design.md](doc/design.md).
 
 ## [0.1.0-alpha.1] - 2026-10-18
 
@@ -170,5 +197,6 @@ First alpha. volley is a `clojure.test` runner that reads Kaocha's
   `--print-*` maps). See "Deliberate divergences from Kaocha" in
   [doc/design.md](doc/design.md).
 
-[Unreleased]: https://github.com/kirahowe/volley/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/kirahowe/volley/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/kirahowe/volley/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/kirahowe/volley/releases/tag/v0.1.0-alpha.1
