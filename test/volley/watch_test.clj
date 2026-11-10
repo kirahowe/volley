@@ -197,15 +197,29 @@
     (is (false? (:ok? merged)))))
 
 (deftest failures-of-unselected-namespaces-are-kept
-  (let [skipped {:phase :skipped :reason :not-focused}
-        run (assoc (rs/init {:namespaces '[a-test b-test]})
-                   :namespaces {'a-test {:ns 'a-test :status :done :vars {'x skipped}}
-                                'b-test {:ns 'b-test :status :done :vars {'only-in-b {:phase :done}}
-                                         :pass 1}})
-        prev (watch/merge-outcome nil {:ran '#{a-test b-test} :failed {'a-test #{'x}}})
+  (let [run (fn [reason]
+              (assoc (rs/init {:namespaces '[a-test b-test]})
+                     :namespaces {'a-test {:ns 'a-test :status :done
+                                           :vars {'x {:var 'x :phase :skipped :reason reason}}}
+                                  'b-test {:ns 'b-test :status :done :vars {'only-in-b {:phase :done}}
+                                           :pass 1}}))
+        prev (watch/merge-outcome nil {:ran '#{a-test b-test} :failed {'a-test #{'x}}})]
+    (is (= {'a-test #{'x}} (:failed (watch/merge-outcome prev (watch/outcome (run :not-focused)))))
+        "a t filter that skips a-test keeps its failure")
+    (is (= '#{b-test} (:ran (watch/outcome (run :skip)))))
+    (is (= {'a-test #{'x}} (:failed (watch/merge-outcome prev (watch/outcome (run :skip)))))
+        "so does a :skip filter")))
+
+(deftest a-fixed-load-error-clears-under-a-test-filter
+  ;; the t filter leaves out every var of a namespace that failed to load
+  ;; before; it loads now, so its failure is gone
+  (let [run (assoc (rs/init {:namespaces '[a-test]})
+                   :namespaces {'a-test {:ns 'a-test :status :done
+                                         :vars {'t1 {:var 't1 :phase :skipped :reason :not-focused}}}})
+        prev (watch/merge-outcome nil {:ran '#{a-test} :failed {'a-test #{}}})
         merged (watch/merge-outcome prev (watch/outcome run))]
-    (is (= '#{b-test} (:ran (watch/outcome run))))
-    (is (= {'a-test #{'x}} (:failed merged)) "a t filter that skips a-test keeps its failure")))
+    (is (= {} (:failed merged)))
+    (is (:ok? merged))))
 
 (deftest a-namespace-left-with-no-vars-clears-its-failures
   (let [run (assoc (rs/init {:namespaces '[a-test]})

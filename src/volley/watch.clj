@@ -216,9 +216,13 @@
 ;; Run outcome
 
 (defn- filtered-out?
-  "True for a namespace record that has vars, all of them skipped by the filters."
+  "True for a namespace record that has vars, all of them skipped by the
+  filters, some by a `:skip` filter. One whose vars were all left out
+  because a filter did not focus them (`:not-focused`) loaded, so it ran:
+  `:skipped` keeps those vars' failures."
   [rec]
-  (boolean (and (seq (:vars rec)) (rs/unselected? rec))))
+  (boolean (and (seq (:vars rec)) (rs/unselected? rec)
+                (not-every? #(= :not-focused (:reason %)) (vals (:vars rec))))))
 
 (defn- filter-skipped
   "`{ns #{var}}` of the vars `run` skipped because a filter did not focus
@@ -240,8 +244,10 @@
   a namespace, or the path of an unreadable test file. A key whose failure
   is not tied to a var (load error, crash, not run, unreadable file) has an
   empty set, meaning \"all of it\". A namespace whose vars the filters all
-  skipped is left out of `:ran`, so its earlier failures carry over. One
-  that finished with no vars at all still counts as run and clears them.
+  skipped, some by a `:skip` filter, is left out of `:ran`, so its earlier
+  failures carry over. One that finished with no vars at all, or whose
+  vars no filter focused, still counts as run, which clears an earlier
+  failure of the whole namespace (a load error that is now fixed).
   `:skipped` holds the vars a filter did not focus, so `merge-outcome` can
   keep their earlier failures."
   [run]
