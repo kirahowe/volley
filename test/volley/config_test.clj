@@ -405,9 +405,12 @@
            (:errors (config/normalize {:workers 0} {}))))
     (is (= [":runtime must be :bb or :jvm, got :jvmx"]
            (:errors (config/normalize {:runtime :jvmx} {}))))
-    (is (= :bb (:runtime (config/normalize {:runtime :jvmx} {} {:bb? true}))) "defaults are kept"))
+    (is (= :bb (:runtime (config/normalize {:runtime :jvmx} {} {:bb? true}))) "defaults are kept")
+    ;; kaocha.plugin.randomize/post-load throws on it in java.util.Random.
+    (is (= [":kaocha.plugin.randomize/seed must be an integer, got \"42\""]
+           (:errors (config/normalize {:kaocha.plugin.randomize/seed "42"} {})))))
   (testing "good values pass"
-    (is (= [] (:errors (config/normalize {:workers 3 :runtime :jvm} {}))))))
+    (is (= [] (:errors (config/normalize {:workers 3 :runtime :jvm :kaocha.plugin.randomize/seed 42} {}))))))
 
 (deftest values-volley-cannot-use-are-errors
   (testing "volley's own keys and :kaocha/bindings (which crashes Kaocha's binding-map)"

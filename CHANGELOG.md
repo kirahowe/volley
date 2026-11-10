@@ -102,6 +102,9 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
   and `:a/test` and `:b/test` shared one cached classpath.
 - An exception a test throws with a `:hook` keyword in its data is no
   longer reported as a failed hook.
+- A `:kaocha.plugin.randomize/seed` in tests.edn that is not an integer
+  stops the run (exit 250). It used to turn random order off without a
+  word.
 - volley replaces each file in `.volley/` in one move, so a run killed
   while writing the cached classpath can no longer leave it cut short.
 

@@ -557,6 +557,14 @@
              :when (not (keyword? id))]
          (str "suite id " (pr-str id) " should be a keyword (:kaocha.testable/id)"))))
 
+(defn- bad-seed-key
+  "The seed key of `raw` whose value is not an integer, or nil.
+  `kaocha.plugin.randomize` passes the seed to `java.util.Random.`, which
+  throws on anything but a number."
+  [raw]
+  (some #(when (and (contains? raw %) (not (int? (get raw %)))) %)
+        [:kaocha.plugin.randomize/seed :seed]))
+
 (defn- volley-value-errors
   "volley's own tests.edn keys with values it cannot use. Like the values
   Kaocha rejects, they stop the run (exit 250) rather than being guessed
@@ -571,6 +579,8 @@
     (some #(and (contains? raw %) (not (map? (get raw %)))) [:bindings :kaocha/bindings])
     (conj (str ":kaocha/bindings must be a map of var symbols to values, got "
                (pr-str (or (:kaocha/bindings raw) (:bindings raw)))))
+    (bad-seed-key raw)
+    (conj (str (bad-seed-key raw) " must be an integer, got " (pr-str (get raw (bad-seed-key raw)))))
     (and (contains? raw :workers) (not (pos-int? (:workers raw))))
     (conj (str ":workers must be a positive integer, got " (pr-str (:workers raw))))
     (and (contains? raw :runtime) (not (contains? #{:bb :jvm} (:runtime raw))))
