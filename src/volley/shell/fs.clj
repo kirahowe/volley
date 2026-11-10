@@ -92,13 +92,26 @@
     (fs/create-dirs dir)
     (spit (str (fs/path dir ".gitignore")) "*\n")))
 
+(defn write-cache-file!
+  "Write `text` to the cache file `path`, creating its directory with
+  `ensure-cache-dir!`. The text goes to a temporary file beside it that
+  then replaces `path` in one move, so a run reading the file, or one
+  killed while writing it, never sees part of it. Failure to write is not
+  an error."
+  [path text]
+  (try
+    (ensure-cache-dir! (fs/parent path))
+    (let [tmp (fs/create-temp-file {:dir (fs/parent path) :prefix ".tmp-"})]
+      (try
+        (spit (str tmp) text)
+        (fs/move tmp path {:replace-existing true :atomic-move true})
+        (finally (fs/delete-if-exists tmp))))
+    (catch Exception _ nil)))
+
 (defn write-timings!
   "Save `timings` for the next run. Failure to write is not an error."
   [timings]
-  (try
-    (ensure-cache-dir! (fs/parent timings-file))
-    (spit timings-file (pr-str (into (sorted-map) timings)))
-    (catch Exception _ nil)))
+  (write-cache-file! timings-file (pr-str (into (sorted-map) timings))))
 
 (def history-file
   "Where the last runs' wall times are kept, per mode
@@ -124,10 +137,7 @@
 (defn write-history!
   "Save `history` for the next run. Failure to write is not an error."
   [history]
-  (try
-    (ensure-cache-dir! (fs/parent history-file))
-    (spit history-file (pr-str history))
-    (catch Exception _ nil)))
+  (write-cache-file! history-file (pr-str history)))
 
 (def ns-info-cache-file
   "Where the namespace infos of the last run's files are kept."
@@ -161,12 +171,10 @@
 (defn write-ns-info-cache!
   "Save `cache` for the next run. Failure to write is not an error."
   [cache]
-  (try
-    (ensure-cache-dir! (fs/parent ns-info-cache-file))
-    (spit ns-info-cache-file (binding [*print-length* nil *print-level* nil *print-meta* false
-                                       *print-namespace-maps* false *print-readably* true]
-                               (pr-str cache)))
-    (catch Exception _ nil)))
+  (write-cache-file! ns-info-cache-file
+                     (binding [*print-length* nil *print-level* nil *print-meta* false
+                               *print-namespace-maps* false *print-readably* true]
+                       (pr-str cache))))
 
 (defn write-file!
   "Write `text` to `path`, creating its directory. Returns nil, or the

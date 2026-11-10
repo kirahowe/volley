@@ -27,3 +27,13 @@
         (fs/create-dirs dir)
         (vfs/ensure-cache-dir! dir)
         (is (not (fs/exists? (fs/path dir ".gitignore"))))))))
+
+(deftest cache-files-are-replaced-whole
+  (fs/with-temp-dir [tmp {}]
+    (let [path (str (fs/path tmp ".volley" "history.edn"))]
+      (vfs/write-cache-file! path "{:a 1}")
+      (vfs/write-cache-file! path "{:b 2}")
+      (is (= "{:b 2}" (slurp path)))
+      (is (= #{".gitignore" "history.edn"}
+             (set (map (comp str fs/file-name) (fs/list-dir (fs/parent path)))))
+          "no temporary file is left behind"))))

@@ -159,9 +159,7 @@
       (let [{:keys [classpath error]} (compute-classpath aliases)]
         (if error
           {:error error}
-          (do (try (vfs/ensure-cache-dir! (fs/parent file))
-                   (spit file classpath)
-                   (catch Exception _ nil))
+          (do (vfs/write-cache-file! file classpath)
               {:classpath classpath :aliases aliases :jvm-opts jvm-opts :cached? false}))))))
 
 (defn- base-classpath

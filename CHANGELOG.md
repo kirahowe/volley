@@ -102,6 +102,8 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
   and `:a/test` and `:b/test` shared one cached classpath.
 - An exception a test throws with a `:hook` keyword in its data is no
   longer reported as a failed hook.
+- volley replaces each file in `.volley/` in one move, so a run killed
+  while writing the cached classpath can no longer leave it cut short.
 
 ### Known limitations
 
