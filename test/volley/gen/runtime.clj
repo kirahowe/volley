@@ -105,6 +105,10 @@
   "A namespace symbol from a small pool, so plans and hooks share some."
   (gen/elements '[a.core-test a.util-test b.hooks b.reporter c.setup]))
 
+(def test-path
+  "A suite test path from a small pool."
+  (gen/elements ["test" "test-resources" "it"]))
+
 (def plan
   "The parts of a `volley.select/plan` that `in-process-ok?` reads."
   (gen/hash-map :suites (gen/vector (gen/hash-map :namespaces (gen/vector (gen/fmap #(hash-map :ns %) ns-sym) 0 3))

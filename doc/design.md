@@ -968,13 +968,16 @@ were skipped` warning (`rs/all-skipped`).
     processes for good. With no history (a first run, CI without a cached
     `.volley/`) it starts worker processes. Never in process: `--workers` or `:workers` set
     (`:workers-set?`), a babashka parent or babashka workers, watch and
-    isolate mode, or a plan with a namespace the parent's classpath cannot
-    load (planned, preloaded, or named by a hook or reporter; a JVM
-    worker's classpath adds the test paths). Only a run whose mode the
-    plan chose (a JVM parent with JVM workers, the default worker count,
-    no watch or isolate mode) of the whole plan (no suite or filter on the
-    command line) that ran every namespace goes into the history
-    (`record-history?`). An in-process run still going after 10s with
+    isolate mode, a plan with a namespace the parent's classpath cannot
+    load (planned, preloaded, or named by a hook or reporter), or a suite
+    test path that exists but is not on the parent's classpath. A JVM
+    worker's classpath adds the test paths, and they can hold resources
+    and helper namespaces that a test needs, so a thread of the parent
+    would miss them (`volley.shell.runtime/parent-has-path`). Only a run
+    whose mode the plan chose (a JVM parent with JVM workers, the default
+    worker count, no watch or isolate mode) of the whole plan (no suite or
+    filter on the command line) that ran every namespace goes into the
+    history (`record-history?`). An in-process run still going after 10s with
     at least 10s of work waiting, by the timings, starts worker processes
     up to `:workers` for the rest, once.
   * **Cached namespace infos.** `volley.discover/ns-info` is a function of

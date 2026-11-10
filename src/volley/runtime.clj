@@ -82,11 +82,14 @@
   "Whether `plan` can run on a thread of the parent: `mode` is a
   `heuristic-run?`, and every planned or preloaded namespace, and every
   namespace a hook or reporter of `:configure` names, loads from the
-  parent's classpath by `(on-classpath? ns-sym)` (a JVM worker's adds the
-  test paths)."
-  [mode plan configure on-classpath?]
+  parent's classpath by `(has-ns? ns-sym)`. A JVM worker's classpath adds
+  every suite's `test-paths`, so each must already be on the parent's by
+  `(has-path? path)`: a test path holds more than the namespaces volley
+  plans, such as resources and helpers."
+  [mode plan configure {:keys [test-paths has-ns? has-path?]}]
   (boolean (and (heuristic-run? mode)
-                (every? on-classpath?
+                (every? has-path? test-paths)
+                (every? has-ns?
                         (concat (map :ns (mapcat :namespaces (:suites plan)))
                                 (map :ns (:preload plan))
                                 (hook-namespaces configure))))))

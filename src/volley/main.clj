@@ -378,7 +378,11 @@
                           (core-runtime/worker-plan
                            {:workers (:workers config)
                             :workers-set? (:workers-set? config)
-                            :in-process-ok? (core-runtime/in-process-ok? setup plan (:configure opts) on-classpath?)
+                            :in-process-ok? (core-runtime/in-process-ok?
+                                             setup plan (:configure opts)
+                                             {:test-paths (mapcat :test-paths (:tests config))
+                                              :has-ns? on-classpath?
+                                              :has-path? (runtime/parent-has-path)})
                             :history (bfs/read-history)})
                           {:scale-out-ms core-runtime/in-process-limit-ms
                            :record-history? (core-runtime/record-history? setup (:suites cli) (:options cli))})
