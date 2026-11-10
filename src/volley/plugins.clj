@@ -65,17 +65,32 @@
                        (some (fn [f] (and (symbol? f) (= "defplugin" (name f)))) (subforms [%])))
                  (subforms forms))))
 
+(defn- loads-files?
+  "True when `forms` load other files, by `(load ...)` or the ns form's
+  `(:load ...)`, which the search does not follow."
+  [forms]
+  (boolean (some #(and (seq? %) (contains? #{'load 'clojure.core/load :load} (first %)))
+                 (subforms forms))))
+
 (defn- library-ns?
   "Namespaces that define no third-party plugin, so the search skips them."
   [ns-sym]
-  (some #(str/starts-with? (str ns-sym) %) ["clojure." "kaocha."]))
+  (str/starts-with? (str ns-sym) "clojure."))
+
+(defn- kaocha-ns?
+  "Namespaces Kaocha itself provides, which volley's classpath usually
+  lacks. A third-party plugin can live under `kaocha.` too, so only a
+  missing source is excused."
+  [ns-sym]
+  (str/starts-with? (str ns-sym) "kaocha."))
 
 (defn- plugin-search
   "Search namespaces `start` and, transitively, what they require for a
   definition of `plugin`. Returns :defined, :unsure when one may hide in
-  something unread (a namespace without source, a source that does not
-  parse, a macro wrapping `defplugin`, a `-register` method whose dispatch
-  value volley cannot read), or nil when there is none."
+  something unread (a namespace without source other than one of
+  Kaocha's, a source that does not parse, a file it `load`s, a macro
+  wrapping `defplugin`, a `-register` method whose dispatch value volley
+  cannot read), or nil when there is none."
   [plugin source-of start]
   (loop [queue (seq start) seen (set start) unsure? false]
     (if-let [[ns-sym & more] queue]
@@ -86,8 +101,8 @@
           (if (= :defined found)
             :defined
             (recur (seq (concat more reqs)) (into seen reqs)
-                   (or unsure? (= :unsure found) (some? error) (wraps-defplugin? forms)))))
-        (recur more seen true))
+                   (or unsure? (= :unsure found) (some? error) (wraps-defplugin? forms) (loads-files? forms)))))
+        (recur more seen (or unsure? (not (kaocha-ns? ns-sym)))))
       (when unsure? :unsure))))
 
 (defn plugin-load-error

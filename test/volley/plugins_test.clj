@@ -64,7 +64,19 @@
       {'my.team.thing "(ns my.team.thing (:require [my.team.gone]))"}
       {'my.team.thing "(ns my.team.thing (:require [my.team.macros :refer [defteam]]))\n(defteam thing)"
        'my.team.macros "(ns my.team.macros)\n(defmacro defteam [n] `(kaocha.plugin/defplugin ~n))"}
-      {'my.team.thing "(ns my.team.thing)\n(def x ["}))
+      {'my.team.thing "(ns my.team.thing)\n(def x ["}
+      {'my.team.thing "(ns my.team.thing)\n(load \"thing_impl\")"}
+      {'my.team.thing "(ns my.team.thing (:load \"thing_impl\"))"}))
+  (testing "a third-party plugin under kaocha. is searched like any other"
+    (is (nil? (plugins/plugin-load-error
+               :kaocha.plugin/thing
+               {'kaocha.plugin.thing "(ns kaocha.plugin.thing (:require [kaocha.plugin.thing.impl]))"
+                'kaocha.plugin.thing.impl "(ns kaocha.plugin.thing.impl)\n(defplugin kaocha.plugin/thing)"})))
+    (is (= :plugin-undefined
+           (:error (plugins/plugin-load-error
+                    :kaocha.plugin/thing
+                    {'kaocha.plugin.thing "(ns kaocha.plugin.thing (:require [kaocha.result]))"})))
+        "a Kaocha namespace volley has no source for hides no definition"))
   (testing "a definition that is commented out is not one"
     (are [text] (= :plugin-undefined (:error (plugins/plugin-load-error :my.team/thing {'my.team.thing text})))
       "(ns my.team.thing)\n;; (p/defplugin my.team/thing)"
