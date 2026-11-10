@@ -125,7 +125,10 @@
                            {:event :var/end :ns 'a-test :var 't1 :pass 1 :worker 0 :at 3}
                            {:event :ns/end :ns 'a-test :worker 0 :at 4}])]
         (is (= {:expected 4 :estimated? true} (expected state)) "a finished namespace counts the tests it ran")
-        (is (= 1 (get-in (rs/summary state) [:vars :total])))))))
+        (is (= 1 (get-in (rs/summary state) [:vars :total])))
+        (is (= {:expected 1 :estimated? false}
+               (expected (rs/apply-event state {:event :run/not-run :namespaces '[b-test] :reason :fail-fast :at 5})))
+            "a namespace that will not run counts none")))))
 
 (def ^:private plan {:namespaces '[a-test]})
 

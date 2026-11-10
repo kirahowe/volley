@@ -343,9 +343,10 @@
 
 (defn- expected-tests
   "`[n estimated?]`: how many tests the run will have. A finished
-  namespace counts the tests it ran, any other the larger of those it has
-  shown and those a worker counted, or failing that the plan's
-  estimate. `estimated?` while some namespace has only an estimate."
+  namespace counts the tests it ran, and one that will not run (`:not-run`)
+  none; any other the larger of those it has shown and those a worker
+  counted, or failing that the plan's estimate. `estimated?` while some
+  namespace has only an estimate."
   [state]
   (let [recs (:namespaces state)
         counts (for [ns (into (:planned state) (keys recs))
@@ -354,6 +355,7 @@
                            counted (get-in state [:counts ns])]]
                  (cond
                    (and rec (not= :running (ns-result rec))) [seen false]
+                   (and (nil? rec) (contains? (:not-run state) ns)) [0 false]
                    counted [(max seen counted) false]
                    :else [(max seen (get-in state [:estimates ns] 0)) true]))]
     [(reduce + (map first counts)) (boolean (some second counts))]))
