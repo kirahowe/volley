@@ -187,6 +187,20 @@
            (:namespaces (rs/summary state))))
     (is (empty? (rs/running state)))))
 
+(deftest a-failure-before-system-exit-points-into-the-capture
+  ;; the worker's shutdown hook sends the capture as output (:captured?)
+  (let [state (reduce rs/apply-event (rs/init plan)
+                      (concat [(ev {:event :ns/start :ns 'a-test})
+                               (ev {:event :var/start :ns 'a-test :var 'x})
+                               (ev {:event :output :text "child" :stream :stdout})
+                               (ev {:event :assertion :ns 'a-test :var 'x :type :fail :output-at 7})
+                               (ev {:event :output :text "before\nafter" :stream :stdout :captured? true})]
+                              (crash-events 1)))
+        f (first (filter #(= :fail (:kind %)) (rs/failures state)))
+        output "child\nboom\nbefore\nafter"]
+    (is (= output (:output f)))
+    (is (= "after" (subs output (:output-at f))) "the mark falls where the test failed")))
+
 (deftest worker-exit-is-informational
   (testing "an idle worker exiting non-zero is not a failure"
     (let [state (reduce rs/apply-event (rs/init {:namespaces []})

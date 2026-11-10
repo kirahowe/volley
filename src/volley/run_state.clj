@@ -163,14 +163,21 @@
                        {:worker worker :ns ns :var var :text text :message protocol-error :at at})
       ns (assoc-in [:namespaces ns :protocol-error?] true))))
 
-(defn- on-output [state {:keys [worker text protocol-error] :as e}]
+(defn- on-output
+  "Stray output goes to the running var, namespace or worker. A var's
+  capture sent as output (`:captured?`, when its test called
+  `System/exit`) is its `:output`, as `:var/end` would have carried it,
+  so the failures' `:output-at` offsets still point into it."
+  [state {:keys [worker text protocol-error captured?] :as e}]
   (if protocol-error
     (on-protocol-error state e)
     (let [{:keys [ns var]} (get-in state [:workers worker])
           path (cond (and ns var) [:namespaces ns :vars var :stray]
                      ns           [:namespaces ns :stray]
                      :else        [:workers worker :stray])]
-      (update-in state path (fnil conj []) text))))
+      (if (and captured? ns var)
+        (assoc-in state [:namespaces ns :vars var :output] text)
+        (update-in state path (fnil conj []) text)))))
 
 (defn- on-worker-exit
   "Informational: the worker is gone. Crashes are reported through the
