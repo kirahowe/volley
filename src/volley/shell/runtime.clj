@@ -136,7 +136,9 @@
   [deps-text]
   (let [user (runtime/user-deps-file {:clj-config (System/getenv "CLJ_CONFIG")
                                       :xdg-config-home (System/getenv "XDG_CONFIG_HOME")
-                                      :home (System/getProperty "user.home")})]
+                                      ;; the clojure script reads $HOME, which can
+                                      ;; differ from user.home (CI, sandboxes)
+                                      :home (or (System/getenv "HOME") (System/getProperty "user.home"))})]
     (cond-> (runtime/local-deps-files deps-text (str (fs/cwd))
                                       {:read read-text
                                        :join #(str (fs/normalize (fs/path %1 %2)))})
