@@ -133,6 +133,15 @@
         {:keys [effects]} (watch/step s {:event :tick :at 1000})]
     (is (:reload-deps? (:selection (last (starts effects)))))))
 
+(deftest enter-after-a-reload-reruns-without-reloading
+  (let [[s _] (run-inputs fresh [{:event :start}
+                                 {:event :run/finished :empty? true}
+                                 {:event :files-changed :paths ["deps.edn"] :affected #{} :at 0}
+                                 {:event :tick :at 1000}
+                                 {:event :run/finished :empty? true}])
+        [_ effects] (run-inputs s (keys-of "\r"))]
+    (is (= [true false false] ((juxt :all? :reload-config? :reload-deps?) (:selection (first (starts effects))))))))
+
 (deftest deps-files-are-the-project-files
   (is (every? watch/deps-file? ["deps.edn" "bb.edn"]))
   (is (not-any? watch/deps-file? ["src/deps.edn" "tests.edn" "deps.edn~"])))

@@ -478,7 +478,9 @@
   (if (not= :running (:mode state))
     (no-op state)
     (let [merged (if nothing-ran? (:last state) (merge-outcome (:last state) run-outcome))
-          state (assoc state :mode :idle :last-selection (:running state) :running nil
+          ;; Enter replays the selection, not the reload a file change asked for
+          state (assoc state :mode :idle :running nil
+                       :last-selection (assoc (:running state) :reload-config? false :reload-deps? false)
                        :last (forget-gone merged known))]
       {:state state
        :effects [(apply print*
