@@ -39,7 +39,19 @@
       :my.team/thing {'my.team "(ns my.team (:require [kaocha.plugin :as p]))\n(p/defplugin my.team/thing \"doc\")"}
       :my.team/thing {'my.team "(ns my.team)\n(defmethod p/-register :my.team/thing [_ ps] ps)"}
       :my.team/thing {'my.team "(ns my.team)\n(defmethod p/-register ::thing [_ ps] ps)"}
-      :my.plugin {'my.plugin "(defmethod kaocha.plugin/-register :my.plugin [_ ps] ps)"}))
+      :my.plugin {'my.plugin "(defmethod kaocha.plugin/-register :my.plugin [_ ps] ps)"}
+      ;; kaocha.plugin/defplugin takes (keyword id), so a keyword id works too
+      :my.team/thing {'my.team "(ns my.team (:require [kaocha.plugin :refer [defplugin]]))\n(defplugin ::thing)"}
+      :my.team/thing {'my.team.thing "(ns my.team.thing)\n(kaocha.plugin/defplugin :my.team/thing \"doc\")"}))
+  (testing "a -register method dispatching on a var, as kaocha.plugin.debug does, is taken to define it"
+    (is (nil? (plugins/plugin-load-error
+               :my.team/thing
+               {'my.team.thing "(ns my.team.thing (:require [kaocha.plugin :as plugin]))\n(def id :my.team/thing)\n(defmethod plugin/-register id [_ ps] ps)"}))))
+  (testing "a -register method of another plugin's keyword is not a definition"
+    (is (= :plugin-undefined
+           (:error (plugins/plugin-load-error
+                    :my.team/thing
+                    {'my.team.thing "(ns my.team.thing)\n(defmethod kaocha.plugin/-register :my.team/other [_ ps] ps)"})))))
   (testing "a definition in a namespace the candidate requires, directly or not, counts"
     (are [sources] (nil? (plugins/plugin-load-error :my.team/thing sources))
       {'my.team.thing "(ns my.team.thing (:require [my.team.impl]))"

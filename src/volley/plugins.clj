@@ -26,16 +26,36 @@
 (defn- head-is? [nm form]
   (and (seq? form) (symbol? (first form)) (= nm (name (first form)))))
 
-(defn- defines-plugin?
-  "True when `forms` define `plugin`: a `(defplugin name ...)` of its name,
-  or a `(defmethod -register kw ...)` of its keyword, as Kaocha's
-  `defplugin` expands to."
+(defn- plugin-id
+  "The plugin keyword Kaocha's `defplugin` makes of `id` (`(keyword id)`),
+  or nil when `id` is not a name."
+  [id]
+  (when (or (ident? id) (string? id))
+    (keyword id)))
+
+(defn- register-dispatch
+  "The dispatch value of `form` when it is a `(defmethod -register v ...)`,
+  as Kaocha's `defplugin` expands to, or ::none."
+  [form]
+  (if (and (head-is? "defmethod" form) (symbol? (second form)) (= "-register" (name (second form))))
+    (nth form 2 nil)
+    ::none))
+
+(defn- plugin-definition
+  "How `forms` define `plugin`: :defined for a `(defplugin id ...)` whose id
+  names it, symbol or keyword, or a `-register` method of its keyword;
+  :unsure for a `-register` method whose dispatch value is not a keyword,
+  such as the `(def id ...)` var Kaocha's own plugins use; else nil."
   [plugin forms]
-  (let [sym (symbol (subs (str plugin) 1))]
-    (boolean (some #(or (and (head-is? "defplugin" %) (= sym (second %)))
-                        (and (head-is? "defmethod" %) (symbol? (second %))
-                             (= "-register" (name (second %))) (= plugin (nth % 2 nil))))
-                   (subforms forms)))))
+  (let [found (keep (fn [form]
+                      (let [v (register-dispatch form)]
+                        (cond
+                          (and (head-is? "defplugin" form) (= plugin (plugin-id (second form)))) :defined
+                          (= ::none v) nil
+                          (= plugin v) :defined
+                          (not (keyword? v)) :unsure)))
+                    (subforms forms))]
+    (or (some #{:defined} found) (first found))))
 
 (defn- wraps-defplugin?
   "True when `forms` define a macro that mentions `defplugin`, which may
@@ -54,16 +74,19 @@
   "Search namespaces `start` and, transitively, what they require for a
   definition of `plugin`. Returns :defined, :unsure when one may hide in
   something unread (a namespace without source, a source that does not
-  parse, a macro wrapping `defplugin`), or nil when there is none."
+  parse, a macro wrapping `defplugin`, a `-register` method whose dispatch
+  value volley cannot read), or nil when there is none."
   [plugin source-of start]
   (loop [queue (seq start) seen (set start) unsure? false]
     (if-let [[ns-sym & more] queue]
       (if-let [text (source-of ns-sym)]
         (let [{:keys [forms error]} (discover/read-forms text ns-sym)
-              reqs (remove (some-fn seen library-ns?) (:requires (discover/ns-info nil text)))]
-          (if (defines-plugin? plugin forms)
+              reqs (remove (some-fn seen library-ns?) (:requires (discover/ns-info nil text)))
+              found (plugin-definition plugin forms)]
+          (if (= :defined found)
             :defined
-            (recur (seq (concat more reqs)) (into seen reqs) (or unsure? (some? error) (wraps-defplugin? forms)))))
+            (recur (seq (concat more reqs)) (into seen reqs)
+                   (or unsure? (= :unsure found) (some? error) (wraps-defplugin? forms)))))
         (recur more seen true))
       (when unsure? :unsure))))
 

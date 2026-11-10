@@ -51,7 +51,9 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 - A plugin whose namespace loads but defines no plugin stops the run with
   exit 249, as in Kaocha, instead of a warning. volley looks for the
   definition through the namespace's requires and wrapper macros, and
-  ignores commented-out ones. (volley#7)
+  ignores commented-out ones. A `defplugin` with a keyword id counts, and
+  a `-register` method that dispatches on a var, as Kaocha's own plugins
+  do, is taken to define the plugin. (volley#7)
 - The docs now record a deliberate divergence from Kaocha: a namespace
   that two test paths define runs once, from the file that comes first on
   the classpath, where Kaocha runs it twice. (volley#11)
