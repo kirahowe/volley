@@ -6,10 +6,10 @@ Kaocha's randomize plugin shuffles test order and prints a seed. volley accepts 
 
 ## Acceptance criteria
 
-- [ ] With the randomize plugin (or `--randomize`), vars inside each namespace run in a seeded random order, and the seed is printed like Kaocha's.
-- [ ] `--seed N` reproduces the same per-namespace order.
-- [ ] The once-per-run warning goes away; doc/design.md divergences updated.
-- [ ] Property test: the order is a permutation and is stable for a seed.
+- [x] With the randomize plugin (or `--randomize`), vars inside each namespace run in a seeded random order, and the seed is printed like Kaocha's.
+- [x] `--seed N` reproduces the same per-namespace order.
+- [x] The once-per-run warning goes away; doc/design.md divergences updated.
+- [x] Property test: the order is a permutation and is stable for a seed.
 
 ## Log
 

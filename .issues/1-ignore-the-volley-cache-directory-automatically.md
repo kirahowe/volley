@@ -14,13 +14,13 @@ cache directory when it creates it.
 
 ## Acceptance criteria
 
-- [ ] When volley creates `.volley/`, it also writes `.volley/.gitignore`
+- [x] When volley creates `.volley/`, it also writes `.volley/.gitignore`
       containing `*`, unless that file already exists.
-- [ ] A fresh project shows no untracked `.volley/` in `git status` or
+- [x] A fresh project shows no untracked `.volley/` in `git status` or
       `jj st` after a run.
-- [ ] The README's note asking users to add `.volley/` to `.gitignore` is
+- [x] The README's note asking users to add `.volley/` to `.gitignore` is
       removed or reworded.
-- [ ] Shell test (`volley.shell.fs`) covering creation and not overwriting
+- [x] Shell test (`volley.shell.fs`) covering creation and not overwriting
       an existing file.
 
 ## Log

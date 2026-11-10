@@ -10,11 +10,11 @@ links return 404. Creating the public repo needs Kira's go-ahead.
 
 ## Acceptance criteria
 
-- [ ] Public repo `kirahowe/volley` exists with the description used on
+- [x] Public repo `kirahowe/volley` exists with the description used on
       Clojars.
-- [ ] `main` and the `v0.1.0-alpha.1` tag are pushed.
-- [ ] A GitHub release for the tag carries the CHANGELOG entry.
-- [ ] The pom's scm link, the CHANGELOG link and the README's git-dep
+- [x] `main` and the `v0.1.0-alpha.1` tag are pushed.
+- [x] A GitHub release for the tag carries the CHANGELOG entry.
+- [x] The pom's scm link, the CHANGELOG link and the README's git-dep
       snippet resolve.
 
 ## Plan

@@ -21,13 +21,13 @@ Kaocha, 57s with volley), but small ones lose:
 
 ## Acceptance criteria
 
-- [ ] On hosted-clay (a copy) volley's median wall time over 5 runs is no
+- [x] On hosted-clay (a copy) volley's median wall time over 5 runs is no
       worse than Kaocha's, measured back to back on a quiet machine.
-- [ ] Large suites (reader, secrets) keep their current gains.
-- [ ] Whatever heuristic picks in-process or fewer workers is a pure
+- [x] Large suites (reader, secrets) keep their current gains.
+- [x] Whatever heuristic picks in-process or fewer workers is a pure
       function with property tests, and the user can override it
       (`--workers`).
-- [ ] `doc/benchmarks.md` updated with the new numbers.
+- [x] `doc/benchmarks.md` updated with the new numbers.
 
 ## Log
 
