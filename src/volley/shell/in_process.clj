@@ -38,10 +38,22 @@
       (== 10 (aget bs i)) i
       :else (recur (dec i)))))
 
+(defn- has-newline?
+  "True when bytes `off` to `off + len` of `bs` hold a `\\n`."
+  [^bytes bs off len]
+  (let [end (+ (long off) (long len))]
+    (loop [i (long off)]
+      (cond
+        (>= i end) false
+        (== 10 (aget bs i)) true
+        :else (recur (inc i))))))
+
 (defn- line-stream
   "An OutputStream that calls `(on-line s)` for each complete line written
   to it (UTF-8, split as `line-seq` splits), and on close passes on a
-  partial last line and calls `(on-close)`, once."
+  partial last line and calls `(on-close)`, once. It looks for lines only
+  when a write holds a newline, so a long line written in chunks is copied
+  once rather than once per chunk."
   ^OutputStream [on-line on-close]
   (let [buf (ByteArrayOutputStream.)
         closed? (volatile! false)
@@ -58,13 +70,14 @@
         ([b]
          (locking buf
            (if (bytes? b)
-             (.write buf ^bytes b 0 (alength ^bytes b))
-             (.write buf (int b)))
-           (drain! false)))
+             (do (.write buf ^bytes b 0 (alength ^bytes b))
+                 (when (has-newline? b 0 (alength ^bytes b)) (drain! false)))
+             (do (.write buf (int b))
+                 (when (== 10 (int b)) (drain! false))))))
         ([b off len]
          (locking buf
            (.write buf ^bytes b (int off) (int len))
-           (drain! false))))
+           (when (has-newline? b off len) (drain! false)))))
       (close []
         (locking buf
           (when-not @closed?

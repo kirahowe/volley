@@ -75,3 +75,20 @@
     (until-exit queue)
     (is (= :var/end (:event (last (until queue #(= :var/end (:event %)))))))
     (is (= streams [System/out System/err]))))
+
+(deftest line-stream-splits-lines-across-any-writes
+  (let [text "first\nsecond is long ünïcode\n\nlast without newline"
+        bs (.getBytes text "UTF-8")
+        lines (atom [])
+        closed (atom 0)
+        out (#'in-process/line-stream #(swap! lines conj %) #(swap! closed inc))]
+    ;; chunks that end mid-line, mid-character and on a newline, then
+    ;; single bytes
+    (doseq [[off len] [[0 3] [3 4] [7 15] [22 1]]]
+      (.write out bs (int off) (int len)))
+    (doseq [b (drop 23 bs)] (.write out (int b)))
+    (is (= ["first" "second is long ünïcode"] (take 2 @lines)) "complete lines arrive before the close")
+    (.close out)
+    (.close out)
+    (is (= (line-seq (java.io.BufferedReader. (java.io.StringReader. text))) @lines))
+    (is (= 1 @closed))))
