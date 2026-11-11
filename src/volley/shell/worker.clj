@@ -343,22 +343,25 @@
   `test-var`. `(run-var v test!)` runs one var, calling `test!` to run it
   inside the `:each` fixtures, and returns its result; after each var
   `(stop? result)` is asked whether to skip the rest (the `:once` fixtures
-  still finish), and no var starts once `(stop-requested?)` holds. Each
-  result is added to `(:results @progress)`, since a `:once` fixture does
-  not hand back what the tests return. Returns the results."
+  still finish), and no var starts once `(stop-requested?)` holds. When it
+  holds before the first var, the `:once` fixtures do not run either: a
+  slow one would use up the time a stopped worker has before it is
+  killed. Each result is added to `(:results @progress)`, since a `:once`
+  fixture does not hand back what the tests return. Returns the results."
   [ns-obj vars run-var stop? stop-requested? progress]
   (let [m (meta ns-obj)
         once (t/join-fixtures (:clojure.test/once-fixtures m))
         each (t/join-fixtures (:clojure.test/each-fixtures m))]
-    (once (fn []
-            (reduce (fn [_ v]
-                      (if (stop-requested?)
-                        (reduced nil)
-                        (let [r (run-var v #(each (fn [] (t/test-var v))))]
-                          (vswap! progress update :results conj r)
-                          (when (stop? r) (reduced nil)))))
-                    nil
-                    vars)))
+    (when-not (stop-requested?)
+      (once (fn []
+              (reduce (fn [_ v]
+                        (if (stop-requested?)
+                          (reduced nil)
+                          (let [r (run-var v #(each (fn [] (t/test-var v))))]
+                            (vswap! progress update :results conj r)
+                            (when (stop? r) (reduced nil)))))
+                      nil
+                      vars))))
     (:results @progress)))
 
 (defn- failed? [{:kaocha.result/keys [fail error]}]

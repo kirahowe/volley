@@ -11,6 +11,21 @@ database, a container) uses up the 1s grace, the worker is killed, and its
 
 ## Acceptance criteria
 
-- [ ] A stop requested before a namespace's first var runs none of its
+- [x] A stop requested before a namespace's first var runs none of its
       `:once` fixtures, and its vars are reported as stopped.
-- [ ] Worker test with a fixture that records whether it ran.
+  - Receipt: `a-stop-before-the-first-var-runs-no-once-fixture` asserts
+    zero fixture runs and both vars skipped as `:stopped`; it passes under
+    `bb test --focus volley.shell.worker-test` (44 tests, 0 failed).
+- [x] Worker test with a fixture that records whether it ran.
+  - Receipt: `test/volley/shell/worker_test.clj`, against
+    `dev-resources/exec/once_runs_test.clj`, whose `:once` fixture counts
+    its runs in `once-runs`.
+
+## Log
+
+- 2026-11-11: `test-vars!` checks `stop-requested?` before the `:once`
+  fixtures as well as before each var, so a stop that came first runs
+  neither and the vars are sent as `:stopped`. Covered by
+  `a-stop-before-the-first-var-runs-no-once-fixture` in `worker_test`,
+  with the fixture namespace `exec.once-runs-test`. The namespace still
+  loads, and its namespace-level hooks still run around the empty run.

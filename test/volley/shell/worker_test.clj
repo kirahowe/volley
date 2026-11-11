@@ -604,3 +604,19 @@
                (into (set ended) (map first stopped))))
         (is (every? #(= :stopped (second %)) stopped)))
       (is (= :ns/end (:event (last (filter :ns events))))))))
+
+(deftest a-stop-before-the-first-var-runs-no-once-fixture
+  ;; volley#22: a :shutdown that arrived while the namespace loaded. A slow
+  ;; fixture would use up the second a stopped worker has before the kill.
+  (let [runs @(requiring-resolve 'exec.once-runs-test/once-runs)
+        events (volatile! [])]
+    (reset! runs 0)
+    (worker/run-assignment! #(vswap! events conj %) worker/run-everything
+                            {:ns 'exec.once-runs-test :run-id 1 ::worker/stop-requested? (constantly true)})
+    (is (zero? @runs) "the :once fixture did not run")
+    (is (= [:ns/start :ns/tests :var/skipped :var/skipped :ns/end] (map :event @events)))
+    (is (= #{['one :stopped] ['two :stopped]}
+           (set (keep #(when (= :var/skipped (:event %)) [(:var %) (:reason %)]) @events))))
+    (testing "without a stop it runs once, around both vars"
+      (is (= {:pass 2 :fail 0 :error 0} (counts (run-events 'exec.once-runs-test))))
+      (is (= 1 @runs)))))

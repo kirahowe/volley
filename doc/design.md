@@ -390,7 +390,9 @@ Execution details (`volley.protocol`, `volley.shell.worker`, `volley.shell.pool`
   arrives while a namespace runs is seen at once: that namespace runs no
   var after the current one, sends the vars it did not run as skipped
   with reason `:stopped`, ends, and the worker runs its shutdown hooks
-  and exits. The stop flag belongs to one call of `serve!`, so an
+  and exits. When the stop arrives before the namespace's first var (while
+  it loads, say), its `:once` fixtures do not run either, since a slow
+  one would use up the second the worker has before it is killed. The stop flag belongs to one call of `serve!`, so an
   in-process worker inside a worker process (volley's own tests run one)
   cannot stop the worker that hosts it.
 - The worker keeps the original stdout for protocol lines and points

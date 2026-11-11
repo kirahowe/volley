@@ -62,7 +62,8 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
   the classpath, where Kaocha runs it twice. (volley#11)
 - Fail-fast and a watch-mode cancel ask busy workers to stop and give
   them 1s before killing them. A worker that stops in time finishes its
-  current var and runs its `post-run` hooks. (volley#8)
+  current var and runs its `post-run` hooks. A namespace whose first var
+  had not started runs no `:once` fixtures. (volley#8, volley#22)
 - `wrap-run` hooks wrap each var's run as well as each namespace's, as in
   Kaocha. A suite-level `wrap-run` is called once per worker process
   rather than once per run. (volley#9)
