@@ -88,11 +88,17 @@
 (defn start-worker!
   "Start worker `id` on a daemon thread of this JVM, sending its events to
   `:queue` as `volley.shell.pool/start-worker!` does, `:worker/exit` last.
+  `:test-paths` are the suites' test paths this JVM's classpath lacks: a
+  worker process has them on its classpath, so they are added here first
+  (`volley.shell.jvm/add-classpath!`), and the thread gets that loader as
+  its context class loader for Java code that asks for one.
   Returns a handle for `volley.shell.pool/send!`, `stop!` and `kill!`.
   A thread cannot be killed: `kill!` interrupts it and reports the exit at
   once, and whatever it still sends goes to a worker the run has dropped."
-  [{:keys [^LinkedBlockingQueue queue]} id]
-  (let [prefix (protocol/prefix-for (pool/new-nonce))
+  [{:keys [^LinkedBlockingQueue queue test-paths]} id]
+  (let [loader (when (seq test-paths)
+                 ((requiring-resolve 'volley.shell.jvm/add-classpath!) test-paths))
+        prefix (protocol/prefix-for (pool/new-nonce))
         commands (LinkedBlockingQueue.)
         eof (Object.)
         exited? (atom false)
@@ -130,6 +136,7 @@
                     (exit! code))))
         thread (doto (Thread. ^Runnable serve (str "volley-worker-" id))
                  (.setDaemon true))]
+    (when loader (.setContextClassLoader thread ^ClassLoader loader))
     (System/setIn (java.io.ByteArrayInputStream. (byte-array 0)))
     (System/setOut stray-stream)
     (System/setErr stray-stream)

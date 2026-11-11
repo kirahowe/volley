@@ -35,15 +35,19 @@
 (defn- absolute-entries [cp]
   (mapv #(str (fs/absolutize %)) (runtime/split-classpath cp sep)))
 
-(defn parent-has-path
-  "A predicate: whether a directory or jar `path` is an entry of this
-  process's classpath, so a worker adding it would find nothing new. A path
-  that does not exist counts as present, since it holds nothing to find."
-  []
+(defn paths-off-classpath
+  "The directories and jars among `paths` that exist and are not entries
+  of this process's classpath, as canonical paths: what a worker, whose
+  classpath adds every suite's test paths, can load from and this process
+  cannot."
+  [paths]
   (let [entries (into #{} (map #(str (fs/canonicalize %))) (runtime/split-classpath (parent-classpath) sep))]
-    (fn [path]
-      (or (not (fs/exists? path))
-          (contains? entries (str (fs/canonicalize path)))))))
+    (into []
+          (comp (filter fs/exists?)
+                (map #(str (fs/canonicalize %)))
+                (remove entries)
+                (distinct))
+          paths)))
 
 (defn with-test-paths
   "Classpath `cp` plus every suite's test paths, which Kaocha adds when it

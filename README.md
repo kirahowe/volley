@@ -178,8 +178,9 @@ too:
 - The default worker count is the CPU count, at most 4.
 - Each worker is a JVM that starts and loads your code again, which a
   suite of a few seconds does not win back. So once recent runs took at
-  most 10 seconds, volley runs the tests in its own JVM instead, and
-  starts worker JVMs only if a run outlasts that with work still waiting.
+  most 10 seconds, volley runs the tests in its own JVM instead, with the
+  suite's `:test-paths` added to its classpath, and starts worker JVMs
+  only if a run outlasts that with work still waiting.
   The first run, with no `.volley/` yet, always uses worker JVMs. A
   70-test suite took 6.1s that way against Kaocha's 6.2s (9.9s with
   worker JVMs). Large suites gain the most: a 244-test suite took 40s

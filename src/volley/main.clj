@@ -48,6 +48,12 @@
   [ns-sym]
   (boolean (some io/resource (source-files ns-sym))))
 
+(defn- in-dirs?
+  "True when namespace `ns-sym` has a source file under one of the
+  classpath roots `dirs`."
+  [dirs ns-sym]
+  (boolean (some (fn [dir] (some #(bfs/exists? (str dir "/" %)) (source-files ns-sym))) dirs)))
+
 (defn- ns-source
   "The source text of namespace `ns-sym` from this process's classpath or
   one of `dirs`, or nil when it has no source file."
@@ -165,7 +171,8 @@
 (defn- add-test-paths!
   "On babashka, put the suites' test paths on this process's classpath so
   that parent-side hooks in test namespaces resolve (Kaocha adds them the
-  same way). The JVM classpath is fixed; there they must already be on it."
+  same way). A JVM parent adds none for its own hooks; there they must
+  already be on its classpath."
   [paths]
   (when-let [add (try (requiring-resolve 'babashka.classpath/add-classpath)
                       (catch Exception _ nil))]
@@ -216,9 +223,10 @@
 (defn- run-effects!
   "Carry out `effects` against `world`, `{:handles {id handle} :height n}`:
   the worker handles and the live frame's height, threaded as a value.
-  `ctx` holds the queue and the worker command. Returns `[world code]`,
+  `ctx` holds the queue, the worker command and, for a worker in this
+  process, the test paths its classpath lacks. Returns `[world code]`,
   code being the exit code when an `:exit` effect was among them."
-  [{:keys [queue command]} world effects]
+  [{:keys [queue command test-paths]} world effects]
   (reduce
    (fn [[world _] {:keys [effect worker msg frame timings code] :as e}]
      (let [handle (get-in world [:handles worker])
@@ -226,7 +234,7 @@
                    :spawn (assoc-in world [:handles worker]
                                     (if (:in-process? e)
                                       ((requiring-resolve 'volley.shell.in-process/start-worker!)
-                                       {:queue queue} worker)
+                                       {:queue queue :test-paths test-paths} worker)
                                       (pool/start-worker! {:queue queue :command command} worker)))
                    :send (do (some-> handle (pool/send! msg)) world)
                    :stop (do (some-> handle pool/stop!) world)
@@ -286,13 +294,15 @@
           (recur world state (if tick? now last-tick) (if width? now last-width)))))))
 
 (defn- run-tests!
-  "Start the engine on `plan` and run it to completion. Returns the exit
-  code. Workers still alive when it ends, or when the JVM shuts down, are
-  killed: they are this process's descendants, so no handle is needed."
-  [plan command opts]
-  (let [ctx {:queue (pool/new-queue)
-             :command command
-             :live? (= :live (:reporter opts))}
+  "Start the engine on `plan` and run it to completion. `workers` holds
+  the worker `:command` and the `:test-paths` an in-process worker adds
+  to this process's classpath. Returns the exit code. Workers still alive
+  when it ends, or when the JVM shuts down, are killed: they are this
+  process's descendants, so no handle is needed."
+  [plan workers opts]
+  (let [ctx (assoc workers
+                   :queue (pool/new-queue)
+                   :live? (= :live (:reporter opts)))
         hook (Thread. ^Runnable pool/kill-descendants!)
         go (fn []
              (let [{:keys [state effects]} (engine/init plan opts)
@@ -374,15 +384,16 @@
                      :started-at (System/currentTimeMillis)}
                     (config/engine-opts config (bfs/run-info)))
               setup (run-mode config)
+              ;; what a JVM worker's classpath has that this process's lacks
+              test-paths (when (core-runtime/heuristic-run? setup)
+                           (runtime/paths-off-classpath (mapcat :test-paths (:tests config))))
               opts (merge opts
                           (core-runtime/worker-plan
                            {:workers (:workers config)
                             :workers-set? (:workers-set? config)
                             :in-process-ok? (core-runtime/in-process-ok?
                                              setup plan (:configure opts)
-                                             {:test-paths (mapcat :test-paths (:tests config))
-                                              :has-ns? on-classpath?
-                                              :has-path? (runtime/parent-has-path)})
+                                             (some-fn on-classpath? #(in-dirs? test-paths %)))
                             :history (bfs/read-history)})
                           {:scale-out-ms core-runtime/in-process-limit-ms
                            :record-history? (core-runtime/record-history? setup (:suites cli) (:options cli))})
@@ -397,7 +408,7 @@
                 254)
             (:watch? config) (watch-tests! command config loaded opts #(reload-config args env)
                                            #(runtime/worker-command %1 (:aliases (:options cli)) {:refresh? %2}))
-            :else (run-tests! plan command opts))))))
+            :else (run-tests! plan {:command command :test-paths test-paths} opts))))))
 
 (defn -main
   "`bb -m volley.main [OPTIONS]... [TEST-SUITE]...`"

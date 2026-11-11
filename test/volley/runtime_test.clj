@@ -59,19 +59,15 @@
                  (concat (mapcat val (:hooks msg)) (:worker-setup msg) (:reporters msg))))
        (set (runtime/hook-namespaces msg)))))
 
-(defspec in-process-needs-every-namespace-and-test-path-on-the-classpath 300
+(defspec in-process-needs-a-source-file-for-every-namespace 300
   (prop/for-all [mode g/run-mode
                  plan g/plan
                  msg g/configure
-                 missing (gen/set g/ns-sym)
-                 test-paths (gen/vector g/test-path 0 3)
-                 missing-paths (gen/set g/test-path)]
+                 missing (gen/set g/ns-sym)]
     (let [named (set (concat (map :ns (mapcat :namespaces (:suites plan))) (map :ns (:preload plan))
                              (runtime/hook-namespaces msg)))]
-      (= (runtime/in-process-ok? mode plan msg {:test-paths test-paths
-                                                :has-ns? (complement missing)
-                                                :has-path? (complement missing-paths)})
-         (and (runtime/heuristic-run? mode) (not-any? missing named) (not-any? missing-paths test-paths))))))
+      (= (runtime/in-process-ok? mode plan msg (complement missing))
+         (and (runtime/heuristic-run? mode) (not-any? missing named))))))
 
 (defspec only-whole-heuristic-runs-are-recorded 300
   ;; --isolate, --workers, a bb parent or a filtered run measures some

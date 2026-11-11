@@ -31,9 +31,11 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
   thread of the parent instead of starting worker JVMs. If a run is still
   going after 10s, with at least 10s of work waiting by the recorded
   timings, volley starts workers for the rest. `--workers`, `:workers`,
-  `--isolate` and `--watch` turn this off, and so does a test path or
-  namespace that is not on the parent's classpath. The run times are kept
-  in `.volley/history.edn`, so a first run still starts workers. On hosted-clay this brings volley level
+  `--isolate` and `--watch` turn this off, and so does a namespace with
+  no source file on the parent's classpath or under a test path. Test
+  paths the parent's classpath lacks are added to it for the run, as
+  Kaocha adds them. The run times are kept in `.volley/history.edn`, so a
+  first run still starts workers. On hosted-clay this brings volley level
   with Kaocha (6.14s against 6.16s, median of five). A run inside the
   parent differs from one in workers in three ways: a test that calls
   `System/exit` ends the whole run; `println` from a thread that does not

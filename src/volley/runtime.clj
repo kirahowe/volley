@@ -81,14 +81,12 @@
 (defn in-process-ok?
   "Whether `plan` can run on a thread of the parent: `mode` is a
   `heuristic-run?`, and every planned or preloaded namespace, and every
-  namespace a hook or reporter of `:configure` names, loads from the
-  parent's classpath by `(has-ns? ns-sym)`. A JVM worker's classpath adds
-  every suite's `test-paths`, so each must already be on the parent's by
-  `(has-path? path)`: a test path holds more than the namespaces volley
-  plans, such as resources and helpers."
-  [mode plan configure {:keys [test-paths has-ns? has-path?]}]
+  namespace a hook or reporter of `:configure` names, has a source file
+  where a worker would find it by `(has-ns? ns-sym)`: on the parent's
+  classpath or under a suite's test path, which an in-process worker adds
+  to the parent's classpath as a JVM worker's has them."
+  [mode plan configure has-ns?]
   (boolean (and (heuristic-run? mode)
-                (every? has-path? test-paths)
                 (every? has-ns?
                         (concat (map :ns (mapcat :namespaces (:suites plan)))
                                 (map :ns (:preload plan))

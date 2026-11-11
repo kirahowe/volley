@@ -51,10 +51,10 @@
     (passes? (run ["src" "extra"]))
     (is (nil? (:in-process-ms (history))) "no history: worker processes")
     (passes? (run ["src" "extra"]))
-    (is (nil? (:in-process-ms (history)))
-        "test namespaces the parent cannot load: worker processes, whatever the history")
+    (is (= 1 (count (:in-process-ms (history))))
+        "a short run on record: in process, though the parent's classpath lacks the test path")
     (passes? (run ["src" "extra" "test"]))
-    (is (seq (:in-process-ms (history))) "a short run on record: in process")
+    (is (= 2 (count (:in-process-ms (history)))) "and with the test path on it")
     (testing "namespace infos are reused only for files whose text is unchanged"
       (is (fs/exists? (fs/path dir ".volley" "ns-infos.edn")))
       (spit (str (fs/path dir "test" "jvmfix" "runtime_test.clj"))
@@ -63,14 +63,25 @@
         (is (= 0 exit))
         (is (str/includes? out "jvmfix.runtime-test/added-later"))))))
 
-(deftest a-test-path-the-parent-lacks-keeps-the-run-in-workers
-  ;; a JVM worker adds every suite's test paths to its classpath, so a
-  ;; resource under one the parent lacks is only there in a worker
-  (let [dir (e2e/copy-project nil {"tests.edn" (pr-str {:tests [{:id :unit :test-paths ["test" "test-resources"]}]})
+(deftest an-in-process-run-loads-from-the-suites-test-paths
+  ;; a JVM worker's classpath adds every suite's test paths, and a run on
+  ;; a thread of the parent adds them as kaocha.classpath/add-classpath
+  ;; does: here a test path inside a classpath root, and one holding a
+  ;; resource and a helper namespace
+  (let [dir (e2e/copy-project nil {"tests.edn" (pr-str {:tests [{:id :unit :test-paths ["test/tp" "test-resources"]}]})
                                    "test-resources/fixture.txt" "here\n"
+                                   "test-resources/tph/helper.clj" "(ns tph.helper)\n(defn id [] :helper)\n"
                                    "test/tp/resource_test.clj"
-                                   (str "(ns tp.resource-test (:require [clojure.java.io :as io] [clojure.test :refer [deftest is]]))\n"
-                                        "(deftest reads-fixture (is (some? (io/resource \"fixture.txt\"))))\n")})
+                                   (str "(ns tp.resource-test\n"
+                                        "  (:require [clojure.java.io :as io] [clojure.test :refer [deftest is]] [tph.helper :as helper]))\n"
+                                        "(deftest reads-fixture (is (some? (io/resource \"fixture.txt\"))))\n"
+                                        "(deftest loads-helper (is (= :helper (helper/id))))\n"
+                                        "(deftest context-loader-reads-fixture\n"
+                                        "  (is (some? (.getResource (.getContextClassLoader (Thread/currentThread)) \"fixture.txt\"))))\n"
+                                        "(deftest a-new-thread-reads-fixture\n"
+                                        "  (let [found (promise)]\n"
+                                        "    (.start (Thread. (fn [] (deliver found (some? (io/resource \"fixture.txt\"))))))\n"
+                                        "    (is (true? (deref found 5000 :timeout)))))\n")})
         run #(e2e/sh dir ["clojure" "-Sdeps" (pr-str {:paths ["test"]
                                                       :deps {'volley/volley {:local/root (str (fs/absolutize "."))}}})
                           "-M" "-m" "volley.main"]
@@ -79,6 +90,6 @@
     (dotimes [_ 2]
       (let [{:keys [exit out err]} (run)]
         (is (= 0 exit) (str out err))
-        (is (= "1 test | 1 passed | 0 failed | 0 errors | 0 skipped" (summary out)))))
-    (is (= 2 (count (:workers-ms (history)))) "both runs used worker processes")
-    (is (nil? (:in-process-ms (history))))))
+        (is (= expected-summary (summary out)))))
+    (is (= 1 (count (:workers-ms (history)))) "no history: worker processes")
+    (is (= 1 (count (:in-process-ms (history)))) "then in process, with the same tests passing")))

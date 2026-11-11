@@ -103,7 +103,7 @@ Shell:
 | `volley.shell.pool` | Start and stop worker processes, pump their output into the event queue. |
 | `volley.shell.fs` | Glob test paths, read files, snapshot modification times; the files under `.volley/` (timings, run history, cached namespace infos). |
 | `volley.shell.runtime` | Detect the parent's runtime, read its classpath and JVM options, run and cache `clojure -Spath`, and build the worker command. Loads on both runtimes. |
-| `volley.shell.jvm` | The one JVM-only call (`RuntimeMXBean` input arguments), loaded through `requiring-resolve` because babashka lacks `java.lang.management`. |
+| `volley.shell.jvm` | The JVM-only calls: the `RuntimeMXBean` input arguments, and adding paths to the running JVM's classpath for an in-process worker. Loaded through `requiring-resolve`, because babashka lacks `java.lang.management` and Clojure's class loaders. |
 | `volley.shell.terminal` | TTY detection, width, raw keyboard input, redrawing a frame in place. |
 | `volley.shell.watch` | The watch loop: polls mtimes and keys, drives `volley.watch` and one engine run at a time. |
 | `volley.main` | `-main`: wire everything together and run the event loop (or hand over to `volley.shell.watch`). |
@@ -968,12 +968,21 @@ were skipped` warning (`rs/all-skipped`).
     processes for good. With no history (a first run, CI without a cached
     `.volley/`) it starts worker processes. Never in process: `--workers` or `:workers` set
     (`:workers-set?`), a babashka parent or babashka workers, watch and
-    isolate mode, a plan with a namespace the parent's classpath cannot
-    load (planned, preloaded, or named by a hook or reporter), or a suite
-    test path that exists but is not on the parent's classpath. A JVM
-    worker's classpath adds the test paths, and they can hold resources
-    and helper namespaces that a test needs, so a thread of the parent
-    would miss them (`volley.shell.runtime/parent-has-path`). Only a run
+    isolate mode, or a plan with a namespace (planned, preloaded, or
+    named by a hook or reporter) that has no source file on the parent's
+    classpath or under a suite's test path. A JVM worker's classpath adds
+    the test paths, which can hold resources and helper namespaces as
+    well as tests, so an in-process worker adds the ones the parent's
+    classpath lacks (`volley.shell.runtime/paths-off-classpath`) before
+    it starts, as Kaocha adds them when it loads a suite
+    (`kaocha.classpath/add-classpath`). `volley.shell.jvm/add-classpath!`
+    gives `clojure.lang.Compiler/LOADER` a root `DynamicClassLoader` when
+    it has no value and adds the paths to it, so `require` and
+    `clojure.java.io/resource` find them on every thread, and the
+    worker's thread gets that loader as its context class loader. Code
+    that asks the system class loader itself
+    (`ClassLoader/getSystemResource`) still sees only the parent's
+    classpath. Only a run
     whose mode the plan chose (a JVM parent with JVM workers, the default
     worker count, no watch or isolate mode) of the whole plan (no suite or
     filter on the command line) that ran every namespace goes into the
