@@ -27,22 +27,31 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 - Watch mode reloads when the project's `deps.edn` or `bb.edn` changes
   and computes the workers' classpath again. Removed dependencies and
   paths stay on the classpath until a restart. (volley#10)
-- With a JVM parent, a suite whose recent runs took 10s or less runs on a
-  thread of the parent instead of starting worker JVMs. If a run is still
-  going after 10s, with at least 10s of work waiting by the recorded
-  timings, volley starts workers for the rest. `--workers`, `:workers`,
-  `--isolate` and `--watch` turn this off, and so does a namespace with
-  no source file on the parent's classpath or under a test path. Test
-  paths the parent's classpath lacks are added to it for the run, as
-  Kaocha adds them. The run times are kept in `.volley/history.edn`, so a
-  first run still starts workers. On hosted-clay this brings volley level
-  with Kaocha (6.14s against 6.16s, median of five). A run inside the
-  parent differs from one in workers in three ways: a test that calls
-  `System/exit` ends the whole run, which volley reports on stderr before
-  exiting with code 1; `println` from a thread that does not
-  carry bindings over (a raw `Thread`, an executor, core.async) reaches
-  the terminal instead of the test's output; and a `System/setOut` that a
-  test never undoes stays in place for the rest of the run. (volley#2)
+- In-process runs for short JVM suites. With a JVM parent, a suite whose
+  recent runs took 10s or less runs on a thread of the parent instead of
+  starting worker JVMs. On hosted-clay this brings volley level with
+  Kaocha: 6.14s against 6.16s, median of five (see
+  [doc/benchmarks.md](doc/benchmarks.md)). (volley#2)
+  - The run times are kept in `.volley/history.edn`, so a first run still
+    starts workers.
+  - If a run is still going after 10s, with at least 10s of work waiting
+    by the recorded timings, volley starts workers for the rest.
+  - `--workers`, `:workers`, `--isolate` and `--watch` turn this off, and
+    so does a namespace with no source file on the parent's classpath or
+    under a test path.
+  - Test paths the parent's classpath lacks are added to it for the run,
+    as Kaocha adds them.
+  - A run inside the parent differs from one in workers in four ways:
+    - A test that calls `System/exit` ends the whole run. volley reports
+      the call on stderr and exits with code 1.
+    - `println` from a thread that does not carry bindings over (a raw
+      `Thread`, an executor, core.async) reaches the terminal instead of
+      the test's output.
+    - A `System/setOut` that a test never undoes stays in place for the
+      rest of the run.
+    - Code that asks the system class loader itself
+      (`ClassLoader/getSystemResource`) does not see the added test
+      paths.
 - A JVM parent caches parsed namespace forms in `.volley/ns-infos.edn`
   and parses only the files that changed. (volley#2)
 
