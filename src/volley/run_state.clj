@@ -53,10 +53,17 @@
       (update :started-at min* at)
       (update :now max* at)))
 
-(defn- var-path [{:keys [ns var]}] [:namespaces ns :vars var])
-
-(defn- var-record [{:keys [ns var]}]
-  (fn [v] (merge {:ns ns :var var :assertions [] :phase :running} v)))
+(defn- update-var
+  "Apply `f` to the record of the var that event `e` names, made first
+  when this is the var's first event. A new record gets `:order`, its
+  place among the namespace's vars by first event: the order the worker
+  reached them in."
+  [state {:keys [ns var]} f]
+  (update-in state [:namespaces ns :vars]
+             (fn [vars]
+               (assoc vars var
+                      (f (merge {:ns ns :var var :assertions [] :phase :running :order (count vars)}
+                                (get vars var)))))))
 
 (defn- ns-record [ns]
   (fn [r] (merge {:ns ns :vars {} :status :running} r)))
@@ -124,8 +131,7 @@
 
 (defn- on-var-start [state {:keys [worker ns var file line at] :as e}]
   (-> state
-      (update-in (var-path e) #(merge ((var-record e) %)
-                                      {:file file :line line :start-at at}))
+      (update-var e #(merge % {:file file :line line :start-at at}))
       (set-worker worker {:ns ns :var var :var-at at})))
 
 (def ^:private assertion-keys
@@ -136,23 +142,20 @@
   `:once` fixture), for the namespace."
   [state {:keys [ns var] :as e}]
   (if (some? var)
-    (update-in state (var-path e)
-               #(update ((var-record e) %) :assertions conj (select-keys e assertion-keys)))
+    (update-var state e #(update % :assertions conj (select-keys e assertion-keys)))
     (update-in state [:namespaces ns]
                #(update ((ns-record ns) %) :assertions (fnil conj []) (select-keys e assertion-keys)))))
 
 (defn- on-var-end [state {:keys [worker at pass fail error duration-ms output] :as e}]
   (-> state
-      (update-in (var-path e)
-                 #(assoc ((var-record e) %)
-                         :phase :ended :pass (or pass 0) :duration-ms duration-ms
-                         :reported {:fail (or fail 0) :error (or error 0)}
-                         :output output :end-at at))
+      (update-var e #(assoc %
+                            :phase :ended :pass (or pass 0) :duration-ms duration-ms
+                            :reported {:fail (or fail 0) :error (or error 0)}
+                            :output output :end-at at))
       (set-worker worker {:var nil :var-at nil})))
 
 (defn- on-var-skipped [state {:keys [reason] :as e}]
-  (update-in state (var-path e)
-             #(assoc ((var-record e) %) :phase :skipped :reason reason)))
+  (update-var state e #(assoc % :phase :skipped :reason reason)))
 
 (defn- on-protocol-error
   "A protocol line the parent could not read. Whatever it said is lost, so

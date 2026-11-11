@@ -852,7 +852,9 @@
   (concat
    [(str (paint opts :bold (ext (:ns rec)))
          (when-let [d (ns-duration rec)] (paint opts :gray (str " " (fmt-ms d)))))]
-   (map #(doc-var-line opts %) (sort-by (comp str :var) (rs/run-vars rec)))
+   ;; in run order (pending vars first: a worker reports them before it
+   ;; runs any), so a random order shows as it ran
+   (map #(doc-var-line opts %) (sort-by (juxt :order (comp str :var)) (rs/run-vars rec)))
    (case (rs/ns-result rec)
      :error   [(str "  " (paint opts :red (if (= :setup (:phase rec)) "✗ worker setup failed" "✗ failed to load")))]
      :crashed (when (empty? (:vars rec))
@@ -865,9 +867,9 @@
   "Append-only lines for the documentation reporter (Kaocha's
   `kaocha.report/documentation`): for each namespace that finished since
   `prev` (or nil), its name and one line per test var with ✓, ✗ or - and
-  its duration. Namespaces are printed whole when they finish, so lines of
-  namespaces running in parallel never interleave. `(:only opts)` as in
-  `live-frame`."
+  its duration, in the order the vars ran. Namespaces are printed whole
+  when they finish, so lines of namespaces running in parallel never
+  interleave. `(:only opts)` as in `live-frame`."
   [prev state opts]
   (finish (mapcat #(doc-ns-lines opts %) (newly-finished prev state opts)) opts))
 

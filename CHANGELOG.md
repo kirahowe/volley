@@ -73,6 +73,9 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 - A project without `tests.edn` runs on the defaults with no warning.
   volley warns only when `--config-file` names a missing file other than
   `tests.edn`.
+- `--reporter documentation` lists a namespace's tests in the order they
+  ran, pending ones first, so a random order shows. It used to sort them
+  by name.
 - A failure report shows the captured output around each failure (25
   lines before, 5 after) rather than the last 30 lines of the test. When
   the output continues past a failure, a `▲ FAIL` (or `▲ ERROR`) line

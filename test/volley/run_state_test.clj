@@ -17,6 +17,16 @@
     (= (gr/fold (:plan r) (gr/events r 0))
        (gr/fold (:plan r) (gr/events r 1)))))
 
+(defspec vars-are-numbered-by-their-first-event runs
+  ;; one worker runs a namespace, so this is the order it reached the vars
+  (prop/for-all [r gr/run]
+    (let [events (all-events r)
+          state (gr/fold (:plan r) events)]
+      (every? (fn [[ns rec]]
+                (= (distinct (keep #(when (and (= ns (:ns %)) (some? (:var %))) (:var %)) events))
+                   (map :var (sort-by :order (vals (:vars rec))))))
+              (:namespaces state)))))
+
 (defn- failed-count
   "Assertions of `type` per var, the larger of the assertion events that
   arrived and the var's `:var/end` count, summed."

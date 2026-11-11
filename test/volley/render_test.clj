@@ -325,15 +325,29 @@
 
 (deftest documentation-lines-example
   (testing "kaocha.report/documentation: one line per var, grouped by namespace"
-    (let [skipped (rs/apply-event state (ev {:event :var/skipped :ns 'my.app-test :var 'later-test
-                                             :reason :pending}))]
+    ;; a worker sends a namespace's skipped vars before it runs any
+    (let [pending (ev {:event :var/skipped :ns 'my.app-test :var 'later-test :reason :pending})
+          skipped (reduce rs/apply-event (rs/init {:namespaces '[my.app-test other-test later-test]})
+                          (concat [(first events) pending] (rest events)))]
       (is (= ["my.app-test 352ms"
-              "  ✓ add-test 12ms"
               "  - later-test (skipped: pending)"
+              "  ✓ add-test 12ms"
               "  ✗ merge-test 340ms"
               ""]
              (render/documentation-lines nil skipped opts)))
       (is (empty? (render/documentation-lines skipped skipped opts)) "append-only"))))
+
+(deftest documentation-lists-vars-in-the-order-they-ran
+  ;; kaocha.report/documentation prints each var as it runs, so a random
+  ;; order shows; volley prints the namespace whole, in that order
+  (let [ran (reduce rs/apply-event (rs/init {})
+                    (for [[k v] (map-indexed vector '[zeta-test alpha-test mid-test])
+                          e [{:event :var/start :ns 'r-test :var v :at (+ 1000 k)}
+                             {:event :var/end :ns 'r-test :var v :pass 1 :duration-ms 1 :at (+ 1000 k)}]]
+                      (ev e)))
+        done (rs/apply-event ran (ev {:event :ns/end :ns 'r-test :duration-ms 3 :at 1003}))]
+    (is (= ["r-test 3ms" "  ✓ zeta-test 1ms" "  ✓ alpha-test 1ms" "  ✓ mid-test 1ms" ""]
+           (render/documentation-lines nil done opts)))))
 
 (defspec documentation-emits-each-finished-namespace-once runs
   (prop/for-all [r gr/run]

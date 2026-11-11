@@ -499,6 +499,10 @@ worker events above, run-state folds:
  :reason :fail-fast}
 ```
 
+A var's record carries `:order`, its place among the namespace's vars by
+first event. One worker runs a namespace, so that is the order the worker
+reached them in, whatever other workers' events arrive in between.
+
 A var's failure and error counts are the larger of the assertion events
 that arrived and the counts in its `:var/end`. When `:var/end` counts
 more, the difference is reported as a failure saying the details were
@@ -705,7 +709,10 @@ volley always prints its own output. `--reporter` and `:kaocha/reporter`
 choose between its forms and add the project's reporters
 (`volley.config/volley-reporter`):
 
-- `kaocha.report/documentation` selects the documentation layout.
+- `kaocha.report/documentation` selects the documentation layout. It
+  lists a namespace's vars in the order they ran (`:order` in the run
+  state), so a random order shows, after the pending ones, which a worker
+  reports before it runs any.
 - Kaocha's other reporters (`dots`, `kaocha.report.progress/report`,
   `kaocha.report/report`, `clojure.test/report`) select the live view (CI
   lines when stdout is not a terminal), without a warning.
