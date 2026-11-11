@@ -293,17 +293,40 @@
           code
           (recur world state (if tick? now last-tick) (if width? now last-width)))))))
 
+(defn- report-early-exit!
+  "For the shutdown hook of an in-process run. When a thread other than
+  `parent` is exiting this JVM, code under test called `System/exit` on a
+  thread of this process: no summary will follow and the exit code would
+  be whatever that call chose, 0 included. Say so on stderr and halt with
+  exit code 1. `exit-caller` is `volley.shell.jvm/exit-caller`."
+  [exit-caller parent live?]
+  (when-let [caller (exit-caller parent)]
+    (when live? (term/show-cursor!))
+    (print-lines! {:lines ["volley: System/exit was called while the tests ran in volley's own JVM, so the run stopped before it finished."
+                           (str "  called from " caller)
+                           "  The run counts as failed (exit code 1). With --workers N the tests run in worker processes, where the call ends one worker and is reported as a crash."]
+                   :stream :err})
+    (.halt (Runtime/getRuntime) 1)))
+
 (defn- run-tests!
   "Start the engine on `plan` and run it to completion. `workers` holds
   the worker `:command` and the `:test-paths` an in-process worker adds
   to this process's classpath. Returns the exit code. Workers still alive
   when it ends, or when the JVM shuts down, are killed: they are this
-  process's descendants, so no handle is needed."
+  process's descendants, so no handle is needed. A shutdown during an
+  in-process run that a `System/exit` in the tests started is reported
+  (`report-early-exit!`)."
   [plan workers opts]
   (let [ctx (assoc workers
                    :queue (pool/new-queue)
                    :live? (= :live (:reporter opts)))
-        hook (Thread. ^Runnable pool/kill-descendants!)
+        parent (Thread/currentThread)
+        ;; resolved here, so the shutdown hook loads no code
+        exit-caller (when (:in-process? opts) (requiring-resolve 'volley.shell.jvm/exit-caller))
+        hook (Thread. ^Runnable (fn []
+                                  (pool/kill-descendants!)
+                                  (when exit-caller
+                                    (report-early-exit! exit-caller parent (:live? ctx)))))
         go (fn []
              (let [{:keys [state effects]} (engine/init plan opts)
                    [world _] (run-effects! ctx no-workers effects)

@@ -244,10 +244,10 @@ The list of deliberate behaviour differences is in the
 [divergences section of doc/design.md](doc/design.md#deliberate-divergences-from-kaocha).
 In short: a namespace that fails to load is one error rather than failing
 the whole suite, a test that calls `System/exit` crashes one worker rather
-than the run (unless the run is in volley's own JVM), fail-fast finishes
-the failing test before stopping, a namespace is loaded in the worker
-that runs it unless you pass `--preload`, and a project without
-`tests.edn` gets no warning about it.
+than the run (in volley's own JVM it ends the run, which volley reports
+with exit code 1), fail-fast finishes the failing test before stopping, a
+namespace is loaded in the worker that runs it unless you pass
+`--preload`, and a project without `tests.edn` gets no warning about it.
 
 ## Before you switch
 

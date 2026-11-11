@@ -38,7 +38,8 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
   first run still starts workers. On hosted-clay this brings volley level
   with Kaocha (6.14s against 6.16s, median of five). A run inside the
   parent differs from one in workers in three ways: a test that calls
-  `System/exit` ends the whole run; `println` from a thread that does not
+  `System/exit` ends the whole run, which volley reports on stderr before
+  exiting with code 1; `println` from a thread that does not
   carry bindings over (a raw `Thread`, an executor, core.async) reaches
   the terminal instead of the test's output; and a `System/setOut` that a
   test never undoes stays in place for the rest of the run. (volley#2)

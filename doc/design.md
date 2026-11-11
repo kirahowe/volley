@@ -956,6 +956,13 @@ were skipped` warning (`rs/all-skipped`).
     the restore hold `volley.shell.worker/system-streams-lock`, as does
     the kill while it gives the parent its streams back, and the kill
     does that before it interrupts the thread.
+    A test that calls `System/exit` in process shuts down the parent,
+    whose summary would never print and whose exit code would be the
+    test's, 0 included. The run's shutdown hook (`volley.main/run-tests!`)
+    therefore asks `volley.shell.jvm/exit-caller` whether a thread other
+    than the parent's own is inside `Runtime.exit`; if one is, it prints
+    where the call came from and halts with exit code 1. A shutdown that a
+    signal started has no such thread and keeps its own exit code.
     `volley.runtime/worker-plan` decides, from `.volley/history.edn`: the
     last three wall times (engine start to end) of runs in process and of
     runs with worker processes, and how many short worker runs came
@@ -1113,7 +1120,9 @@ difference:
   process, so the call ends the run with whatever code the test chose.
   In volley it ends one worker; the namespace is reported as a CRASH,
   whatever the code, and the run goes on. A run in the parent's JVM
-  ("In process" under JVM mode) ends as Kaocha's does.
+  ("In process" under JVM mode) ends where Kaocha's does, but volley
+  says what called `System/exit` and exits with code 1, never the
+  test's.
 - **A `:once` fixture that throws.** On babashka Kaocha lets the exception
   escape and exits with a stack trace. volley reports a namespace error.
 - **An assertion in a `:once` fixture.** Kaocha prints a failing one

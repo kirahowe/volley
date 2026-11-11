@@ -93,3 +93,20 @@
         (is (= expected-summary (summary out)))))
     (is (= 1 (count (:workers-ms (history)))) "no history: worker processes")
     (is (= 1 (count (:in-process-ms (history)))) "then in process, with the same tests passing")))
+
+(deftest system-exit-in-an-in-process-run-fails-the-run
+  ;; in a worker process the call crashes that worker; on a thread of the
+  ;; parent it ends the JVM, which must not exit 0 without a word
+  (let [dir (e2e/copy-project nil {"test/ex/fine_test.clj"
+                                   "(ns ex.fine-test (:require [clojure.test :refer [deftest is]]))\n(deftest fine (is true))\n"})
+        run #(e2e/sh dir ["clojure" "-Sdeps" (pr-str {:paths ["test"]
+                                                      :deps {'volley/volley {:local/root (str (fs/absolutize "."))}}})
+                          "-M" "-m" "volley.main"]
+                     {:timeout-ms 180000})]
+    (is (= 0 (:exit (run))) "a short run with worker processes, for the history")
+    (spit (str (fs/path dir "test" "ex" "exit_test.clj"))
+          "(ns ex.exit-test (:require [clojure.test :refer [deftest is]]))\n(deftest exits-zero (System/exit 0) (is true))\n")
+    (let [{:keys [exit out err]} (run)]
+      (is (= 1 exit) (str out err))
+      (is (str/includes? err "System/exit was called while the tests ran in volley's own JVM"))
+      (is (re-find #"called from ex\.exit_test\S* \(exit_test\.clj:2\)" err)))))
