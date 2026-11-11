@@ -6,7 +6,7 @@ All notable changes to volley are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0-alpha.2] - 2026-10-28
+## [0.1.0-alpha.2] - 2026-11-11
 
 Second alpha: random test order, in-process runs for short JVM suites,
 and watch mode that follows changes to `tests.edn`, `deps.edn` and
@@ -30,10 +30,10 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 - With a JVM parent, a suite whose recent runs took 10s or less runs on a
   thread of the parent instead of starting worker JVMs. If a run is still
   going after 10s, with at least 10s of work waiting by the recorded
-  timings, volley starts workers for the rest. `--workers` or `:workers`
-  turns this off, and so does a test path from tests.edn that is not on
-  the parent's classpath. The run times are kept in `.volley/history.edn`, so a
-  first run still starts workers. On hosted-clay this brings volley level
+  timings, volley starts workers for the rest. `--workers`, `:workers`,
+  `--isolate` and `--watch` turn this off, and so does a test path or
+  namespace that is not on the parent's classpath. The run times are kept
+  in `.volley/history.edn`, so a first run still starts workers. On hosted-clay this brings volley level
   with Kaocha (6.14s against 6.16s, median of five). A run inside the
   parent differs from one in workers in three ways: a test that calls
   `System/exit` ends the whole run; `println` from a thread that does not
