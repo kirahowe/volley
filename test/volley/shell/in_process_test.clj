@@ -76,6 +76,41 @@
     (is (= :var/end (:event (last (until queue #(= :var/end (:event %)))))))
     (is (= streams [System/out System/err]))))
 
+(deftest a-killed-worker-starts-no-further-var-and-runs-no-shutdown-hook
+  ;; volley#24: the first var of exec.swallow-test swallows the interrupt,
+  ;; so the thread goes on after the kill
+  (let [post-runs @(requiring-resolve 'exec.swallow-test/post-runs)
+        start (fn [id]
+                (let [queue (pool/new-queue)
+                      handle (in-process/start-worker! {:queue queue} id)]
+                  (pool/send! handle {:op :configure :config {}
+                                      :hooks {:post-run ['exec.swallow-test/count-post-run]}})
+                  (pool/send! handle {:op :run :ns 'exec.swallow-test :run-id 1 :suite :unit
+                                      :capture-output? true})
+                  [queue handle]))]
+    (testing "a worker that is stopped runs every var and its post-run hook"
+      (reset! post-runs 0)
+      (let [[queue handle] (start 8)
+            ran (until queue #(= :ns/end (:event %)))]
+        (pool/stop! handle)
+        (until-exit queue)
+        (is (= 3 (count (filter #(= :var/end (:event %)) ran))))
+        (is (= 1 @post-runs))))
+    (testing "a killed one ends the var it was in and does no more"
+      (reset! post-runs 0)
+      (let [streams [System/out System/err]
+            [queue handle] (start 9)]
+        (until queue #(= :var/start (:event %)))
+        (pool/kill! handle)
+        (until-exit queue)
+        (let [after (until queue #(= :ns/end (:event %)))]
+          (.join ^Thread (:thread handle) 20000)
+          (is (= [:var/end :var/skipped :var/skipped :ns/end] (map :event after)))
+          (is (= [['b-after :stopped] ['c-after :stopped]]
+                 (keep #(when (= :var/skipped (:event %)) [(:var %) (:reason %)]) after))))
+        (is (zero? @post-runs))
+        (is (= streams [System/out System/err]))))))
+
 (deftest line-stream-splits-lines-across-any-writes
   (let [text "first\nsecond is long ünïcode\n\nlast without newline"
         bs (.getBytes text "UTF-8")

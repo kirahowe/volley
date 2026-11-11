@@ -93,8 +93,10 @@
   (`volley.shell.jvm/add-classpath!`), and the thread gets that loader as
   its context class loader for Java code that asks for one.
   Returns a handle for `volley.shell.pool/send!`, `stop!` and `kill!`.
-  A thread cannot be killed: `kill!` interrupts it and reports the exit at
-  once, and whatever it still sends goes to a worker the run has dropped."
+  A thread cannot be killed: `kill!` reports the exit at once and
+  interrupts it. The var it was in still ends, but the worker starts no
+  further var and runs no shutdown hook, and whatever it still sends goes
+  to a worker the run has dropped."
   [{:keys [^LinkedBlockingQueue queue test-paths]} id]
   (let [loader (when (seq test-paths)
                  ((requiring-resolve 'volley.shell.jvm/add-classpath!) test-paths))
@@ -126,7 +128,7 @@
         ;; *ns* and friends), as a worker process's -main has them
         serve (bound-fn []
                 (binding [*out* stray *err* stray t/*test-out* stray]
-                  (let [code (try (worker/serve! emit! read-line stray)
+                  (let [code (try (worker/serve! emit! read-line stray #(deref exited?))
                                   (catch Throwable e
                                     (println "volley: in-process worker failed:" (str e))
                                     1))]
@@ -143,4 +145,5 @@
     (.start thread)
     {:id id
      :in in
+     :thread thread
      :kill! (fn [] (exit! 1) (.put commands eof) (.interrupt thread))}))

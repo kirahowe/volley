@@ -62,9 +62,9 @@ This is structural, not a guideline:
   An in-process worker (`volley.shell.in-process`, see "JVM mode") adds
   the mutable objects a worker process has in the operating system
   instead: a queue of command lines, the line buffers of its two output
-  streams, and a flag that makes its exit event a one-time thing. They
-  live in its handle and its thread; the loop still reads only the one
-  event queue.
+  streams, and a flag that makes its exit event a one-time thing and
+  tells its loop that it was killed. They live in its handle and its
+  thread; the loop still reads only the one event queue.
 
 ### Namespaces
 
@@ -964,7 +964,13 @@ were skipped` warning (`rs/all-skipped`).
     of the worker, which in process means the parent JVM. The check and
     the restore hold `volley.shell.worker/system-streams-lock`, as does
     the kill while it gives the parent its streams back, and the kill
-    does that before it interrupts the thread.
+    does that before it interrupts the thread. A var that swallows the
+    interrupt would otherwise let the thread carry on, so the worker's
+    loop is told about the kill (`killed?` of
+    `volley.shell.worker/serve!`): it starts no further var, as after a
+    `:shutdown`, a var that was already cleared to start leaves
+    `System/out` and `System/err` alone, and no shutdown hook runs. The
+    hooks around the var that was running still finish with it.
     A test that calls `System/exit` in process shuts down the parent,
     whose summary would never print and whose exit code would be the
     test's, 0 included. The run's shutdown hook (`volley.main/run-tests!`)

@@ -620,3 +620,21 @@
     (testing "without a stop it runs once, around both vars"
       (is (= {:pass 2 :fail 0 :error 0} (counts (run-events 'exec.once-runs-test))))
       (is (= 1 @runs)))))
+
+
+(deftest a-var-that-starts-after-a-stop-leaves-the-system-streams-alone
+  ;; volley#24: a kill gives the parent its streams back, and a var that
+  ;; was already cleared to start must not take them again
+  (let [v (requiring-resolve 'exec.pass-test/adds)
+        streams [System/out System/err]
+        acc (atom nil)
+        events (volatile! [])
+        emit! #(vswap! events conj %)]
+    (binding [*out* *out* *err* *err*]
+      (#'worker/start-var! acc emit! 'exec.pass-test true (constantly true) v)
+      (is (= streams [System/out System/err]))
+      (println "printed through *out*")
+      (#'worker/end-var! acc emit! 'exec.pass-test))
+    (is (= streams [System/out System/err]))
+    (is (= [:var/start :var/end] (map :event @events)))
+    (is (= "printed through *out*\n" (:output (last @events))) "*out* is still captured")))

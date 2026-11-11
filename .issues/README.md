@@ -13,7 +13,6 @@
 
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
-| [24](24-stop-a-killed-in-process-worker-from-running-more-vars-and.md) | Stop a killed in-process worker from running more vars and hooks | bug | P2 |
 | [21](21-count-preloaded-tests-per-namespace-in-watch-f-reruns.md) | Count preloaded tests per namespace in watch f reruns | bug | P3 |
 | [23](23-stop-a-suite-wrap-run-that-calls-run-twice-from-hanging-the.md) | Stop a suite wrap-run that calls run twice from hanging the worker | bug | P3 |
 
@@ -22,6 +21,7 @@
 | ID | Title | Type | Priority |
 | --- | --- | --- | --- |
 | [22](22-skip-once-fixtures-when-a-stop-arrives-before-any-var-starts.md) | Skip :once fixtures when a stop arrives before any var starts | bug | P2 |
+| [24](24-stop-a-killed-in-process-worker-from-running-more-vars-and.md) | Stop a killed in-process worker from running more vars and hooks | bug | P2 |
 
 ## Done
 

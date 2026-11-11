@@ -244,9 +244,10 @@
   (empty->nil (.toString ^java.io.ByteArrayOutputStream bytes "UTF-8")))
 
 (def system-streams-lock
-  "Held while a var puts `System/out` and `System/err` back, and by
-  `volley.shell.in-process` while a kill gives the parent its own streams
-  back, so the kill cannot land between the var's check and its restore."
+  "Held while a var takes `System/out` and `System/err` or puts them back,
+  and by `volley.shell.in-process` while a kill gives the parent its own
+  streams back, so the kill cannot land between the var's check and what
+  it does to the streams."
   (Object.))
 
 (def ^:private live-capture
@@ -255,8 +256,11 @@
   (atom nil))
 
 (defn- start-var!
-  "Open the accumulator for var `v`, redirecting output when capturing."
-  [acc emit! ns-sym capture? v]
+  "Open the accumulator for var `v`, redirecting output when capturing.
+  Once `(stop-requested?)` holds it leaves `System/out` and `System/err`
+  alone: a killed in-process worker has given the parent its streams back,
+  and a var that was already cleared to start must not take them again."
+  [acc emit! ns-sym capture? stop-requested? v]
   (let [capture (when capture? (open-capture))
         m (meta v)]
     (reset! acc {:var v :pass 0 :fail 0 :error 0
@@ -267,8 +271,10 @@
       (reset! live-capture capture)
       (set! *out* (:writer capture))
       (set! *err* (:writer capture))
-      (System/setOut (:stream capture))
-      (System/setErr (:stream capture)))
+      (locking system-streams-lock
+        (when-not (stop-requested?)
+          (System/setOut (:stream capture))
+          (System/setErr (:stream capture)))))
     (emit! {:event :var/start :ns ns-sym :var (:name m)
             :file (rel (:file m)) :line (:line m)})))
 
@@ -437,7 +443,7 @@
                   (vswap! progress update :reached conj v)
                   (let [test! (fn []
                                 (vswap! progress update :settled conj v)
-                                (start-var! acc emit! ns-sym capture? v)
+                                (start-var! acc emit! ns-sym capture? stop-requested? v)
                                 (try (test!)
                                      (check-assertions! acc)
                                      (finally (safely #(end-var! acc emit! ns-sym)))))
@@ -787,21 +793,25 @@
   shutdown hook threw, else 0. `-main` serves the process's stdin;
   `volley.shell.in-process` serves a queue inside the parent, so the
   stop flag belongs to this call alone: a `:shutdown` to one loop never
-  stops another in the same process."
-  [emit! read-line ^java.io.Writer stray]
-  (emit! {:event :worker/ready})
-  (let [stop (atom false)
-        lines (java.util.concurrent.LinkedBlockingQueue.)
-        _ (doto (Thread. ^Runnable #(read-commands! read-line (fn [] (reset! stop true)) lines))
-            (.setDaemon true) (.start))
-        hs (serve emit! filters/decide
-                  #(let [line (.take lines)] (when-not (= ::eof line) line))
-                  #(.flush stray)
-                  #(deref stop))
-        errors (call-hooks :shutdown hs)]
-    (report-hook-errors! emit! errors)
-    (.flush stray)
-    (if (seq errors) 1 0)))
+  stops another in the same process. A worker inside the parent cannot be
+  killed as a process can, so it passes `killed?`: once that holds, the
+  loop starts no further var, as after a `:shutdown`, and runs no
+  shutdown hook, and the call returns 1."
+  ([emit! read-line stray] (serve! emit! read-line stray (constantly false)))
+  ([emit! read-line ^java.io.Writer stray killed?]
+   (emit! {:event :worker/ready})
+   (let [stop (atom false)
+         lines (java.util.concurrent.LinkedBlockingQueue.)
+         _ (doto (Thread. ^Runnable #(read-commands! read-line (fn [] (reset! stop true)) lines))
+             (.setDaemon true) (.start))
+         hs (serve emit! filters/decide
+                   #(let [line (.take lines)] (when-not (= ::eof line) line))
+                   #(.flush stray)
+                   #(or @stop (killed?)))
+         errors (when-not (killed?) (call-hooks :shutdown hs))]
+     (report-hook-errors! emit! errors)
+     (.flush stray)
+     (if (or (killed?) (seq errors)) 1 0))))
 
 (defn -main
   "Worker entry point. Protocol events go to the original stdout; everything
