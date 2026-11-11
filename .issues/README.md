@@ -16,13 +16,6 @@
 | [21](21-count-preloaded-tests-per-namespace-in-watch-f-reruns.md) | Count preloaded tests per namespace in watch f reruns | bug | P3 |
 | [23](23-stop-a-suite-wrap-run-that-calls-run-twice-from-hanging-the.md) | Stop a suite wrap-run that calls run twice from hanging the worker | bug | P3 |
 
-### Review
-
-| ID | Title | Type | Priority |
-| --- | --- | --- | --- |
-| [22](22-skip-once-fixtures-when-a-stop-arrives-before-any-var-starts.md) | Skip :once fixtures when a stop arrives before any var starts | bug | P2 |
-| [24](24-stop-a-killed-in-process-worker-from-running-more-vars-and.md) | Stop a killed in-process worker from running more vars and hooks | bug | P2 |
-
 ## Done
 
 | ID | Title | Type | Priority |
@@ -30,6 +23,8 @@
 | [3](3-publish-the-github-repo-and-push-the-v0-1-0-alpha-1-tag.md) | Publish the GitHub repo and push the v0.1.0-alpha.1 tag | chore | P1 |
 | [1](1-ignore-the-volley-cache-directory-automatically.md) | Ignore the .volley/ cache directory automatically | feature | P2 |
 | [2](2-make-small-jvm-suites-at-least-as-fast-as-kaocha.md) | Make small JVM suites at least as fast as Kaocha | feature | P2 |
+| [22](22-skip-once-fixtures-when-a-stop-arrives-before-any-var-starts.md) | Skip :once fixtures when a stop arrives before any var starts | bug | P2 |
+| [24](24-stop-a-killed-in-process-worker-from-running-more-vars-and.md) | Stop a killed in-process worker from running more vars and hooks | bug | P2 |
 | [4](4-support-random-test-order-kaocha-randomize-plugin.md) | Support random test order (Kaocha randomize plugin) | feature | P3 |
 | [5](5-watch-mode-test-name-filter-misses-macro-defined-tests.md) | Watch mode test-name filter misses macro-defined tests | bug | P3 |
 | [6](6-run-once-fixtures-for-namespaces-whose-vars-are-all-pending.md) | Run :once fixtures for namespaces whose vars are all pending | bug | P3 |

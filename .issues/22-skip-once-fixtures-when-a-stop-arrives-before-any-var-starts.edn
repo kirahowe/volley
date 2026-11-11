@@ -1,6 +1,6 @@
 {:id 22
  :title "Skip :once fixtures when a stop arrives before any var starts"
- :status :review
+ :status :done
  :type :bug
  :priority :p2
  :created "2026-10-28"
