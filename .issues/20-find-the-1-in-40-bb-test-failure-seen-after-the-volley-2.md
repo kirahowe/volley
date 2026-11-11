@@ -21,3 +21,6 @@ On main at c05d4d8, the first bb test run after landing the volley#2 fix pass re
   to be this flake; another candidate is the 1s grace in
   `graceful_stop_test` under load. Since volley's own suite randomizes,
   the next failing run prints its seed.
+- 2026-11-11: 15 `bb test` runs in a row at d5dc14e, with output saved,
+  all passed (496 tests each). Not reproduced, which at 1 in 40 says
+  little either way.

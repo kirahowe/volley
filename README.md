@@ -362,15 +362,16 @@ line for each namespace as it finishes, and failures as they happen. Its
 test total includes the tests that haven't started yet. Until every
 namespace has loaded, part of that number comes from reading the source,
 which misses tests defined by macros other than `deftest` and `defspec`,
-so the total shows as `~n` until it's exact. When stdout is not a terminal it prints append-only lines instead, one per
-finished namespace followed by its failures. A test that has run for 30
-seconds gets a `still running` line in that mode. Both end with a summary,
-the slowest tests and a `--focus` command to rerun the failures. That
-command starts the way you ran volley: `bb test` inside a babashka task,
-`bin/volley` through the binstub, `clojure -M:test` on the JVM. Set
-`VOLLEY_COMMAND` to choose it yourself. It keeps `--config-file` when you
-used one. `--reporter documentation` prints one line per test var,
-grouped by namespace.
+so the total shows as `~n` until it's exact. When stdout is not a terminal
+it prints append-only lines instead, one per finished namespace followed
+by its failures. A test that has run for 30 seconds gets a `still running`
+line in that mode. Both end with a summary, the slowest tests and a
+`--focus` command to rerun the failures. That command starts the way you
+ran volley: `bb test` inside a babashka task, `bin/volley` through the
+binstub, `clojure -M:test` on the JVM. Set `VOLLEY_COMMAND` to choose it
+yourself. It keeps `--config-file` when you used one.
+`--reporter documentation` prints one line per test var, grouped by
+namespace, in the order the tests ran.
 
 A failing test's report includes what the test printed, cut down to the
 25 lines before each failure and the 5 after it. The rest is counted as
