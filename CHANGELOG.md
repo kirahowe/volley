@@ -30,7 +30,7 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 - In-process runs for short JVM suites. With a JVM parent, a suite whose
   recent runs took 10s or less runs on a thread of the parent instead of
   starting worker JVMs. On hosted-clay this brings volley level with
-  Kaocha: 6.14s against 6.16s, median of five (see
+  Kaocha: 5.65s against 5.71s, median of five (see
   [doc/benchmarks.md](doc/benchmarks.md)). (volley#2)
   - The run times are kept in `.volley/history.edn`, so a first run still
     starts workers.

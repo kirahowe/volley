@@ -5,7 +5,8 @@ Treat them as indications, not a controlled comparison.
 
 ## Conditions
 
-These hold for every section up to "JVM, 2026-10-19", which lists its own.
+These hold for every section up to "JVM, 2026-10-19". That section and
+the one after it list their own.
 
 - Machine: a 16-core Mac.
 - The machine was shared and loaded during every run. The load average was
@@ -185,6 +186,34 @@ Time from spawning a JVM worker on the hosted-clay classpath to its
 
 A worker that gets no `:configure` message no longer loads
 `volley.shell.hooks`, which saves about 20ms per JVM worker.
+
+## JVM, 2026-11-12
+
+The hosted-clay measurement again, on the code released as 0.1.0-alpha.2
+(volley at 540c795, through a `:local/root`), to check the figure after
+the changes to in-process runs since 2026-10-19.
+
+- A fresh copy of hosted-clay as in the method above, with the project's
+  own `tests.edn`. Its test path, `test/hosted_clay`, is a directory
+  inside the `test` classpath root, so it is one an in-process run adds
+  to the parent's classpath itself.
+- volley through the project's `:test` alias (`clojure -M:test`), and
+  Kaocha 1.91.1392 through an added alias (`clojure -M:test:kaocha`).
+- Two warm-up runs of volley from an empty `.volley/`: the first started
+  worker JVMs (7.59s), the second went in process (5.76s). Then five
+  runs of volley, back to back, and five of Kaocha.
+  `.volley/history.edn` recorded the measured volley runs as in process.
+- Wall time of the whole `clojure` command, from `/usr/bin/time -p`, on
+  the same 16-core Mac with JDK 25.0.3. Other work was running on it: the
+  load average was 4 to 8.
+
+| | Kaocha | volley |
+|---|---|---|
+| median | 5.71s | 5.65s |
+| runs | 5.71, 6.24, 5.64, 5.66, 6.93 | 5.65, 5.63, 6.74, 5.69, 5.64 |
+
+A run of each outside the timed ones reported 70 tests and 320
+assertions with no failures.
 
 ## Conclusions
 

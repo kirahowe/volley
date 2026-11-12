@@ -186,7 +186,7 @@ too:
   suite's `:test-paths` added to its classpath, and starts worker JVMs
   only if a run outlasts that with work still waiting.
   The first run, with no `.volley/` yet, always uses worker JVMs. A
-  70-test suite took 6.1s that way against Kaocha's 6.2s (9.9s with
+  70-test suite took 5.65s that way against Kaocha's 5.71s (7.6s with
   worker JVMs). Large suites gain the most: a 244-test suite took 40s
   with volley against 104s with Kaocha. See
   [doc/benchmarks.md](doc/benchmarks.md).
@@ -438,9 +438,9 @@ The full list, with reasons, is in [doc/design.md](doc/design.md).
 volley ran a 507-test babashka suite in 27.5s with 8 workers, against 153.8s
 for that project's own runner. On a 26-test babashka suite it took 0.43 to
 0.50s against 0.50 to 0.65s. On the JVM it ran a 244-test suite in 40s
-against Kaocha's 104s, and a 70-test suite in 6.1s against 6.2s. The runs
-were on a 16-core Mac with other work on it. Numbers, conditions and caveats are
-in [doc/benchmarks.md](doc/benchmarks.md).
+against Kaocha's 104s, and a 70-test suite in 5.65s against 5.71s. The
+runs were on a 16-core Mac with other work on it. Numbers, conditions and
+caveats are in [doc/benchmarks.md](doc/benchmarks.md).
 
 ## Contributing
 
