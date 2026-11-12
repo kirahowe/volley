@@ -92,11 +92,11 @@
   worker process has them on its classpath, so they are added here first
   (`volley.shell.jvm/add-classpath!`), and the thread gets that loader as
   its context class loader for Java code that asks for one.
-  Returns a handle for `volley.shell.pool/send!`, `stop!` and `kill!`.
-  A thread cannot be killed: `kill!` reports the exit at once and
-  interrupts it. The var it was in still ends, but the worker starts no
-  further var and runs no shutdown hook, and whatever it still sends goes
-  to a worker the run has dropped."
+  Returns a handle for `volley.shell.pool/send!`, `stop!` and `kill!`,
+  with the thread itself under `:thread`. A thread cannot be killed:
+  `kill!` reports the exit at once and interrupts it. The var it was in
+  still ends, but the worker starts no further var and runs no shutdown
+  hook, and whatever it still sends goes to a worker the run has dropped."
   [{:keys [^LinkedBlockingQueue queue test-paths]} id]
   (let [loader (when (seq test-paths)
                  ((requiring-resolve 'volley.shell.jvm/add-classpath!) test-paths))

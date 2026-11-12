@@ -259,7 +259,9 @@
   "Open the accumulator for var `v`, redirecting output when capturing.
   Once `(stop-requested?)` holds it leaves `System/out` and `System/err`
   alone: a killed in-process worker has given the parent its streams back,
-  and a var that was already cleared to start must not take them again."
+  and a var that was already cleared to start must not take them again.
+  The same goes for a var that starts just after a `:shutdown`, which
+  costs nothing, since the parent drops what a worker it stopped sends."
   [acc emit! ns-sym capture? stop-requested? v]
   (let [capture (when capture? (open-capture))
         m (meta v)]
