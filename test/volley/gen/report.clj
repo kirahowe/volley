@@ -35,18 +35,6 @@
   "nil or hostile text."
   (gen/one-of [(gen/return nil) hostile-text]))
 
-(def huge-text
-  "3000 copies of one character."
-  (gen/fmap #(apply str (repeat 3000 %)) gen/char-alpha))
-
-(defn- value-event [v]
-  (gen/one-of [(gen/return {:str (pr-str v) :edn v})
-               (gen/return {:str (pr-str v)})]))
-
-(def value
-  "An `{:str :edn}` value as sent by workers."
-  (gen/bind edn-value value-event))
-
 (def comparison
   "An [expected actual] pair in either of the shapes workers may send."
   (gen/bind
