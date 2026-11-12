@@ -6,7 +6,7 @@ All notable changes to volley are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0-alpha.2] - 2026-11-11
+## [0.1.0-alpha.2] - 2026-11-12
 
 Second alpha: random test order, in-process runs for short JVM suites,
 and watch mode that follows changes to `tests.edn`, `deps.edn` and
@@ -57,6 +57,11 @@ and watch mode that follows changes to `tests.edn`, `deps.edn` and
 
 ### Changed
 
+- Tests run in random order by default. 0.1.0-alpha.1 ran each
+  namespace's vars in name order and only warned about Kaocha's randomize
+  plugin, which is on unless a project turns it off. `--no-randomize`, or
+  `:kaocha.plugin.randomize/randomize? false` in `tests.edn`, brings the
+  name order back. (volley#4)
 - The `--runtime jvm` classpath cache key also covers the `deps.edn` of
   every `:local/root` dependency, including those in `:default-deps`, and
   the user-level `deps.edn`. (volley#10)

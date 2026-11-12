@@ -22,7 +22,7 @@ This is a run of a small fixture project with failures, with output piped
 namespace instead and prints the same failure reports and summary.
 
 ```
- ✓ shop.passing-test (2 tests) 3ms
+ ✓ shop.passing-test (2 tests) 2ms
  ✗ shop.cart-test (2/3 failed) 4ms
 
  FAIL  shop.cart-test/add-item-shape  test/shop/cart_test.clj:10
@@ -40,9 +40,9 @@ namespace instead and prints the same failure reports and summary.
    actual:   4
    output:
      | computing the discount
- ✗ shop.errors-test (2/3 failed) 5ms
+ ✗ shop.errors-test (2/3 failed) 8ms
 
- ERROR  shop.errors-test/throws-inside-is  test/shop/errors_test.clj:8
+ ERROR  shop.errors-test/throws-inside-is  test/shop/errors_test.clj:9
    expected: (= 1 (Long/parseLong "one"))
    actual:   java.lang.NumberFormatException: For input string: "one"
    java.lang.NumberFormatException: For input string: "one"
@@ -56,20 +56,24 @@ namespace instead and prints the same failure reports and summary.
    data: {:sku 42}
      at shop.errors-test (test/shop/errors_test.clj:6)
 
-8 tests | 4 passed | 2 failed | 2 errors | 0 skipped (10 assertions, 49ms)
+Randomized with --seed 1604350068
+
+8 tests | 4 passed | 2 failed | 2 errors | 0 skipped (10 assertions, 45ms)
 
 Slowest tests:
-  3ms  shop.errors-test/throws-inside-is
+  7ms  shop.errors-test/throws-inside-is
   3ms  shop.cart-test/add-item-shape
-  1ms  shop.passing-test/one
-  0ms  shop.errors-test/fine
-  0ms  shop.errors-test/throws-outside-is
+  1ms  shop.errors-test/throws-outside-is
+  0ms  shop.passing-test/two
+  0ms  shop.cart-test/prints-then-fails
 
 Rerun failures:
   bb -m volley.main --focus shop.cart-test/add-item-shape --focus shop.cart-test/prints-then-fails --focus shop.errors-test/throws-inside-is --focus shop.errors-test/throws-outside-is
 ```
 
-The run exited with code 4, the number of failures, as Kaocha does.
+The run exited with code 4, the number of failures, as Kaocha does. A
+failed run prints its seed, and `--seed 1604350068` runs each namespace's
+tests in that order again.
 
 ## Install
 
@@ -203,7 +207,8 @@ from a JVM parent starts babashka workers.
   `:focus-meta`, `:skip-meta`, `:kaocha/bindings` and `:kaocha/fail-fast?`.
 - Flags: suite ids, `--focus`, `--skip`, `--focus-meta`, `--skip-meta`,
   `--fail-fast`, `--config-file`, `--[no-]color`, `--[no-]capture-output`,
-  `--reporter`, `--watch`, `--plugin`, `--profile`.
+  `--reporter`, `--watch`, `--plugin`, `--profile`, `--[no-]randomize`,
+  `--seed`.
 - `--print-config`, `--print-test-plan` and `--print-result` print
   Kaocha's shapes (`:kaocha/tests`, `:kaocha.test-plan/tests`,
   `:kaocha.result/tests`), but not the same maps: volley's own settings sit
@@ -258,11 +263,13 @@ namespace is loaded in the worker that runs it unless you pass
   worker with `--workers 1`.
 - Hooks and `:volley/worker-setup` run in every worker, so setup that
   starts a server on a fixed port starts one per worker.
-- Randomizing (on by default with Kaocha's randomize plugin) shuffles
-  the vars inside each namespace, from the run seed and the namespace's
-  name. Namespaces still start slowest first, as last time's timings
-  say, so `--seed N` reproduces the order within each namespace but not
-  which namespaces run side by side.
+- Tests run in random order by default, as with Kaocha's randomize
+  plugin: the vars inside each namespace are shuffled from the run seed
+  and the namespace's name. `--no-randomize`, or
+  `:kaocha.plugin.randomize/randomize? false` in `tests.edn`, runs them
+  in name order. Namespaces still start slowest first, as last time's
+  timings say, so `--seed N` reproduces the order within each namespace
+  but not which namespaces run side by side.
 - When two suites select the same namespace, it runs once, with the
   first suite's selection. Kaocha runs it twice.
 - When two test paths define the same namespace, it runs once, from the
